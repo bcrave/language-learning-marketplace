@@ -1,0 +1,3 @@
+# Keep Session Ratings private to quality administration
+
+An Attended Student may create one Session Rating through seven days after the Class Session, with a required one-to-five overall value, optional predefined positive and improvement tags, and an optional 500-character comment. Platform Administrators may inspect, filter, and aggregate ratings but cannot change scores or tags; they may redact inappropriate text with retained history and must give the Student author a concise visible reason. Ratings remain hidden from Teachers, Students other than the author, Organizations, and public Teacher Profiles and never automatically suspend, qualify, or penalize a Teacher.

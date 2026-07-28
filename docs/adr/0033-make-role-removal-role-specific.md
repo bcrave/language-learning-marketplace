@@ -1,0 +1,3 @@
+# Make role removal role specific
+
+Platform Administrators grant and remove roles with an Audit Entry without disabling the entire multi-role User; removal requires a concise reason visible to the affected User. Student removal stops the subscription, returns platform-cancelled future bookings, and removes waitlists. Teacher removal cannot complete until future assignments are substituted or their sessions cancelled. Organization Manager removal immediately revokes reporting. Platform Administrator removal cannot eliminate the final active administrator or remove an actor's own final administrative access in the same request. History continues to reference the User, and later role re-grant does not recreate commitments.

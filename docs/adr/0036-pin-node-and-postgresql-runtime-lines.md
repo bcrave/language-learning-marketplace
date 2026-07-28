@@ -1,0 +1,3 @@
+# Pin Node and PostgreSQL runtime lines
+
+Development, GitHub Actions, and Railway use Node.js 24 LTS at a reviewed exact patch and PostgreSQL 18 at a reviewed current minor, with container images pinned by digest. pnpm 11 is recorded through package metadata and the lockfile. Local PostgreSQL runs through Docker Compose rather than an untracked host installation, CI uses the same image and extensions, and migrations enable required capabilities such as `btree_gist`. Process and database defaults are UTC; named regional zones appear only in explicit scheduling data. Runtime patch upgrades are normal reviewed dependency changes rather than floating deployment updates.

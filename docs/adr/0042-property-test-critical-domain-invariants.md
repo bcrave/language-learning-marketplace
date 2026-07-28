@@ -1,0 +1,3 @@
+# Property-test critical domain invariants
+
+Selected `packages/core` suites use fast-check alongside named example tests. Generated properties cover non-negative credit balances, atomic Reschedules, overlap preservation through time-zone conversion, command sequences that cannot create overlapping active commitments, monthly anniversary anchoring, 23/24/25-hour local-date ranges, and idempotent replay. Failure seeds and shrunk counterexamples are retained for reproduction. Property testing is not used for copy, snapshots, ordinary UI rendering, or behavior better communicated by explicit examples.

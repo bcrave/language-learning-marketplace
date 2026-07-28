@@ -1,0 +1,3 @@
+# Require Student acceptance for Sponsorship
+
+An Organization Manager invites an existing Student with a 14-day disclosure of the Organization, benefit, visible attendance and progress information, excluded information, and disclosure version. Sponsorship begins only on explicit acceptance, never backdates, and cannot overlap another active Sponsorship. Either party may end it prospectively without providing a reason, immediately freezing reporting and stopping future benefits while Student-owned credits remain. Acceptance, decline, expiry, and termination are audited; retained disclosure evidence supports product transparency without claiming universal legal-consent compliance.

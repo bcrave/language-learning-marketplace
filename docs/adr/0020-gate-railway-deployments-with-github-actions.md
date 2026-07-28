@@ -1,0 +1,3 @@
+# Gate Railway deployments with GitHub Actions
+
+GitHub Actions is the required quality gate for pull requests and pushes to `main`. It performs a frozen policy-checked pnpm install, formatting, linting, type checking, GraphQL generation-drift checks, domain tests, React component and accessibility tests, PostgreSQL integration and concurrency tests against a real service container, and the small Playwright journey suite. After successful checks on `main`, a serialized GitHub Actions release job orchestrates Railway rather than enabling independent service autodeploys. The project does not create paid Railway preview environments for pull requests because their value does not justify the portfolio deployment's $15 monthly ceiling.

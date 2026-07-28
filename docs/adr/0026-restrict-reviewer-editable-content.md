@@ -1,0 +1,3 @@
+# Restrict reviewer-editable content
+
+Reviewer-entered feedback is length-bounded plain text, and lesson materials use a server-validated structured format limited to headings, paragraphs, lists, emphasis, and HTTPS links. Raw HTML, scripts, embedded media, custom CSS, and file uploads are rejected. React renders text without unsafe HTML, external links use browser isolation protections, and the deployment sets a Content Security Policy. Shared identities cannot alter profiles or authentication settings, and the interface warns against submitting real personal, confidential, or unlawful information. Nightly reset is cleanup rather than a content-security boundary.

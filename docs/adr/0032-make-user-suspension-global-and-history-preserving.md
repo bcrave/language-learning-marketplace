@@ -1,0 +1,3 @@
+# Make User Suspension global and history preserving
+
+User Suspension is an immediate server-enforced block across every role, not merely a disabled control in Auth0 or the client. It requires a concise reason visible to the affected User plus an audit record, stops grant processing, removes waitlists, platform-cancels future student bookings with credit return, revokes organization reporting, and creates urgent resolution tasks for future teaching assignments. Historical identity, credits, attendance, feedback, and audit data remain. Reactivation restores access to still-assigned roles but does not recreate removed commitments or backfill skipped grants. Public demo identities cannot invoke suspension.

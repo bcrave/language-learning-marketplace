@@ -1,0 +1,3 @@
+# Expire transport idempotency after seven days
+
+Mutation idempotency records retain User, operation, key, input hash, stable domain outcome, and target identifiers for seven days. A matching replay returns the original outcome and an input mismatch is rejected; after expiry the key may represent a new attempt. These records do not substitute for permanent domain uniqueness: credit-ledger references, notification event-recipient-channel keys, booking constraints, and other business invariants remain effective independently. This bounds transport history while covering realistic client and worker retry windows.

@@ -1,0 +1,3 @@
+# Operate as a curated portfolio demonstration
+
+The deployed product is a publicly reachable, production-shaped portfolio demonstration rather than a commercial language-learning service. It supports realistic end-to-end behavior for synthetic demo users, but disables general self-registration and does not accept real payments, host live video, deliver production email, or store real customer or teacher data. Reviewer access uses curated demo identities. This boundary makes the engineering claims testable without implying that the legal, financial, safeguarding, support, and operational work of a commercial launch has been completed.

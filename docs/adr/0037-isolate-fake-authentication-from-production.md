@@ -1,0 +1,3 @@
+# Isolate fake authentication from production
+
+An internal authentication port has an Auth0 adapter for deployment and a fake identity adapter for local development and automated tests. The fake adapter establishes only User identity; roles and relationship permissions still load through the real PostgreSQL authorization path. Playwright uses seeded identities, and JWT contract tests use temporary signing material and a local JWKS endpoint; Auth0 receives a small manual deployed smoke test. Production builds omit fake routes and headers, the server refuses production configuration selecting the fake adapter, and CI proves that refusal.

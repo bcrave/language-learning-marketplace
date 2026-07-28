@@ -1,0 +1,3 @@
+# Use Vitest projects and isolated real databases
+
+Vitest runs separate Node unit, jsdom React Testing Library component, and Node PostgreSQL integration projects. Testcontainers starts the pinned PostgreSQL 18 image, migrations prepare a template, and test workers clone isolated databases so concurrent files do not share state. Transaction and worker tests use real independent connections and Graphile Worker rather than mocked persistence. Playwright runs built-system Chromium journeys on pull requests and Chromium, Firefox, and WebKit on `main`, each with its own migrated database and fake identities; failure artifacts are retained. Coverage targets emphasize core rules rather than a repository-wide percentage.

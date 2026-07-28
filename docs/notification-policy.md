@@ -1,0 +1,140 @@
+# Notification policy catalog
+
+This catalog is the single source of truth for which domain events notify which recipients, through which channels, and with what visible content. It also records intentional silence so absence of a notification is a reviewed product decision rather than an omission.
+
+Delivery, retry, and channel semantics belong to [ADR 0002](adr/0002-idempotent-notification-delivery.md). Locale selection and message rendering belong to [ADR 0044](adr/0044-localize-interface-and-notifications-from-shared-catalogs.md). Retention, cleanup, and permanent Delivery Receipts belong to [ADR 0046](adr/0046-compact-terminal-notifications-to-delivery-receipts.md). This catalog does not restate those mechanics.
+
+## Maintenance rule
+
+- Add or update the relevant row in the same change as every new or changed domain event. Record an explicit `None` channel when silence is intentional.
+- Change event-recipient-channel product behavior only here. Other canonical documents link to a row instead of restating its policy.
+- Amend the relevant ADR before changing delivery, localization, or retention mechanics, then update this catalog's references if needed.
+- Preserve each policy ID so decisions and future tests can link to a stable entry. When a policy is replaced, retain its history through version control rather than reusing its ID for another event.
+
+## Channels
+
+- **In-app:** a persistent notification in the recipient's inbox.
+- **Email:** an email Notification Intent in addition to the in-app notification.
+- **Both:** persistent in-app and email.
+- **None:** no notification is created; the row states how the outcome is instead surfaced.
+
+## Classification rule
+
+- Use **Both** when a non-initiating User's commitments, access, qualifications, credits, or required timely action materially change.
+- Use **In-app** for durable low-urgency awareness or confirmation worth retaining.
+- Use the administrator task queue for unresolved work requiring action. A notification may draw attention to urgent work when a specific policy says so, but it never replaces the task.
+- Use dashboard state for ongoing or aggregate conditions.
+- Use **None** when the initiator already receives a definitive mutation result or when an operational failure remains eligible for automatic retry.
+
+## Scheduling and booking
+
+| Policy ID | Trigger | Recipient | Channels | Required content and privacy rules | Timing, suppression, and related decisions |
+| --- | --- | --- | --- | --- | --- |
+| `waitlist-entry.created.student` | Waitlist Entry creation commits | Student | In-app | Identify the Class Session and exact expiry; state that neither a seat nor Class Credit is reserved and that promotion may automatically exchange one credit. Omit queue position. | The initiating Student observes the mutation; email is unnecessary. |
+| `waitlist-entry.withdrawn.student` | Waitlist Withdrawal commits | Student | In-app | State that automatic promotion stopped and that no Booking was created or Class Credit charged. | Create only when withdrawal wins. If promotion commits first, return the Booking and create no withdrawal confirmation. |
+| `booking.created.student` | Booking commits | Student | Both | Identify the scheduled commitment and Class Credit consequence. | Create only after the Booking and credit deduction commit. |
+| `booking.rescheduled.student` | Reschedule commits | Student | Both | Identify the original and replacement Class Sessions and confirm the retained Class Credit. | Create only after the all-or-nothing replacement commits. |
+| `booking.cancelled.student` | Student Cancellation commits | Student | Both | Identify the Class Session and state whether one Class Credit was returned or forfeited under the late-cancellation rule. | Create only after cancellation and any refund commit. |
+| `waitlist-entry.promoted.student` | Waitlist promotion commits | Student | Both | Identify the resulting Booking, Class Session, and exchanged Class Credit. If within the reminder window, prominently state the imminent start time. | Do not also create a shortened reminder. |
+| `waitlist-entry.ineligible.student` | A promotion attempt closes the entry because a business condition now makes the Student ineligible | Student | Both | Identify the Class Session and give the business reason; confirm that no Booking was created or Class Credit charged. | A temporary system failure preserves queue position and creates no terminal ineligibility notice. |
+| `waitlist-entry.expired.student` | Waitlist Entry expires | Student | Both | Identify the Class Session and confirm that no Booking was created or Class Credit charged. | Create when expiry commits. |
+| `class-session.teacher-assigned.teacher` | Teacher assignment commits | Teacher | Both | Identify the Class Session and assignment. If within the reminder window, prominently state the imminent start time. | Do not also create a shortened reminder. |
+| `class-session.teacher-removed.teacher` | Teacher removal or replacement commits | Former Teacher | Both | Identify the Class Session and removal from the commitment. | Create only after removal commits. |
+| `class-session.teacher-substituted.teacher` | Teacher Substitution commits | Replacement Teacher | Both | Identify the Class Session and assignment. If within the reminder window, prominently state the imminent start time. | Do not also create a shortened reminder. |
+| `class-session.teacher-substituted.student` | Teacher Substitution commits | Each Student with an active Booking | Both | Identify the Class Session and replacement Teacher; surface the substitution cancellation entitlement. | Create only after substitution commits. |
+| `class-session.cancelled.student` | Class Session Cancellation commits | Each affected Student | Both | Identify the Class Session, cancellation, and returned Class Credit. | Create only after cancellation and refunds commit. |
+| `class-session.cancelled.teacher` | Class Session Cancellation commits | Assigned Teacher | Both | Identify the Class Session and cancellation. | Create only after cancellation commits. |
+| `class-session.reminder.student` | The reminder instant is reached | Student with an active Booking | Both | Identify the Class Session and start time. | Create exactly 24 hours before start only while the commitment remains active. A commitment created inside the window receives only its event-specific imminent-start notice. Ending or replacing the commitment suppresses a pending reminder. |
+| `class-session.reminder.teacher` | The reminder instant is reached | Assigned Teacher | Both | Identify the Class Session and start time. | Same eligibility and suppression rules as the Student reminder. |
+| `absence-request.created.administrator` | Absence Request commits | Each active Platform Administrator | Both | Identify affected Class Sessions and link to the authorized resolution work. | Timely action on upcoming commitments warrants email. |
+| `absence-request.resolved.teacher` | Every Class Session in an Absence Request has received a Teacher Substitution or Class Session Cancellation | Requesting Teacher | None | Session-specific Teacher removal, substitution, or cancellation notifications communicate each authoritative outcome; the Absence Request dashboard shows aggregate progress and completion. | Do not create a separate resolution notification, including when resolution occurs incrementally. |
+| `absence-request.resolved.administrator` | Every Class Session in an Absence Request has been resolved | Acting Platform Administrator | None | The mutation result and administrator task-queue state confirm completion. | No redundant notification. |
+| `teacher-availability.changed.teacher` | Teacher Availability is created, updated, or removed | Acting Teacher | None | The mutation result and current scheduling state confirm the change. | Teacher Availability is private operational data and does not alter published commitments. |
+| `teacher-availability.changed.administrator` | Teacher Availability is created, updated, or removed | Platform Administrator | None | Current availability is visible as scheduling dashboard state. | Do not create per-change notifications. |
+| `availability-exception.changed.teacher` | An Availability Exception is created, updated, or removed | Acting Teacher | None | The mutation result and current scheduling state confirm the change. | An attempted exception that overlaps a published Class Session is rejected with guidance to create an Absence Request and creates no notification. |
+| `availability-exception.changed.administrator` | An Availability Exception is created, updated, or removed | Platform Administrator | None | Current exceptions are visible as scheduling dashboard state. | Do not create per-change notifications. Students are never notified because no published commitment changed. |
+
+## Learning, attendance, and quality
+
+| Policy ID | Trigger | Recipient | Channels | Required content and privacy rules | Timing, suppression, and related decisions |
+| --- | --- | --- | --- | --- | --- |
+| `learning-feedback.submitted.student` | Learning Feedback is submitted for the first time | Student | Both | Identify the Class Session and state that feedback is available. Email never includes private feedback text. | Revisions during the feedback window create no additional notification. |
+| `learning-feedback.redacted.teacher` | Platform Administrator redacts Learning Feedback | Teacher author | Both | Give a concise visible reason without reproducing removed text. | Notify whether the feedback was a draft or submitted. |
+| `learning-feedback.redacted.student` | Platform Administrator redacts Learning Feedback that was already submitted | Student | Both | Identify the Class Session and give a concise visible reason without reproducing removed text. | Redaction of a private draft creates no Student notification. |
+| `session-rating.changed.student` | Student creates or edits a Session Rating | Student | None | The mutation result confirms the action. | The action is audited. |
+| `session-rating.changed.administrator` | Student creates or edits a Session Rating | Platform Administrator | None | Ratings are discovered through the quality dashboard. | Ordinary or low ratings do not trigger automated escalation. |
+| `session-rating.changed.teacher` | Student creates or edits a Session Rating | Teacher | None | Session Ratings are outside Teacher visibility. | Never notify. |
+| `session-rating.comment-redacted.student` | Platform Administrator redacts a Session Rating comment | Student author | Both | State that the comment was redacted and give a concise Student-visible reason without reproducing removed text; score and tags remain unchanged. | Create after redaction commits. |
+| `session-rating.comment-redacted.teacher` | Platform Administrator redacts a Session Rating comment | Teacher | None | Session Ratings are outside Teacher visibility. | Never notify. |
+| `attendance.published.student` | Attendance Record is first submitted after the Class Session | Student | Both | Identify the Class Session, show Attended or No-show, and state the exact Attendance Review Request deadline. For Attended, also state the exact Session Rating deadline; for No-show, omit rating. | Unrecorded attendance creates no notification. |
+| `attendance.corrected.student` | Attendance correction commits | Student | Both | Identify the Class Session and show the current outcome. Prior notifications remain historical. | A correction made while resolving a review is represented by the review-resolution notice, not a duplicate correction notice. |
+| `attendance.corrected.teacher` | Attendance correction commits | Assigned Teacher | Both | Identify the Class Session and current outcome. Exclude the Student's review text and private administrator notes. | Notify only when another actor made the correction; the correcting Teacher receives only the mutation result. |
+| `attendance-review.created.student` | Attendance Review Request commits | Student | In-app | Confirm submission and identify the Class Session. | The Student directly initiated and observed the request. |
+| `attendance-review.created.administrator` | Attendance Review Request commits | Each active Platform Administrator | In-app | Identify the Class Session and link to the administrator work item. | The work queue is canonical; no email because the request does not threaten an upcoming Class Session or require immediate interruption. |
+| `attendance-review.resolved.student` | Attendance Review Request resolution commits | Student | Both | State upheld or corrected, the effective Attendance outcome, a concise Student-visible rationale, and resulting changes to completion, material access, or feedback and rating windows. Exclude private administrator notes. | When corrected, this is also the correction notice. |
+| `attendance-review.upheld.teacher` | Attendance Review Request is upheld | Assigned Teacher | In-app | State that the existing outcome was upheld. Exclude the Student's request text and private administrator notes. | The effective outcome did not change, so email is unnecessary. |
+| `attendance-review.corrected.teacher` | Attendance Review Request corrects the outcome | Assigned Teacher | Both | Show the current outcome. Exclude the Student's request text and private administrator notes. | Uses the Attendance-correction rule. |
+| `student-placement.changed.student` | A Student changes their own Student Placement | Acting Student | None | The mutation result and updated discovery defaults confirm the change. | No redundant notification. |
+| `student-placement.corrected.student` | A Platform Administrator corrects a Student Placement | Affected Student | In-app | Identify the target language and new Curriculum Level. | The correction changes discovery defaults but not Booking eligibility, so email is unnecessary. |
+| `student-placement.corrected.administrator` | A Platform Administrator corrects a Student Placement | Acting Platform Administrator | None | The mutation result confirms the correction. | No redundant notification. |
+
+## Curriculum administration
+
+| Policy ID | Trigger | Recipient | Channels | Required content and privacy rules | Timing, suppression, and related decisions |
+| --- | --- | --- | --- | --- | --- |
+| `curriculum.changed.administrator` | A Course, Lesson Unit, Topic, or Lesson Material is created or its mutable fields change | Acting Platform Administrator | None | The mutation result and current curriculum state confirm the change. | Rejected edits return an immediate business outcome rather than creating inbox or task-queue work. |
+| `curriculum.changed.user` | A Course, Lesson Unit, Topic, or Lesson Material changes | Affected Teacher or Student | None | Current authorized curriculum and Lesson Material views surface the change. | Published instructional identity remains immutable; retirement or replacement does not change existing Class Sessions or earned history. |
+
+## Sponsored learning and credits
+
+| Policy ID | Trigger | Recipient | Channels | Required content and privacy rules | Timing, suppression, and related decisions |
+| --- | --- | --- | --- | --- | --- |
+| `sponsorship-invitation.created.student` | Sponsorship Invitation commits | Student | Both | State Organization name, eight-credit monthly benefit, Organization-visible data categories, exact expiry, and link to the complete versioned disclosure. Clarify that no Sponsorship or reporting access exists yet. | Create after invitation commits. |
+| `sponsorship-invitation.created.manager` | Sponsorship Invitation commits | Creating Organization Manager | In-app | Confirm creation and identify the Student and expiry. Do not expose unrelated Student data. | The manager directly initiated the action. |
+| `sponsorship-invitation.accepted.student` | Student acceptance, Sponsorship, and initial credit grant commit together | Student | Both | State start instant, eight credits granted, monthly anniversary, Organization-visible data categories, and either party's ability to end the relationship. | Create only after the atomic outcome commits. |
+| `sponsorship-invitation.accepted.manager` | Student acceptance commits | Organization Manager | Both | State acceptance and reporting start instant. Exclude total credit balance and unrelated history. | Create only after Sponsorship exists. |
+| `sponsorship-invitation.declined.student` | Student decline commits | Student | In-app | Confirm decline and that no Sponsorship, reporting access, or credit grant was created. | Decline requires no reason. |
+| `sponsorship-invitation.declined.manager` | Student decline commits | Organization Manager | Both | State only that the invitation was declined and no relationship or reporting access was created. Never disclose a reason. | Create after decline commits. |
+| `sponsorship-invitation.expired.student` | Invitation expires after 14 days | Student | Both | State that the deadline passed without a response and no Sponsorship, reporting access, or credit grant was created. | Describe as expiry, never as decline. |
+| `sponsorship-invitation.expired.manager` | Invitation expires after 14 days | Organization Manager | Both | State that the deadline passed without a response and no Sponsorship or reporting access was created. | Describe as expiry, never as decline. |
+| `sponsorship.terminated.student` | Sponsorship termination commits | Student | Both | Identify which party ended it and exact end instant; state that future Organization credit grants stop, reporting freezes, and owned Class Credits remain. | No reason is required or disclosed. |
+| `sponsorship.terminated.manager` | Sponsorship termination commits | Organization Manager | Both | Identify which party ended it and exact end instant; state that grants stop and reporting freezes to the Sponsorship period. Exclude unrelated Student data and total balance. | No reason is required or disclosed. |
+| `organization-credit.granted.student` | Successful monthly Organization credit grant commits | Student | Both | State eight credits granted, resulting available balance, and next anniversary date. | Create once per committed grant. |
+| `organization-credit.granted.manager` | Successful monthly Organization credit grant commits | Organization Manager | None | Authorized reports already show Organization-funded grants without exposing total Student balance. | No per-grant notification. |
+| `cohort.changed.manager` | A Cohort or time-bounded Cohort membership is created, changed, or ended | Acting Organization Manager | None | The mutation result and current reporting state confirm the change. | No redundant notification. |
+| `cohort.changed.student` | A Student's time-bounded Cohort membership is created, changed, or ended | Affected Student | None | Cohort membership only groups reporting already authorized by the Sponsorship disclosure. | Do not imply a new relationship, permission, credit benefit, or Booking restriction. |
+| `subscription.activated.student` | Simulated Subscription activation and initial grant commit | Student | Both | State eight credits granted, resulting available balance, and next anniversary. Never imply that a card was charged. | Replay of the provider event creates no additional notification. |
+| `subscription.renewed.student` | Successful simulated monthly renewal and grant commit | Student | Both | State eight credits granted, resulting available balance, and next anniversary. Never imply that a card was charged. | Replay of the provider event creates no additional notification. |
+| `subscription.cancellation-scheduled.student` | Scheduling cancellation commits | Student | Both | State effective anniversary, that no grant occurs then, and that existing Class Credits remain. | Create after scheduling commits. |
+| `subscription.cancellation-undone.student` | Undoing scheduled cancellation commits | Student | Both | State that the Subscription remains active, no immediate credits were granted, and the next grant remains on the existing anniversary. | Create after undo commits. |
+| `credit-adjustment.committed.student` | Credit Adjustment commits | Student | Both | State signed adjustment, resulting available balance, and concise Student-visible reason. | Create after ledger and balance changes commit. |
+| `credit-adjustment.committed.administrator` | Credit Adjustment commits | Acting Platform Administrator | None | The mutation result confirms the action. | No redundant notification. |
+
+## Access and identity administration
+
+| Policy ID | Trigger | Recipient | Channels | Required content and privacy rules | Timing, suppression, and related decisions |
+| --- | --- | --- | --- | --- | --- |
+| `role-assignment.granted.user` | Role Assignment grant commits | Affected User | Both | State role, effective time, and how to enter that role's workspace. Exclude private administrator notes. | Create after the grant commits. |
+| `role-assignment.granted.administrator` | Role Assignment grant commits | Acting Platform Administrator | None | The mutation result confirms the action. | No redundant notification. |
+| `role-assignment.removed.user` | Role Assignment removal and required cleanup commit | Affected User | Both | State removed role, effective time, concise User-visible reason, ended commitments or access, returned Class Credits, and preservation of other roles and history. | Teacher removal is not complete until future assignments are substituted or cancelled. |
+| `user.suspended.user` | User Suspension and required cleanup commit | Suspended User | Both | State effective time, concise User-visible reason, removed commitments and refunds, paused grants, lost Organization reporting access, and that reactivation will not recreate commitments or skipped grants. Exclude private administrator notes. | Email is immediately usable; unread in-app notification is visible after reactivation. |
+| `user.suspended.administrator` | Suspension creates urgent work for future Teacher assignments | Each active Platform Administrator | Both | Identify affected Class Sessions and link to substitution-or-cancellation tasks. Omit suspension reasons and private notes. | Students receive only subsequent Teacher Substitution or Class Session Cancellation notices. |
+| `user.reactivated.user` | User reactivation commits | User | Both | List restored Role Assignments and confirm that owned Class Credits remain, removed commitments were not recreated, skipped grants were not backfilled, and future grants resume on their normal schedule. | Create after authenticated access is restored. |
+| `user.anonymized.former-user` | User Anonymization commits | Former User | None | Retaining an email destination or deliverable in-app identity would undermine erasure. Any future User-requested deletion workflow must confirm before anonymization and is outside the initial product. | No post-operation notification. |
+| `user.anonymized.administrator` | User Anonymization commits | Acting Platform Administrator | None | The operation result and Audit Entry confirm the action. | No redundant notification. |
+| `teacher-qualification.granted.teacher` | A Teacher Qualification grant commits | Affected Teacher | Both | Identify the target language, granted Curriculum Levels, and effective time. Present it as a Teacher Qualification, not a Role Assignment. | Create only after the grant commits. |
+| `teacher-qualification.granted.administrator` | A Teacher Qualification grant commits | Acting Platform Administrator | None | The mutation result confirms the grant. | No redundant notification. |
+| `teacher-qualification.removed.teacher` | A Teacher Qualification removal commits | Affected Teacher | Both | Identify the target language, removed Curriculum Levels, and effective time. Present it as a Teacher Qualification, not a Role Assignment. | Create only after removal commits. A removal blocked by a future assignment creates no notification. |
+| `teacher-qualification.removed.administrator` | A Teacher Qualification removal commits | Acting Platform Administrator | None | The mutation result confirms the removal. | When future assignments block removal, return those assignments for resolution and create no notification. |
+
+## Reports, exports, and operations
+
+| Policy ID | Trigger | Recipient | Channels | Required content and privacy rules | Timing, suppression, and related decisions |
+| --- | --- | --- | --- | --- | --- |
+| `report.interactive.requester` | An interactive report loads, refreshes, or fails | Requesting User | None | Report content, loading state, and safe failure guidance remain in the authorized dashboard. | Interactive outcomes create no Notification Intent. |
+| `report-export.completed.requester` | An asynchronous report export completes | Requesting User | In-app | Identify the export scope and link to the authorized download without attaching or reproducing report data. | Create once after the export becomes available. Do not email or broadcast to administrators. |
+| `report-export.failed.requester` | An asynchronous report export reaches terminal failure after automatic retries | Requesting User | In-app | Identify the export scope, provide safe retry guidance, and include a correlation reference without sensitive failure details. | Create once after automatic retries are exhausted. Do not email or broadcast to administrators. |
+| `operational-failure.retrying.administrator` | An operational failure remains eligible for automatic retry | Platform Administrator | None | Privacy-filtered logs, Sentry, and operational dashboard state carry diagnostics. | Do not interrupt administrators or Users while recovery remains automatic. |
+| `operational-failure.exhausted.administrator` | Automatic retries are exhausted and business reconciliation is required | Platform Administrator | None | Create an administrator task-queue item containing a correlation reference and the minimum safe business context. | A generic notification never substitutes for the task. A domain-specific policy may separately notify affected Users or draw attention to urgent work. |
+| `operational-failure.generic.user` | An operational failure occurs | User | None | User-visible terminal outcomes require a specific policy entry; do not expose infrastructure details through a catch-all message. | Retryable failures create no notification. Export failure is governed by `report-export.failed.requester`. |
+| `notification-delivery.failed.administrator` | Notification delivery remains unresolved | Platform Administrator | None | Diagnostics retain the actionable failure and correlation reference. | Never create a notification in response to notification-delivery failure. |

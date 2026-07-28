@@ -1,0 +1,3 @@
+# Harden dependency installation with pnpm
+
+The monorepo uses pnpm 11 with exact direct dependency versions, a committed lockfile that remains frozen in CI, a strict 72-hour minimum release age, provenance downgrade checks where supported, blocked untrusted transitive Git and tarball sources, and explicit review through `allowBuilds` for every dependency install script. Dependency updates arrive as reviewed changes rather than unattended latest-version installs. These controls trade immediate adoption for detection time and reduce the install-time supply-chain exposure highlighted by the May 2026 TanStack compromise.

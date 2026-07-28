@@ -1,0 +1,3 @@
+# Deploy API first and frontend last
+
+The serialized post-CI release job deploys and verifies the API, then the worker heartbeat, then the Caddy-hosted React client, followed by deployed role smoke tests. A failure prevents later stages. The API supports the previous client contract during rollout and accepts persisted-operation manifests from the current and immediately previous releases; GraphQL removals wait through that compatibility window. Application rollback relies on expand-and-contract database compatibility, and migrations are never automatically reversed. Railway service autodeploys remain disabled, with GitHub using an environment-scoped deployment token.

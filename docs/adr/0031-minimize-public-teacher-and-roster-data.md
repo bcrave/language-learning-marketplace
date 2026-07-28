@@ -1,0 +1,3 @@
+# Minimize public teacher and roster data
+
+Students receive a deliberately public Teacher Profile and aggregated seat occupancy, never teacher contact or operational data or the identities of other booked or waitlisted Students. Lesson summaries and objectives are discoverable, while complete Lesson Materials retain their booking/completion access boundary. Class Rosters are limited to the assigned Teacher's relationship-scoped window and Platform Administrators; Organization Managers receive only authorized time-bounded reports. This privacy boundary is enforced in API projections rather than by hiding fields only in the client.

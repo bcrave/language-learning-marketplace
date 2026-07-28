@@ -1,0 +1,3 @@
+# Localize interface and notifications from shared catalogs
+
+The User's explicit Interface Locale controls FormatJS messages independently of Display Time Zone. In-app notifications persist a message identifier plus typed variables and render in the current locale; email Notification Intents capture locale and stable rendered content at creation so retries cannot change language. Browser preference only suggests the initial locale. English and Spanish catalogs fail CI on missing or unused keys, development provides an expansion-oriented pseudo-locale, and Spanish receives human review before launch. User-authored curriculum, materials, and feedback are not presented as translated content.

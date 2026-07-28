@@ -1,0 +1,3 @@
+# Verify accessibility with automation and manual review
+
+The product targets WCAG 2.2 AA through accessibility linting, component-state axe checks, role-journey `@axe-core/playwright` scans in English and Spanish, and direct tests for focus, names, announcements, and keyboard activation. Release review additionally covers keyboard-only journeys, VoiceOver with Safari on macOS, visible and unobscured focus, text resize and page reflow, contrast, reduced motion, error recovery, and critical scheduling interactions. Serious or critical automated findings block CI. A versioned checklist and public statement disclose the date, tested combinations, and known limitations; automated success is not described as certification or complete conformance evidence.

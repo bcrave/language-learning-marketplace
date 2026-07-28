@@ -1,0 +1,3 @@
+# Anonymize Users without erasing history
+
+The application does not hard-delete Users referenced by scheduling, credit, learning, reporting, or security history. After future commitments and privileged access are resolved, a reasoned administrator operation irreversibly deletes the Auth0 identity and identifying profile fields, removes public identity, redacts private feedback belonging to the anonymized Student, and retains an opaque Former User identifier. Audit records never copy profile details, post-operation notifications retain no contact route to the Former User, and backups age out normally. Reactivation is impossible; a later return creates a new User. This is a product privacy boundary, not a claim of universal legal compliance.

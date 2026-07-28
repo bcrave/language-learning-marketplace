@@ -1,0 +1,5 @@
+# Separate recurring wall time from scheduled instants
+
+Teacher Availability recurs in the teacher's named regional time zone so its local wall-clock hours remain stable when offsets change, while each published Class Session retains both an immutable resolved instant and the regional time zone in which it was scheduled. Users view that instant in a saved Display Time Zone that changes only with consent, while administrators can recover the originally intended wall time; substituting a teacher never reinterprets it. Scheduling rejects local times that do not exist during a daylight-saving gap and requires an administrator to choose explicitly between repeated occurrences during a daylight-saving overlap; the system never guesses or silently shifts a time.
+
+Domain date-time code uses Temporal types and explicit disambiguation, with a polyfill where native support is unavailable. Ad hoc arithmetic with JavaScript `Date` is prohibited: instants represent scheduled commitments, zoned date-times handle regional rules, and plain dates and times represent recurring availability inputs.

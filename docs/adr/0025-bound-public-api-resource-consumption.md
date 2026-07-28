@@ -1,0 +1,3 @@
+# Bound public API resource consumption
+
+The public API enforces request-body limits, a maximum page size of 50, short PostgreSQL statement timeouts, per-source and per-user-operation rate limits, stricter report and administrator limits, and one concurrent export per user. Initial thresholds are 120 requests per minute per verified source address, 30 mutations per minute per user, five report or export requests per minute per user, and ten denied authorization attempts per minute per source. Rejections use HTTP 429 with retry guidance. Counters remain in memory while the budget permits exactly one API replica; horizontal scaling requires a shared limiter first. Raw source addresses are not retained solely for this purpose.

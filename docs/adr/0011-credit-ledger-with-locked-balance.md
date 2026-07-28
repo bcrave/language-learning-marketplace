@@ -1,0 +1,3 @@
+# Pair an append-only credit ledger with a locked balance
+
+Every Class Credit grant, Booking deduction, refund, and Credit Adjustment appends a ledger entry with a unique business reference, while a per-student credit-account row stores the current non-negative balance. The same PostgreSQL transaction locks the account, inserts the uniquely referenced entry, and updates the balance; retries cannot repeat an entry for the same Booking, subscription period, refund, or adjustment. The ledger explains history, the balance makes concurrent eligibility checks efficient, and reconciliation verifies that the balance equals the ledger sum.

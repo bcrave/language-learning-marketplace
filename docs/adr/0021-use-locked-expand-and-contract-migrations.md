@@ -1,0 +1,3 @@
+# Use locked expand-and-contract migrations
+
+Every API and worker process applies pending SQL migrations before accepting requests or polling jobs. A PostgreSQL advisory lock permits only one process to migrate while the others wait and then verify the resulting schema version. Schema changes remain compatible with the previously deployed application version: additions, backfills, code transitions, and destructive contractions occur in separate releases. Migrations are transactional where PostgreSQL permits it. This protects independently restarted Railway services from temporary old-code/new-schema or new-code/old-schema combinations.

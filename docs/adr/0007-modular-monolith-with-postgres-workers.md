@@ -1,0 +1,3 @@
+# Deploy a modular monolith with PostgreSQL-backed workers
+
+The TypeScript monorepo contains a React web application, GraphQL API process, and Graphile Worker process that share domain modules and one PostgreSQL database. Graphile Worker handles waitlist promotion, subscription grants, reminders, and notification delivery through PostgreSQL-backed jobs and a transactional outbox, avoiding a separate message broker while ensuring business changes and their events commit together. Separate processes provide failure isolation without introducing distributed ownership or compensating transactions between microservices.

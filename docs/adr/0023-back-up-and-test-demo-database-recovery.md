@@ -1,0 +1,3 @@
+# Back up and test demo database recovery
+
+The Railway PostgreSQL volume receives daily backups retained for six days and weekly backups retained for one month. Versioned migrations plus canonical synthetic seed data remain an independent way to rebuild the demonstration. Recovery is tested before public launch and after material database changes. The target recovery point is 24 hours and the target recovery time is one hour. Point-in-time recovery and off-platform backup storage are deferred because the nightly-reset environment contains no real customer data; documentation must not portray same-project Railway backups as commercial-grade disaster recovery.

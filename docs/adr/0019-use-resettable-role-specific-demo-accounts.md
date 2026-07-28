@@ -1,0 +1,3 @@
+# Use resettable role-specific demo accounts
+
+The public demonstration provides shared Auth0 identities for the Student, Teacher, Organization Manager, and Platform Administrator roles, with credentials presented to reviewers. All accessible people and activity are synthetic. Demo identities cannot change their authentication credentials or access deployment configuration or secrets, and public operations are rate limited. A scheduled job restores a canonical seeded dataset nightly, while a separate owner-only operation can trigger recovery sooner. The interface warns reviewers that they share the environment and may observe concurrent changes.

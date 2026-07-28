@@ -1,0 +1,3 @@
+# Start with a lean two-app monorepo
+
+The pnpm workspace begins with `apps/web`, `apps/backend`, `packages/core`, and `packages/test-support`. The backend exposes separate API, worker, and migration entry points from one compiled application so Railway processes share implementation. Core groups identity, curriculum, scheduling, booking, credits, learning, sponsorship, notifications, and audit capabilities without importing React, GraphQL Yoga, Auth0, Railway, or Sentry. Infrastructure adapters live in the backend, UI components remain with the sole web app, and GraphQL generation emits server and client artifacts into their consumers. Capability-per-package splitting is deferred until an independently useful boundary emerges.

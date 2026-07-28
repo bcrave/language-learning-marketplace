@@ -1,0 +1,3 @@
+# Drive Subscriptions from idempotent provider events
+
+A replaceable Subscription Provider submits uniquely referenced activation, renewal, cancellation, and reactivation events through ordinary server commands. The portfolio adapter is simulated and handles no checkout or card data. Canonical fixtures activate the shared Student; public demo identities may schedule or undo cancellation but cannot mint a new Subscription. First activation and each successful monthly renewal grant eight credits exactly once, cancellation becomes effective without a grant at the next anniversary, and undoing it does not grant credits. Platform Administrators may create reasoned simulated activations for testing. This business Subscription does not use GraphQL subscriptions or WebSockets.

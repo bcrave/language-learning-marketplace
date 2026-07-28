@@ -1,0 +1,3 @@
+# Keep SPA authentication tokens in memory
+
+The React application authenticates with Auth0's Authorization Code Flow with PKCE through the Auth0 React SDK. Short-lived access tokens and rotating, expiring refresh tokens remain in browser memory and are never written to localStorage or sessionStorage. If Auth0 cannot silently renew the session after browser state is discarded, the user authenticates again. The API validates signature, issuer, audience, and expiration and loads application roles and relationship permissions from PostgreSQL rather than accepting them from client state. The occasional redirect tradeoff reduces persistent exposure of shared demonstration credentials.
