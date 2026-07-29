@@ -50,6 +50,10 @@ _Avoid_: Teacher claim, profile language, role
 A User with marketplace-wide operational authority over curriculum, sessions, people, credits, and reports.
 _Avoid_: Organization Manager, admin
 
+**Project Owner**:
+The human maintainer who holds deployment, recovery, private-diagnostics, and secret-management authority outside the public application. A Project Owner is not a User role, and no Platform Administrator can elevate into this authority.
+_Avoid_: Platform Administrator, owner role, super administrator
+
 ### Learning and Scheduling
 
 **Class Session Discovery**:
@@ -105,7 +109,7 @@ The share of a Course's active Lesson Units that a student has completed. Retire
 _Avoid_: Mastery score, grade, certification
 
 **Course Progress Snapshot**:
-A time-stamped aggregate of one Student's completed and active Lesson Unit counts and resulting percentage for one Course at a Sponsorship boundary. Organizations see the baseline, gains during Sponsorship, and the frozen ending snapshot without receiving pre-Sponsorship unit identities or later progress.
+A time-stamped aggregate of one Student's completed and active Lesson Unit counts and resulting percentage for one Course at a Sponsorship boundary. Its time scope and active-unit denominator freeze at that boundary, while later Attendance corrections may revise completion facts attributed to the period; Organizations see the baseline, gains during Sponsorship, and the frozen ending snapshot without receiving pre-Sponsorship unit identities or later progress.
 _Avoid_: Live Course Progress, mastery assessment, transcript
 
 **Topic**:
@@ -196,9 +200,33 @@ _Avoid_: Learning Feedback, public review, teacher testimonial
 
 ## Operations
 
+**Canonical Data Rebuild**:
+The scheduled-system or Project Owner operation that returns the public demonstration's mutable synthetic marketplace state to its versioned canonical fixture baseline while leaving the deployed application, infrastructure, and provider identities in place.
+_Avoid_: Demo rebuild, application rebuild, deployment, backup restoration
+
+**Security Release Gate**:
+The fail-closed body of required evidence that must pass before public launch and after a security-relevant change. A failed, missing, flaky, or unexplained result blocks release; only a finding wholly within an already accepted residual risk may proceed with dated Project Owner sign-off.
+_Avoid_: Security checklist, best-effort scan, optional hardening
+
+**Security-Relevant Change**:
+A change to a trust boundary, authorization or identity rule, attacker-controlled rendering path, browser or provider policy, public or private network surface, secret or build-artifact handling, resource or concurrency control, Audit or telemetry redaction, dependency, deployment path, or recovery control. Every production candidate reruns the automated security baseline; this classification additionally selects all mapped manual, report-only, and drill evidence that must be repeated.
+_Avoid_: Every content edit, only known vulnerability fixes, developer discretion without evidence
+
+**Security Gate Record**:
+The dated, privacy-safe evidence that one exact production candidate satisfied its applicable Security Release Gate. It identifies the release and relevant manifests and configuration fingerprints, records each required result and any accepted residual-risk finding, links to private provider evidence where needed, and carries Project Owner sign-off without containing secrets or raw sensitive evidence.
+_Avoid_: CI log, raw scan output, reusable approval for later commits
+
 **Audit Entry**:
 An append-only record of an authenticated mutation, denied sensitive-data read, or background action, containing opaque actor and target identities, acting role, outcome, reason, time, and correlation information without secrets or sensitive content. Entries cannot be edited or selectively removed; the public demonstration expires complete monthly partitions after 90 days.
 _Avoid_: Operational log, domain event, notification history
+
+**Audit Log**:
+The authorized, filtered collection and export surface for immutable Audit Entries. It preserves append-only history while applying the viewer's role and relationship scope; it is not an operational log, telemetry stream, or Report Export.
+_Avoid_: Audit Entry, application log, Sentry event, Report Export
+
+**Report Export**:
+An immutable, short-lived extract of authorized reporting facts captured at one consistent instant. It contains current effective values and visible correction metadata, while prior values belong to a separately authorized correction-history extract and investigative actors or reasons remain in the Audit Log.
+_Avoid_: Historical report reconstruction, data backup, Audit Log
 
 **Idempotency Key**:
 A client-generated identifier for one mutation attempt, scoped to the authenticated User and operation. For seven days, reuse with the same input returns the original domain outcome while reuse with different input is rejected; permanent ledger and event references separately prevent business duplication after that transport window.
