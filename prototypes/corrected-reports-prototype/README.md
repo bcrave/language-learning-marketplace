@@ -16,3 +16,18 @@ Then open <http://localhost:4173/?variant=A>.
 
 Nothing in this directory is production code. Data and interactions are deliberately
 static and exist only to make the reporting-policy decisions concrete enough to review.
+
+## Outcome
+
+The User selected **Variant A — Exception-first ledger** for both Organization Manager
+and Platform Administrator reporting. Both roles therefore share summary metrics,
+prominent corrected-fact callouts, and a scannable current-effective table while keeping
+their authority, relationship scope, report content, and navigation distinct.
+
+The shared presentation contract also retains:
+
+- visible correction count and latest-correction time on ordinary reports;
+- separately authorized prior/current correction history without actor or reason;
+- the Queued, Running, Completed, Failed, and Expired export lifecycle; and
+- versioned, locale-independent ordinary and correction-history CSV schemas with the
+  privacy exclusions demonstrated in the schema explorer.
