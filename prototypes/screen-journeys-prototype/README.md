@@ -4,6 +4,17 @@
 
 This is a deliberately rough, read-only, dependency-free prototype. It compares three structural variants on one route, switchable with `?variant=A`, `?variant=B`, or `?variant=C`.
 
+## Outcome
+
+Variant A, **Context rail**, was selected from the User's direct reaction.
+
+- Each acting-role workspace lands on its journey map and uses nested journey and task-detail routes.
+- Desktop keeps the role's journeys in a persistent context rail while the selected route opens in the main stage with a short breadcrumb.
+- Small screens replace the rail with a journey drawer and compact bottom navigation; the task itself remains the primary surface.
+- The acting-role control stays pinned and explicit. Each role remembers its own last compatible route, while first use lands on that role's journey map.
+- A route owned by another role never opens under the current authority. It offers an explicit acting-role change or a safe return, preserving both roles' prior places.
+- User-wide settings remain outside the role-specific route tree, and relationship scope stays visible inside the active journey.
+
 - **A — Context rail:** journey routes stay visible in a compact desktop rail and mobile bottom bar; details open alongside the journey.
 - **B — Focused trail:** each journey becomes a full-width sequence with a breadcrumb/back trail; role and route controls stay in the header.
 - **C — Route canvas:** the journey map remains the stable workspace surface while a route canvas opens as an overlay/sheet.
