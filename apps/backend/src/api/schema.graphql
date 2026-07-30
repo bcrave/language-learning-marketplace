@@ -13,8 +13,18 @@ enum UserRole {
 type User {
   id: ID!
   displayName: String!
+  interfaceLocale: InterfaceLocale
+  displayTimeZone: String
+}
+
+input SaveUserPreferencesInput {
+  actingRole: UserRole!
   interfaceLocale: InterfaceLocale!
   displayTimeZone: String!
+}
+
+type SaveUserPreferencesPayload {
+  user: User!
 }
 
 type StudentWorkspace {
@@ -24,4 +34,8 @@ type StudentWorkspace {
 
 type Query {
   studentWorkspace: StudentWorkspace!
+}
+
+type Mutation {
+  saveUserPreferences(input: SaveUserPreferencesInput!): SaveUserPreferencesPayload!
 }

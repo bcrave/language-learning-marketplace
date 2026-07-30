@@ -12,6 +12,7 @@
     "@auth0/auth0-react": "2.22.1",
     "@auth0/auth0-spa-js": "2.24.1",
     "@graphql-typed-document-node/core": "3.2.0",
+    "@js-temporal/polyfill": "0.5.1",
     "@marketplace/core": "workspace:*",
     "graphql": "16.11.0",
     "react": "19.2.8",

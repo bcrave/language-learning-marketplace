@@ -1,6 +1,7 @@
 import { GraphQLResolveInfo } from 'graphql';
 export type Maybe<T> = T | null;
 export type InputMaybe<T> = Maybe<T>;
+export type RequireFields<T, K extends keyof T> = Omit<T, K> & { [P in K]-?: NonNullable<T[P]> };
 /** All built-in and custom scalars, mapped to their actual values */
 export type Scalars = {
   ID: { input: string; output: string; }
@@ -15,9 +16,30 @@ export enum InterfaceLocale {
   Es = 'ES'
 }
 
+export type Mutation = {
+  __typename?: 'Mutation';
+  saveUserPreferences: SaveUserPreferencesPayload;
+};
+
+
+export type MutationSaveUserPreferencesArgs = {
+  input: SaveUserPreferencesInput;
+};
+
 export type Query = {
   __typename?: 'Query';
   studentWorkspace: StudentWorkspace;
+};
+
+export type SaveUserPreferencesInput = {
+  actingRole: UserRole;
+  displayTimeZone: Scalars['String']['input'];
+  interfaceLocale: InterfaceLocale;
+};
+
+export type SaveUserPreferencesPayload = {
+  __typename?: 'SaveUserPreferencesPayload';
+  user: User;
 };
 
 export type StudentWorkspace = {
@@ -29,9 +51,9 @@ export type StudentWorkspace = {
 export type User = {
   __typename?: 'User';
   displayName: Scalars['String']['output'];
-  displayTimeZone: Scalars['String']['output'];
+  displayTimeZone?: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
-  interfaceLocale: InterfaceLocale;
+  interfaceLocale?: Maybe<InterfaceLocale>;
 };
 
 export enum UserRole {
@@ -117,7 +139,10 @@ export type ResolversTypes = {
   Boolean: ResolverTypeWrapper<Scalars['Boolean']['output']>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
   InterfaceLocale: InterfaceLocale;
+  Mutation: ResolverTypeWrapper<Record<PropertyKey, never>>;
   Query: ResolverTypeWrapper<Record<PropertyKey, never>>;
+  SaveUserPreferencesInput: SaveUserPreferencesInput;
+  SaveUserPreferencesPayload: ResolverTypeWrapper<SaveUserPreferencesPayload>;
   String: ResolverTypeWrapper<Scalars['String']['output']>;
   StudentWorkspace: ResolverTypeWrapper<StudentWorkspace>;
   User: ResolverTypeWrapper<User>;
@@ -128,14 +153,25 @@ export type ResolversTypes = {
 export type ResolversParentTypes = {
   Boolean: Scalars['Boolean']['output'];
   ID: Scalars['ID']['output'];
+  Mutation: Record<PropertyKey, never>;
   Query: Record<PropertyKey, never>;
+  SaveUserPreferencesInput: SaveUserPreferencesInput;
+  SaveUserPreferencesPayload: SaveUserPreferencesPayload;
   String: Scalars['String']['output'];
   StudentWorkspace: StudentWorkspace;
   User: User;
 };
 
+export type MutationResolvers<ContextType = any, ParentType extends ResolversParentTypes['Mutation'] = ResolversParentTypes['Mutation']> = {
+  saveUserPreferences?: Resolver<ResolversTypes['SaveUserPreferencesPayload'], ParentType, ContextType, RequireFields<MutationSaveUserPreferencesArgs, 'input'>>;
+};
+
 export type QueryResolvers<ContextType = any, ParentType extends ResolversParentTypes['Query'] = ResolversParentTypes['Query']> = {
   studentWorkspace?: Resolver<ResolversTypes['StudentWorkspace'], ParentType, ContextType>;
+};
+
+export type SaveUserPreferencesPayloadResolvers<ContextType = any, ParentType extends ResolversParentTypes['SaveUserPreferencesPayload'] = ResolversParentTypes['SaveUserPreferencesPayload']> = {
+  user?: Resolver<ResolversTypes['User'], ParentType, ContextType>;
 };
 
 export type StudentWorkspaceResolvers<ContextType = any, ParentType extends ResolversParentTypes['StudentWorkspace'] = ResolversParentTypes['StudentWorkspace']> = {
@@ -145,13 +181,15 @@ export type StudentWorkspaceResolvers<ContextType = any, ParentType extends Reso
 
 export type UserResolvers<ContextType = any, ParentType extends ResolversParentTypes['User'] = ResolversParentTypes['User']> = {
   displayName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  displayTimeZone?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  displayTimeZone?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
-  interfaceLocale?: Resolver<ResolversTypes['InterfaceLocale'], ParentType, ContextType>;
+  interfaceLocale?: Resolver<Maybe<ResolversTypes['InterfaceLocale']>, ParentType, ContextType>;
 };
 
 export type Resolvers<ContextType = any> = {
+  Mutation?: MutationResolvers<ContextType>;
   Query?: QueryResolvers<ContextType>;
+  SaveUserPreferencesPayload?: SaveUserPreferencesPayloadResolvers<ContextType>;
   StudentWorkspace?: StudentWorkspaceResolvers<ContextType>;
   User?: UserResolvers<ContextType>;
 };

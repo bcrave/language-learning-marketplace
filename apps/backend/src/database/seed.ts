@@ -6,6 +6,7 @@ import { migrateDatabase } from "./migrate.js";
 
 export const DEMO_STUDENT_ID = "00000000-0000-4000-8000-000000000001";
 export const DEMO_ENGLISH_STUDENT_ID = "00000000-0000-4000-8000-000000000002";
+export const DEMO_FIRST_USE_STUDENT_ID = "00000000-0000-4000-8000-000000000003";
 
 export async function seedDemoStudents(db: Database) {
   const demoStudents = [
@@ -25,6 +26,14 @@ export async function seedDemoStudents(db: Database) {
       interface_locale: "en" as const,
       display_time_zone: "America/New_York",
     },
+    {
+      id: DEMO_FIRST_USE_STUDENT_ID,
+      identity_issuer: "https://fake.local/",
+      identity_subject: DEMO_FIRST_USE_STUDENT_ID,
+      display_name: "Jordan Lee",
+      interface_locale: null,
+      display_time_zone: null,
+    },
   ];
   for (const student of demoStudents) {
     await db
@@ -38,6 +47,7 @@ export async function seedDemoStudents(db: Database) {
     .values([
       { user_id: DEMO_STUDENT_ID, role: "STUDENT" },
       { user_id: DEMO_ENGLISH_STUDENT_ID, role: "STUDENT" },
+      { user_id: DEMO_FIRST_USE_STUDENT_ID, role: "STUDENT" },
     ])
     .onConflict((conflict) => conflict.columns(["user_id", "role"]).doNothing())
     .execute();

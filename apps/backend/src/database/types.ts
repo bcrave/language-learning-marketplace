@@ -7,8 +7,8 @@ export interface UsersTable {
   identity_issuer: string;
   identity_subject: string;
   display_name: string;
-  interface_locale: "en" | "es";
-  display_time_zone: string;
+  interface_locale: "en" | "es" | null;
+  display_time_zone: string | null;
   created_at: Generated<Date>;
 }
 
