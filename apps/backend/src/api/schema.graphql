@@ -1,0 +1,27 @@
+enum InterfaceLocale {
+  EN
+  ES
+}
+
+enum UserRole {
+  STUDENT
+  TEACHER
+  ORGANIZATION_MANAGER
+  PLATFORM_ADMINISTRATOR
+}
+
+type User {
+  id: ID!
+  displayName: String!
+  interfaceLocale: InterfaceLocale!
+  displayTimeZone: String!
+}
+
+type StudentWorkspace {
+  user: User!
+  roles: [UserRole!]!
+}
+
+type Query {
+  studentWorkspace: StudentWorkspace!
+}

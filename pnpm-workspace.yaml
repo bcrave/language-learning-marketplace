@@ -1,0 +1,15 @@
+packages:
+  - apps/*
+  - packages/*
+
+confirmModulesPurge: false
+allowBuilds:
+  browser-tabs-lock: true
+  cpu-features: true
+  esbuild: true
+  protobufjs: true
+  ssh2: true
+
+overrides:
+  "@emnapi/core": 2.0.0-alpha.3
+  "@emnapi/runtime": 2.0.0-alpha.3

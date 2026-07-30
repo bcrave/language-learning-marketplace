@@ -1,0 +1,11 @@
+query StudentWorkspace {
+  studentWorkspace {
+    user {
+      id
+      displayName
+      interfaceLocale
+      displayTimeZone
+    }
+    roles
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@marketplace/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite --host 127.0.0.1",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@apollo/client": "4.2.8",
+    "@auth0/auth0-react": "2.22.1",
+    "@auth0/auth0-spa-js": "2.24.1",
+    "@graphql-typed-document-node/core": "3.2.0",
+    "@marketplace/core": "workspace:*",
+    "graphql": "16.11.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-intl": "10.1.18",
+    "react-router-dom": "7.18.2",
+    "zod": "4.4.3"
+  }
+}
