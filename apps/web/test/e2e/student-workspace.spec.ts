@@ -46,6 +46,113 @@ test("the English Student journey is localized and accessible", async ({ page })
   await expectNoSeriousAccessibilityViolations(page);
 });
 
+test("a multi-role User switches explicitly and returns to each role's last place", async ({
+  page,
+}) => {
+  await page.goto("/student");
+  const actingRole = page.getByRole("combobox", { name: "Rol activo" });
+
+  await actingRole.selectOption("TEACHER");
+  await expect(page).toHaveURL(/\/teacher\/schedule$/);
+  await page.getByRole("link", { name: "Disponibilidad" }).click();
+  await expect(page).toHaveURL(/\/teacher\/availability$/);
+
+  await page.getByRole("combobox", { name: "Rol activo" }).selectOption("STUDENT");
+  await expect(page).toHaveURL(/\/student\/discover$/);
+  await page.getByRole("combobox", { name: "Rol activo" }).selectOption("TEACHER");
+  await expect(page).toHaveURL(/\/teacher\/availability$/);
+
+  await page.goto("/administration/operations");
+  await expect(
+    page.getByRole("heading", {
+      name: "¿Cambiar al espacio de administración de la plataforma?",
+    }),
+  ).toBeVisible();
+  await expectNoSeriousAccessibilityViolations(page);
+  await page.getByRole("button", { name: "Volver a docente" }).click();
+  await expect(page).toHaveURL(/\/teacher\/availability$/);
+
+  await page.goto("/administration/operations");
+  await page
+    .getByRole("button", { name: "Cambiar a administración de la plataforma" })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Operaciones del mercado" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("combobox", { name: "Rol activo" }),
+  ).toHaveValue("PLATFORM_ADMINISTRATOR");
+  await expect(page).toHaveURL(/\/administration\/operations$/);
+});
+
+test("a fresh deep link waits for an explicit authorized role choice", async ({
+  page,
+}) => {
+  await page.goto("/teacher/schedule");
+
+  await expect(
+    page.getByRole("heading", { name: "Change to the Teacher workspace?" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => window.sessionStorage.getItem("marketplace.actingRole")),
+  ).toBeNull();
+  await expectNoSeriousAccessibilityViolations(page);
+
+  await page.getByRole("button", { name: "Change to Teacher" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Horario docente" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => window.sessionStorage.getItem("marketplace.actingRole")),
+  ).toBe("TEACHER");
+});
+
+test("an unassigned deep-link role is denied and keeps the current role", async ({
+  page,
+}) => {
+  await page.route("**/graphql", async (route) => {
+    await route.continue({
+      headers: {
+        ...route.request().headers(),
+        "x-demo-user-id": ENGLISH_STUDENT_ID,
+      },
+    });
+  });
+  await page.goto("/student");
+  await expect(page.getByRole("heading", { name: "Hello, Alex Morgan" })).toBeVisible();
+
+  await page.goto("/teacher/schedule");
+  await page.getByRole("button", { name: "Change to Teacher" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "We couldn't open your workspace",
+  );
+  expect(
+    await page.evaluate(() => window.sessionStorage.getItem("marketplace.actingRole")),
+  ).toBe("STUDENT");
+  await page.getByRole("button", { name: "Return safely" }).click();
+  await expect(page).toHaveURL(/\/student\/discover$/);
+});
+
+test.describe("mobile role navigation", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("uses a journey drawer and compact bottom navigation", async ({ page }) => {
+    await page.goto("/student");
+
+    await expect(page.getByText("Menú de recorridos")).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "Menú de recorridos" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Descubrir sesiones de clase" }),
+    ).toHaveAttribute("aria-current", "page");
+    await expect(
+      page.getByRole("banner").getByText("Alcance: Tu propio aprendizaje"),
+    ).toBeVisible();
+    await expectNoSeriousAccessibilityViolations(page);
+  });
+});
+
 test.describe("first-use browser suggestions", () => {
   test.use({ locale: "es-MX", timezoneId: "Europe/Madrid" });
 

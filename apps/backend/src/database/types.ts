@@ -18,6 +18,23 @@ export interface RoleAssignmentsTable {
   created_at: Generated<Date>;
 }
 
+export type WorkspacePlace =
+  | "STUDENT_DISCOVERY"
+  | "STUDENT_LEARNING"
+  | "TEACHER_SCHEDULE"
+  | "TEACHER_AVAILABILITY"
+  | "ORGANIZATION_STUDENTS"
+  | "ORGANIZATION_REPORTS"
+  | "ADMINISTRATION_OPERATIONS"
+  | "ADMINISTRATION_PEOPLE";
+
+export interface RoleWorkspacePlacesTable {
+  user_id: string;
+  role: UserRole;
+  place: WorkspacePlace;
+  updated_at: Generated<Date>;
+}
+
 export interface AuditEntriesTable {
   id: Generated<string>;
   actor_user_id: string;
@@ -39,6 +56,7 @@ export interface SchemaMigrationsTable {
 export interface DatabaseSchema {
   users: UsersTable;
   role_assignments: RoleAssignmentsTable;
+  role_workspace_places: RoleWorkspacePlacesTable;
   audit_entries: AuditEntriesTable;
   schema_migrations: SchemaMigrationsTable;
 }

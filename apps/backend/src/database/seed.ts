@@ -46,6 +46,9 @@ export async function seedDemoStudents(db: Database) {
     .insertInto("role_assignments")
     .values([
       { user_id: DEMO_STUDENT_ID, role: "STUDENT" },
+      { user_id: DEMO_STUDENT_ID, role: "TEACHER" },
+      { user_id: DEMO_STUDENT_ID, role: "ORGANIZATION_MANAGER" },
+      { user_id: DEMO_STUDENT_ID, role: "PLATFORM_ADMINISTRATOR" },
       { user_id: DEMO_ENGLISH_STUDENT_ID, role: "STUDENT" },
       { user_id: DEMO_FIRST_USE_STUDENT_ID, role: "STUDENT" },
     ])

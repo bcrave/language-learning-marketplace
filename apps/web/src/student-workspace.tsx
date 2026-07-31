@@ -5,14 +5,22 @@ import {
 } from "@marketplace/core";
 import { Temporal } from "@js-temporal/polyfill";
 import { useMutation, useQuery } from "@apollo/client/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FormattedMessage, IntlProvider, useIntl } from "react-intl";
+import { useNavigate } from "react-router-dom";
 
 import {
+  RememberRoleWorkspacePlaceDocument,
+  RoleWorkspaceDocument,
   SaveUserPreferencesDocument,
   StudentWorkspaceDocument,
 } from "./generated/graphql.js";
-import type { InterfaceLocale as GraphQLInterfaceLocale } from "./generated/graphql.js";
+import type {
+  InterfaceLocale as GraphQLInterfaceLocale,
+  UserRole,
+  WorkspacePlace,
+  WorkspaceRelationshipScope,
+} from "./generated/graphql.js";
 import {
   suggestedDisplayTimeZone,
   suggestedInterfaceLocale,
@@ -28,6 +36,94 @@ const interfaceLocalesByGraphQL: Record<GraphQLInterfaceLocale, InterfaceLocale>
   ES: "es",
 };
 
+const rolePresentation: Record<
+  UserRole,
+  { labelId: string }
+> = {
+  STUDENT: {
+    labelId: "workspace.student",
+  },
+  TEACHER: {
+    labelId: "workspace.teacher",
+  },
+  ORGANIZATION_MANAGER: {
+    labelId: "workspace.organizationManager",
+  },
+  PLATFORM_ADMINISTRATOR: {
+    labelId: "workspace.platformAdministrator",
+  },
+};
+
+const relationshipScopeMessageIds: Record<WorkspaceRelationshipScope, string> = {
+  SELF: "workspace.scope.student",
+  ASSIGNED_CLASS_SESSIONS: "workspace.scope.teacher",
+  ASSIGNED_ORGANIZATION: "workspace.scope.organizationManager",
+  MARKETPLACE_WIDE: "workspace.scope.platformAdministrator",
+};
+
+export const workspacePlacePresentation: Record<
+  WorkspacePlace,
+  { labelId: string; path: string; role: UserRole; summaryId: string }
+> = {
+  STUDENT_DISCOVERY: {
+    labelId: "workspace.journey.student.discovery",
+    path: "/student/discover",
+    role: "STUDENT",
+    summaryId: "workspace.place.student.discovery",
+  },
+  STUDENT_LEARNING: {
+    labelId: "workspace.journey.student.learning",
+    path: "/student/learning",
+    role: "STUDENT",
+    summaryId: "workspace.place.student.learning",
+  },
+  TEACHER_SCHEDULE: {
+    labelId: "workspace.journey.teacher.schedule",
+    path: "/teacher/schedule",
+    role: "TEACHER",
+    summaryId: "workspace.place.teacher.schedule",
+  },
+  TEACHER_AVAILABILITY: {
+    labelId: "workspace.journey.teacher.availability",
+    path: "/teacher/availability",
+    role: "TEACHER",
+    summaryId: "workspace.place.teacher.availability",
+  },
+  ORGANIZATION_STUDENTS: {
+    labelId: "workspace.journey.organization.students",
+    path: "/organization/students",
+    role: "ORGANIZATION_MANAGER",
+    summaryId: "workspace.place.organization.students",
+  },
+  ORGANIZATION_REPORTS: {
+    labelId: "workspace.journey.organization.reports",
+    path: "/organization/reports",
+    role: "ORGANIZATION_MANAGER",
+    summaryId: "workspace.place.organization.reports",
+  },
+  ADMINISTRATION_OPERATIONS: {
+    labelId: "workspace.journey.administration.operations",
+    path: "/administration/operations",
+    role: "PLATFORM_ADMINISTRATOR",
+    summaryId: "workspace.place.administration.operations",
+  },
+  ADMINISTRATION_PEOPLE: {
+    labelId: "workspace.journey.administration.people",
+    path: "/administration/people",
+    role: "PLATFORM_ADMINISTRATOR",
+    summaryId: "workspace.place.administration.people",
+  },
+};
+
+type WorkspaceContext = {
+  actingRole: UserRole;
+  currentPlace: WorkspacePlace;
+  onPlaceSelected: (place: WorkspacePlace) => void;
+  onRoleSelected: (role: UserRole) => void;
+  relationshipScope: WorkspaceRelationshipScope;
+  rolePlaces: Array<{ place: WorkspacePlace; role: UserRole }>;
+};
+
 function WorkspaceStatus({
   messageId,
   role,
@@ -41,6 +137,25 @@ function WorkspaceStatus({
       <p role={role}>
         <FormattedMessage id={messageId} />
       </p>
+    </IntlProvider>
+  );
+}
+
+function WorkspaceAccessError({ onSafeReturn }: { onSafeReturn: () => void }) {
+  const savedLocale = window.sessionStorage.getItem("marketplace.locale");
+  const locale = savedLocale === "en" || savedLocale === "es"
+    ? savedLocale
+    : suggestedInterfaceLocale();
+  return (
+    <IntlProvider locale={locale} messages={interfaceMessages[locale]}>
+      <main className="deep-link-guard">
+        <p role="alert">
+          <FormattedMessage id="workspace.error" />
+        </p>
+        <button type="button" onClick={onSafeReturn}>
+          <FormattedMessage id="workspace.safeReturn" />
+        </button>
+      </main>
     </IntlProvider>
   );
 }
@@ -62,6 +177,7 @@ function WorkspaceContent({
   hasSavedPreferences,
   locale,
   onPreferencesSaved,
+  workspaceContext,
 }: {
   displayName: string;
   displayTimeZone: string;
@@ -71,6 +187,7 @@ function WorkspaceContent({
     displayTimeZone: string;
     locale: InterfaceLocale;
   }) => void;
+  workspaceContext?: WorkspaceContext;
 }) {
   const intl = useIntl();
   const [selectedLocale, setSelectedLocale] = useState(locale);
@@ -87,6 +204,16 @@ function WorkspaceContent({
     selectedLocalDate,
     displayTimeZone,
   );
+  const actingRole = workspaceContext?.actingRole ?? "STUDENT";
+  const currentPlace = workspaceContext?.currentPlace ?? "STUDENT_DISCOVERY";
+  const role = rolePresentation[actingRole];
+  const relationshipScopeId = workspaceContext
+    ? relationshipScopeMessageIds[workspaceContext.relationshipScope]
+    : "workspace.scope.student";
+  const place = workspacePlacePresentation[currentPlace];
+  const roleJourneys = Object.entries(workspacePlacePresentation).filter(
+    ([, candidate]) => candidate.role === actingRole,
+  ) as Array<[WorkspacePlace, (typeof workspacePlacePresentation)[WorkspacePlace]]>;
 
   useEffect(() => {
     const previousLanguage = document.documentElement.getAttribute("lang");
@@ -104,7 +231,7 @@ function WorkspaceContent({
       const result = await saveUserPreferences({
         variables: {
           input: {
-            actingRole: "STUDENT",
+            actingRole,
             displayTimeZone: selectedTimeZone,
             interfaceLocale: graphQLInterfaceLocales[selectedLocale],
           },
@@ -123,20 +250,82 @@ function WorkspaceContent({
     }
   }
 
+  const journeyLinks = () =>
+    roleJourneys.map(([journeyPlace, journey]) => (
+      <a
+        aria-current={journeyPlace === currentPlace ? "page" : undefined}
+        href={journey.path}
+        key={journeyPlace}
+        onClick={(event) => {
+          if (!workspaceContext) return;
+          event.preventDefault();
+          workspaceContext.onPlaceSelected(journeyPlace);
+        }}
+      >
+        {intl.formatMessage({ id: journey.labelId })}
+      </a>
+    ));
+
+  const actingRoleSelect = workspaceContext && (
+    <label className="role-select">
+      <span>{intl.formatMessage({ id: "workspace.actingRole" })}</span>
+      <select
+        aria-label={intl.formatMessage({ id: "workspace.actingRole" })}
+        value={actingRole}
+        onChange={(event) =>
+          workspaceContext.onRoleSelected(event.target.value as UserRole)
+        }
+      >
+        {workspaceContext.rolePlaces.map(({ role: assignedRole }) => (
+          <option key={assignedRole} value={assignedRole}>
+            {intl.formatMessage({ id: rolePresentation[assignedRole].labelId })}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+
   return (
     <div className="app-shell">
-      <aside className="context-rail" aria-label={intl.formatMessage({ id: "workspace.eyebrow" })}>
+      <aside className="context-rail" aria-label={intl.formatMessage({ id: role.labelId })}>
         <p className="brand">Lingua</p>
-        <p className="role-badge">{intl.formatMessage({ id: "workspace.eyebrow" })}</p>
+        <p className="role-badge">{intl.formatMessage({ id: role.labelId })}</p>
+        <p className="relationship-scope">
+          {intl.formatMessage(
+            { id: "workspace.relationshipScope" },
+            { scope: intl.formatMessage({ id: relationshipScopeId }) },
+          )}
+        </p>
+        {actingRoleSelect}
         <nav aria-label={intl.formatMessage({ id: "workspace.navigation" })}>
-          <a href="#home" aria-current="page">
+          {workspaceContext ? journeyLinks() : <a href="#home" aria-current="page">
             {intl.formatMessage({ id: "workspace.eyebrow" })}
-          </a>
+          </a>}
           <a href="#settings">{intl.formatMessage({ id: "workspace.settings" })}</a>
         </nav>
       </aside>
+      {workspaceContext && (
+        <header className="mobile-context">
+          <div className="mobile-context-summary">
+            <strong>{intl.formatMessage({ id: role.labelId })}</strong>
+            <span>
+              {intl.formatMessage(
+                { id: "workspace.relationshipScope" },
+                { scope: intl.formatMessage({ id: relationshipScopeId }) },
+              )}
+            </span>
+          </div>
+          <details>
+            <summary>{intl.formatMessage({ id: "workspace.mobileDrawer" })}</summary>
+            {actingRoleSelect}
+            <nav aria-label={intl.formatMessage({ id: "workspace.navigation" })}>
+              {journeyLinks()}
+            </nav>
+          </details>
+        </header>
+      )}
       <main id="home">
-        <p className="eyebrow">{intl.formatMessage({ id: "workspace.eyebrow" })}</p>
+        <p className="eyebrow">{intl.formatMessage({ id: role.labelId })}</p>
         <h1>
           {intl.formatMessage(
             { id: "workspace.greeting" },
@@ -148,8 +337,9 @@ function WorkspaceContent({
         </p>
         <section className="workspace-card" aria-labelledby="next-step-title">
           <h2 id="next-step-title">
-            {intl.formatMessage({ id: "workspace.nextStep" })}
+            {intl.formatMessage({ id: place.labelId })}
           </h2>
+          <p>{intl.formatMessage({ id: place.summaryId })}</p>
           <p>
             {intl.formatMessage(
               { id: "workspace.timeZone" },
@@ -266,18 +456,28 @@ function WorkspaceContent({
           )}
         </section>
       </main>
+      {workspaceContext && (
+        <nav
+          aria-label={intl.formatMessage({ id: "workspace.mobileDrawer" })}
+          className="mobile-bottom-nav"
+        >
+          {journeyLinks()}
+        </nav>
+      )}
     </div>
   );
 }
 
 function LoadedStudentWorkspace({
   user,
+  workspaceContext,
 }: {
   user: {
     displayName: string;
     displayTimeZone: string | null;
     interfaceLocale: GraphQLInterfaceLocale | null;
   };
+  workspaceContext?: WorkspaceContext;
 }) {
   const [savedPreferences, setSavedPreferences] = useState(() => ({
     displayTimeZone: user.displayTimeZone,
@@ -300,6 +500,7 @@ function LoadedStudentWorkspace({
         hasSavedPreferences={hasSavedPreferences}
         locale={locale}
         onPreferencesSaved={setSavedPreferences}
+        {...(workspaceContext ? { workspaceContext } : {})}
       />
     </IntlProvider>
   );
@@ -313,4 +514,107 @@ export function StudentWorkspaceScreen() {
 
   const user = data.studentWorkspace.user;
   return <LoadedStudentWorkspace user={user} />;
+}
+
+export function RoleWorkspaceScreen({
+  actingRole,
+  currentPlace,
+  onAccessDenied,
+}: {
+  actingRole: UserRole;
+  currentPlace: WorkspacePlace;
+  onAccessDenied: () => void;
+}) {
+  const navigate = useNavigate();
+  const { data, error, loading } = useQuery(RoleWorkspaceDocument, {
+    fetchPolicy: "no-cache",
+    variables: { actingRole },
+  });
+  const [rememberPlace] = useMutation(RememberRoleWorkspacePlaceDocument);
+  const rememberingPlace = useRef<WorkspacePlace | null>(null);
+
+  useEffect(() => {
+    if (!data) return;
+    const workspace = data.roleWorkspace;
+    window.sessionStorage.setItem("marketplace.actingRole", actingRole);
+    if (workspace.user.interfaceLocale) {
+      window.sessionStorage.setItem(
+        "marketplace.locale",
+        interfaceLocalesByGraphQL[workspace.user.interfaceLocale],
+      );
+    }
+    window.sessionStorage.setItem(
+      "marketplace.rolePaths",
+      JSON.stringify(
+        Object.fromEntries(
+          workspace.rolePlaces.map(({ place, role }) => [
+            role,
+            workspacePlacePresentation[place].path,
+          ]),
+        ),
+      ),
+    );
+    const rememberedPlace = workspace.rolePlaces.find(
+      ({ role }) => role === actingRole,
+    )?.place;
+    const currentPath = workspacePlacePresentation[currentPlace].path;
+    if (
+      rememberedPlace !== currentPlace &&
+      rememberingPlace.current !== currentPlace
+    ) {
+      rememberingPlace.current = currentPlace;
+      void rememberPlace({
+        variables: { input: { actingRole, place: currentPlace } },
+      }).then(() => {
+        const rolePaths = JSON.parse(
+          window.sessionStorage.getItem("marketplace.rolePaths") ?? "{}",
+        ) as Record<string, string>;
+        rolePaths[actingRole] = currentPath;
+        window.sessionStorage.setItem(
+          "marketplace.rolePaths",
+          JSON.stringify(rolePaths),
+        );
+      });
+    }
+  }, [actingRole, currentPlace, data, rememberPlace]);
+
+  if (loading) return <WorkspaceStatus messageId="workspace.loading" role="status" />;
+  if (error || !data) return <WorkspaceAccessError onSafeReturn={onAccessDenied} />;
+
+  const workspace = data.roleWorkspace;
+  const rolePlaces = workspace.rolePlaces;
+  return (
+    <LoadedStudentWorkspace
+      user={workspace.user}
+      workspaceContext={{
+        actingRole,
+        currentPlace,
+        relationshipScope: workspace.relationshipScope,
+        rolePlaces,
+        onPlaceSelected: (place) => {
+          rememberingPlace.current = place;
+          void rememberPlace({
+            variables: { input: { actingRole, place } },
+          }).then(() => {
+            const rolePaths = JSON.parse(
+              window.sessionStorage.getItem("marketplace.rolePaths") ?? "{}",
+            ) as Record<string, string>;
+            rolePaths[actingRole] = workspacePlacePresentation[place].path;
+            window.sessionStorage.setItem(
+              "marketplace.rolePaths",
+              JSON.stringify(rolePaths),
+            );
+            navigate(workspacePlacePresentation[place].path);
+          });
+        },
+        onRoleSelected: (selectedRole) => {
+          const remembered = rolePlaces.find(({ role }) => role === selectedRole);
+          if (!remembered) return;
+          navigate(workspacePlacePresentation[remembered.place].path, {
+            state: { explicitRole: selectedRole },
+          });
+        },
+      }}
+    />
+  );
 }

@@ -18,7 +18,13 @@ export enum InterfaceLocale {
 
 export type Mutation = {
   __typename?: 'Mutation';
+  rememberRoleWorkspacePlace: RolePlace;
   saveUserPreferences: SaveUserPreferencesPayload;
+};
+
+
+export type MutationRememberRoleWorkspacePlaceArgs = {
+  input: RememberRoleWorkspacePlaceInput;
 };
 
 
@@ -28,7 +34,32 @@ export type MutationSaveUserPreferencesArgs = {
 
 export type Query = {
   __typename?: 'Query';
+  roleWorkspace: RoleWorkspace;
   studentWorkspace: StudentWorkspace;
+};
+
+
+export type QueryRoleWorkspaceArgs = {
+  actingRole: UserRole;
+};
+
+export type RememberRoleWorkspacePlaceInput = {
+  actingRole: UserRole;
+  place: WorkspacePlace;
+};
+
+export type RolePlace = {
+  __typename?: 'RolePlace';
+  place: WorkspacePlace;
+  role: UserRole;
+};
+
+export type RoleWorkspace = {
+  __typename?: 'RoleWorkspace';
+  actingRole: UserRole;
+  relationshipScope: WorkspaceRelationshipScope;
+  rolePlaces: Array<RolePlace>;
+  user: User;
 };
 
 export type SaveUserPreferencesInput = {
@@ -61,6 +92,24 @@ export enum UserRole {
   PlatformAdministrator = 'PLATFORM_ADMINISTRATOR',
   Student = 'STUDENT',
   Teacher = 'TEACHER'
+}
+
+export enum WorkspacePlace {
+  AdministrationOperations = 'ADMINISTRATION_OPERATIONS',
+  AdministrationPeople = 'ADMINISTRATION_PEOPLE',
+  OrganizationReports = 'ORGANIZATION_REPORTS',
+  OrganizationStudents = 'ORGANIZATION_STUDENTS',
+  StudentDiscovery = 'STUDENT_DISCOVERY',
+  StudentLearning = 'STUDENT_LEARNING',
+  TeacherAvailability = 'TEACHER_AVAILABILITY',
+  TeacherSchedule = 'TEACHER_SCHEDULE'
+}
+
+export enum WorkspaceRelationshipScope {
+  AssignedClassSessions = 'ASSIGNED_CLASS_SESSIONS',
+  AssignedOrganization = 'ASSIGNED_ORGANIZATION',
+  MarketplaceWide = 'MARKETPLACE_WIDE',
+  Self = 'SELF'
 }
 
 
@@ -141,12 +190,17 @@ export type ResolversTypes = {
   InterfaceLocale: InterfaceLocale;
   Mutation: ResolverTypeWrapper<Record<PropertyKey, never>>;
   Query: ResolverTypeWrapper<Record<PropertyKey, never>>;
+  RememberRoleWorkspacePlaceInput: RememberRoleWorkspacePlaceInput;
+  RolePlace: ResolverTypeWrapper<RolePlace>;
+  RoleWorkspace: ResolverTypeWrapper<RoleWorkspace>;
   SaveUserPreferencesInput: SaveUserPreferencesInput;
   SaveUserPreferencesPayload: ResolverTypeWrapper<SaveUserPreferencesPayload>;
   String: ResolverTypeWrapper<Scalars['String']['output']>;
   StudentWorkspace: ResolverTypeWrapper<StudentWorkspace>;
   User: ResolverTypeWrapper<User>;
   UserRole: UserRole;
+  WorkspacePlace: WorkspacePlace;
+  WorkspaceRelationshipScope: WorkspaceRelationshipScope;
 };
 
 /** Mapping between all available schema types and the resolvers parents */
@@ -155,6 +209,9 @@ export type ResolversParentTypes = {
   ID: Scalars['ID']['output'];
   Mutation: Record<PropertyKey, never>;
   Query: Record<PropertyKey, never>;
+  RememberRoleWorkspacePlaceInput: RememberRoleWorkspacePlaceInput;
+  RolePlace: RolePlace;
+  RoleWorkspace: RoleWorkspace;
   SaveUserPreferencesInput: SaveUserPreferencesInput;
   SaveUserPreferencesPayload: SaveUserPreferencesPayload;
   String: Scalars['String']['output'];
@@ -163,11 +220,25 @@ export type ResolversParentTypes = {
 };
 
 export type MutationResolvers<ContextType = any, ParentType extends ResolversParentTypes['Mutation'] = ResolversParentTypes['Mutation']> = {
+  rememberRoleWorkspacePlace?: Resolver<ResolversTypes['RolePlace'], ParentType, ContextType, RequireFields<MutationRememberRoleWorkspacePlaceArgs, 'input'>>;
   saveUserPreferences?: Resolver<ResolversTypes['SaveUserPreferencesPayload'], ParentType, ContextType, RequireFields<MutationSaveUserPreferencesArgs, 'input'>>;
 };
 
 export type QueryResolvers<ContextType = any, ParentType extends ResolversParentTypes['Query'] = ResolversParentTypes['Query']> = {
+  roleWorkspace?: Resolver<ResolversTypes['RoleWorkspace'], ParentType, ContextType, RequireFields<QueryRoleWorkspaceArgs, 'actingRole'>>;
   studentWorkspace?: Resolver<ResolversTypes['StudentWorkspace'], ParentType, ContextType>;
+};
+
+export type RolePlaceResolvers<ContextType = any, ParentType extends ResolversParentTypes['RolePlace'] = ResolversParentTypes['RolePlace']> = {
+  place?: Resolver<ResolversTypes['WorkspacePlace'], ParentType, ContextType>;
+  role?: Resolver<ResolversTypes['UserRole'], ParentType, ContextType>;
+};
+
+export type RoleWorkspaceResolvers<ContextType = any, ParentType extends ResolversParentTypes['RoleWorkspace'] = ResolversParentTypes['RoleWorkspace']> = {
+  actingRole?: Resolver<ResolversTypes['UserRole'], ParentType, ContextType>;
+  relationshipScope?: Resolver<ResolversTypes['WorkspaceRelationshipScope'], ParentType, ContextType>;
+  rolePlaces?: Resolver<Array<ResolversTypes['RolePlace']>, ParentType, ContextType>;
+  user?: Resolver<ResolversTypes['User'], ParentType, ContextType>;
 };
 
 export type SaveUserPreferencesPayloadResolvers<ContextType = any, ParentType extends ResolversParentTypes['SaveUserPreferencesPayload'] = ResolversParentTypes['SaveUserPreferencesPayload']> = {
@@ -189,6 +260,8 @@ export type UserResolvers<ContextType = any, ParentType extends ResolversParentT
 export type Resolvers<ContextType = any> = {
   Mutation?: MutationResolvers<ContextType>;
   Query?: QueryResolvers<ContextType>;
+  RolePlace?: RolePlaceResolvers<ContextType>;
+  RoleWorkspace?: RoleWorkspaceResolvers<ContextType>;
   SaveUserPreferencesPayload?: SaveUserPreferencesPayloadResolvers<ContextType>;
   StudentWorkspace?: StudentWorkspaceResolvers<ContextType>;
   User?: UserResolvers<ContextType>;

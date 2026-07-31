@@ -10,6 +10,30 @@ query StudentWorkspace {
   }
 }
 
+query RoleWorkspace($actingRole: UserRole!) {
+  roleWorkspace(actingRole: $actingRole) {
+    actingRole
+    relationshipScope
+    user {
+      id
+      displayName
+      interfaceLocale
+      displayTimeZone
+    }
+    rolePlaces {
+      role
+      place
+    }
+  }
+}
+
+mutation RememberRoleWorkspacePlace($input: RememberRoleWorkspacePlaceInput!) {
+  rememberRoleWorkspacePlace(input: $input) {
+    role
+    place
+  }
+}
+
 mutation SaveUserPreferences($input: SaveUserPreferencesInput!) {
   saveUserPreferences(input: $input) {
     user {

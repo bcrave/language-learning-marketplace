@@ -1,8 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const databaseUrl =
-  process.env.TEST_DATABASE_URL ??
-  "postgres://marketplace:marketplace@127.0.0.1:5433/marketplace";
+const databaseUrl = process.env.TEST_DATABASE_URL;
+const databaseEnvironment = databaseUrl
+  ? `DATABASE_URL=${databaseUrl}`
+  : "DATABASE_URL=postgres://marketplace:marketplace@127.0.0.1:5433/marketplace E2E_USE_TESTCONTAINERS=true";
 
 export default defineConfig({
   testDir: "./apps/web/test/e2e",
@@ -21,7 +22,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: `DATABASE_URL=${databaseUrl} AUTH_MODE=fake NODE_ENV=test API_PORT=4000 pnpm --filter @marketplace/backend dev:api`,
+      command: `${databaseEnvironment} AUTH_MODE=fake NODE_ENV=test API_PORT=4000 pnpm --filter @marketplace/backend dev:test-api`,
       port: 4000,
       reuseExistingServer: !process.env.CI,
     },

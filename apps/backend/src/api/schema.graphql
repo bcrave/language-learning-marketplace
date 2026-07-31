@@ -10,6 +10,24 @@ enum UserRole {
   PLATFORM_ADMINISTRATOR
 }
 
+enum WorkspacePlace {
+  STUDENT_DISCOVERY
+  STUDENT_LEARNING
+  TEACHER_SCHEDULE
+  TEACHER_AVAILABILITY
+  ORGANIZATION_STUDENTS
+  ORGANIZATION_REPORTS
+  ADMINISTRATION_OPERATIONS
+  ADMINISTRATION_PEOPLE
+}
+
+enum WorkspaceRelationshipScope {
+  SELF
+  ASSIGNED_CLASS_SESSIONS
+  ASSIGNED_ORGANIZATION
+  MARKETPLACE_WIDE
+}
+
 type User {
   id: ID!
   displayName: String!
@@ -23,6 +41,11 @@ input SaveUserPreferencesInput {
   displayTimeZone: String!
 }
 
+input RememberRoleWorkspacePlaceInput {
+  actingRole: UserRole!
+  place: WorkspacePlace!
+}
+
 type SaveUserPreferencesPayload {
   user: User!
 }
@@ -32,10 +55,24 @@ type StudentWorkspace {
   roles: [UserRole!]!
 }
 
+type RolePlace {
+  role: UserRole!
+  place: WorkspacePlace!
+}
+
+type RoleWorkspace {
+  actingRole: UserRole!
+  relationshipScope: WorkspaceRelationshipScope!
+  user: User!
+  rolePlaces: [RolePlace!]!
+}
+
 type Query {
+  roleWorkspace(actingRole: UserRole!): RoleWorkspace!
   studentWorkspace: StudentWorkspace!
 }
 
 type Mutation {
+  rememberRoleWorkspacePlace(input: RememberRoleWorkspacePlaceInput!): RolePlace!
   saveUserPreferences(input: SaveUserPreferencesInput!): SaveUserPreferencesPayload!
 }
