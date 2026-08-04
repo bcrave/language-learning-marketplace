@@ -520,11 +520,13 @@ export function RoleWorkspaceScreen({
   actingRole,
   currentPlace,
   onAccessDenied,
+  onRoleAuthorized,
   preferRememberedPlace = false,
 }: {
   actingRole: UserRole;
   currentPlace: WorkspacePlace;
   onAccessDenied: () => void;
+  onRoleAuthorized: () => void;
   preferRememberedPlace?: boolean;
 }) {
   const navigate = useNavigate();
@@ -570,6 +572,7 @@ export function RoleWorkspaceScreen({
         ),
       ),
     );
+    onRoleAuthorized();
     const rememberedPlace = workspace.rolePlaces.find(
       ({ role }) => role === actingRole,
     )?.place;
@@ -592,6 +595,7 @@ export function RoleWorkspaceScreen({
     currentPlace,
     data,
     navigate,
+    onRoleAuthorized,
     preferRememberedPlace,
     rememberAndCachePlace,
   ]);

@@ -1,7 +1,7 @@
 import type { ApolloClient } from "@apollo/client";
 import { ApolloProvider } from "@apollo/client/react";
 import { interfaceMessages, type InterfaceLocale } from "@marketplace/core";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { createIntl } from "react-intl";
 import {
   createBrowserRouter,
@@ -82,6 +82,10 @@ function GuardedWorkspaceRoute({
     confirmedRole === actingRole ||
     explicitRole === actingRole ||
     storedRole === actingRole;
+  const consumeExplicitRole = useCallback(() => {
+    if (explicitRole !== actingRole) return;
+    navigate(location.pathname, { replace: true, state: null });
+  }, [actingRole, explicitRole, location.pathname, navigate]);
 
   if (!confirmed && storedRole !== actingRole) {
     const returnRole = storedRole ?? "STUDENT";
@@ -133,6 +137,7 @@ function GuardedWorkspaceRoute({
     <RoleWorkspaceScreen
       actingRole={actingRole}
       currentPlace={place}
+      onRoleAuthorized={consumeExplicitRole}
       preferRememberedPlace={preferRememberedPlace}
       onAccessDenied={() =>
         navigate(storedRole ? rememberedPath(storedRole) : "/student", {
