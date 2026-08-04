@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@graphql-tools/schema": "10.0.38",
+    "@js-temporal/polyfill": "0.5.1",
     "@marketplace/core": "workspace:*",
     "graphile-worker": "0.17.3",
     "graphql": "16.11.0",

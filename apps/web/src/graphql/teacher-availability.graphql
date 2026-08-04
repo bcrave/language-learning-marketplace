@@ -1,0 +1,36 @@
+query TeacherAvailability {
+  teacherAvailability {
+    timeZone
+    weeklyRanges { id weekday startLocalTime endLocalTime effectiveFrom effectiveUntil timeZone }
+    exceptions { id startsAtLocal endsAtLocal startsAt endsAt timeZone }
+  }
+}
+
+mutation SaveTeacherAvailabilityRange($input: SaveTeacherAvailabilityRangeInput!) {
+  saveTeacherAvailabilityRange(input: $input) {
+    ... on SaveTeacherAvailabilityRangeSuccess { range { id weekday startLocalTime endLocalTime effectiveFrom effectiveUntil timeZone } }
+    ... on TeacherAvailabilityValidationError { code message }
+  }
+}
+
+mutation AddAvailabilityException($input: AddAvailabilityExceptionInput!) {
+  addAvailabilityException(input: $input) {
+    ... on AddAvailabilityExceptionSuccess { exception { id startsAtLocal endsAtLocal startsAt endsAt timeZone } }
+    ... on AvailabilityExceptionSessionConflict { code message classSessionIds absenceRequestPath }
+    ... on TeacherAvailabilityValidationError { code message }
+  }
+}
+
+mutation EndTeacherAvailabilityRange($input: EndTeacherAvailabilityRangeInput!) {
+  endTeacherAvailabilityRange(input: $input) {
+    ... on EndTeacherAvailabilityRangeSuccess { range { id weekday startLocalTime endLocalTime effectiveFrom effectiveUntil timeZone } }
+    ... on TeacherAvailabilityValidationError { code message }
+  }
+}
+
+mutation RemoveAvailabilityException($input: RemoveAvailabilityExceptionInput!) {
+  removeAvailabilityException(input: $input) {
+    ... on RemoveAvailabilityExceptionSuccess { exceptionId }
+    ... on TeacherAvailabilityValidationError { code message }
+  }
+}

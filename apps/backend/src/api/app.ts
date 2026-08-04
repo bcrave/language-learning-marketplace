@@ -37,6 +37,16 @@ import {
   saveLocalizedTopic,
 } from "../curriculum/curriculum-service.js";
 import {
+  addAvailabilityException,
+  endTeacherAvailabilityRange,
+  loadTeacherAvailability,
+  previewTeacherAvailability,
+  removeAvailabilityException,
+  saveTeacherAvailabilityRange,
+  teacherFor,
+  type Weekday,
+} from "../teacher-availability/teacher-availability-service.js";
+import {
   InterfaceLocale,
   type Resolvers,
   UserRole as GraphQLUserRole,
@@ -143,7 +153,26 @@ export function createApi(options: {
       ReviseLessonMaterialResult: { __resolveType: (value) => value.__typename! },
       GrantTeacherQualificationResult: { __resolveType: (value) => value.__typename! },
       RemoveTeacherQualificationResult: { __resolveType: (value) => value.__typename! },
+      SaveTeacherAvailabilityRangeResult: { __resolveType: (value) => value.__typename! },
+      AddAvailabilityExceptionResult: { __resolveType: (value) => value.__typename! },
+      EndTeacherAvailabilityRangeResult: { __resolveType: (value) => value.__typename! },
+      RemoveAvailabilityExceptionResult: { __resolveType: (value) => value.__typename! },
       Query: {
+        teacherAvailability: async (_parent, _arguments, context) => {
+          const teacher = await authenticateTeacher(context, "teacher-availability.read");
+          return graphQLResult(await loadTeacherAvailability(context.db, teacher));
+        },
+        teacherAvailabilityPreview: async (_parent, { localDates }, context) => {
+          const teacher = await authenticateTeacher(context, "teacher-availability.read");
+          if (localDates.length > 31) {
+            throw createGraphQLError("At most 31 local dates may be previewed", { extensions: { code: "BAD_USER_INPUT" } });
+          }
+          try {
+            return graphQLResult(await previewTeacherAvailability(context.db, teacher, localDates));
+          } catch {
+            throw createGraphQLError("Every preview date must be a valid calendar date", { extensions: { code: "BAD_USER_INPUT" } });
+          }
+        },
         administrationCurriculum: async (_parent, { locale }, context) => {
           const administrator = await authenticateAdministrator(context, "curriculum.read");
           void administrator;
@@ -271,6 +300,26 @@ export function createApi(options: {
         },
       },
       Mutation: {
+        saveTeacherAvailabilityRange: async (_parent, { input }, context) => {
+          const teacher = await authenticateTeacher(context, "teacher-availability.changed");
+          return graphQLResult(await auditedTeacherMutation(context, teacher, "teacher-availability.changed", () =>
+            saveTeacherAvailabilityRange(context.db, teacher, { ...input, weekday: input.weekday as Weekday }, context.correlationId)));
+        },
+        addAvailabilityException: async (_parent, { input }, context) => {
+          const teacher = await authenticateTeacher(context, "availability-exception.changed");
+          return graphQLResult(await auditedTeacherMutation(context, teacher, "availability-exception.changed", () =>
+            addAvailabilityException(context.db, teacher, input, context.correlationId)));
+        },
+        endTeacherAvailabilityRange: async (_parent, { input }, context) => {
+          const teacher = await authenticateTeacher(context, "teacher-availability.ended");
+          return graphQLResult(await auditedTeacherMutation(context, teacher, "teacher-availability.ended", () =>
+            endTeacherAvailabilityRange(context.db, teacher, input, context.correlationId)));
+        },
+        removeAvailabilityException: async (_parent, { input }, context) => {
+          const teacher = await authenticateTeacher(context, "availability-exception.removed");
+          return graphQLResult(await auditedTeacherMutation(context, teacher, "availability-exception.removed", () =>
+            removeAvailabilityException(context.db, teacher, input, context.correlationId)));
+        },
         createCourse: async (_parent, { input }, context) => {
           const administrator = await authenticateAdministrator(context, "course.created");
           return graphQLResult(await idempotentAdministrationMutation(context, administrator, "course.created", input.idempotencyKey, input, (transaction) => createCourse(transaction, administrator, input as unknown as Parameters<typeof createCourse>[2], context.correlationId)));
@@ -505,6 +554,44 @@ export function createApi(options: {
       throw createGraphQLError("The Platform Administrator Role Assignment is required", { extensions: { code: "FORBIDDEN" } });
     }
     return result.administrator;
+  }
+
+  async function authenticateTeacher(context: ApiContext, operation: string) {
+    const identity = await context.authenticator.authenticate(context.request);
+    if (!identity) {
+      throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+    }
+    const result = await teacherFor(context.db, identity, context.correlationId, operation);
+    if (result.status === "UNKNOWN_USER") {
+      throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+    }
+    if (result.status === "ROLE_REQUIRED") {
+      throw createGraphQLError("The Teacher Role Assignment is required", { extensions: { code: "FORBIDDEN" } });
+    }
+    return result.teacher;
+  }
+
+  async function auditedTeacherMutation<T>(
+    context: ApiContext,
+    teacher: { id: string },
+    operation: string,
+    perform: () => Promise<T>,
+  ) {
+    try {
+      return await perform();
+    } catch (error) {
+      await context.db.insertInto("audit_entries").values({
+        actor_user_id: teacher.id,
+        acting_role: "TEACHER",
+        operation,
+        target_type: "TeacherAvailability",
+        target_id: teacher.id,
+        outcome: "FAILED",
+        reason_code: "UNEXPECTED_MUTATION_FAILURE",
+        correlation_id: context.correlationId,
+      }).execute();
+      throw error;
+    }
   }
 
   async function idempotentAdministrationMutation<T>(context: ApiContext, administrator: { id: string }, operation: string, idempotencyKey: string, input: object, perform: (transaction: Database) => Promise<T>): Promise<T | { __typename: "CurriculumConflict"; code: string; message: string }> {

@@ -31,6 +31,27 @@ enum WorkspaceRelationshipScope {
 enum CurriculumLevel { A1 A2 B1 B2 C1 C2 }
 enum LessonUnitState { ACTIVE RETIRED }
 enum LessonMaterialKind { STRUCTURED_TEXT HTTPS_REFERENCE }
+enum Weekday { MONDAY TUESDAY WEDNESDAY THURSDAY FRIDAY SATURDAY SUNDAY }
+enum LocalTimeDisambiguation { REJECT EARLIER LATER }
+
+type TeacherAvailabilityRange { id: ID!, weekday: Weekday!, startLocalTime: String!, endLocalTime: String!, effectiveFrom: String!, effectiveUntil: String, timeZone: String! }
+type AvailabilityException { id: ID!, startsAtLocal: String!, endsAtLocal: String!, startsAt: String!, endsAt: String!, timeZone: String! }
+type TeacherAvailability { timeZone: String!, weeklyRanges: [TeacherAvailabilityRange!]!, exceptions: [AvailabilityException!]! }
+type TeacherAvailabilityOccurrence { rangeId: ID!, localDate: String!, startLocalTime: String!, endLocalTime: String!, startsAt: String!, endsAt: String! }
+input SaveTeacherAvailabilityRangeInput { idempotencyKey: ID!, weekday: Weekday!, startLocalTime: String!, endLocalTime: String!, effectiveFrom: String!, timeZone: String! }
+input AddAvailabilityExceptionInput { idempotencyKey: ID!, startsAtLocal: String!, endsAtLocal: String!, startDisambiguation: LocalTimeDisambiguation!, endDisambiguation: LocalTimeDisambiguation! }
+input EndTeacherAvailabilityRangeInput { idempotencyKey: ID!, rangeId: ID!, effectiveUntil: String! }
+input RemoveAvailabilityExceptionInput { idempotencyKey: ID!, exceptionId: ID! }
+type SaveTeacherAvailabilityRangeSuccess { range: TeacherAvailabilityRange! }
+type AddAvailabilityExceptionSuccess { exception: AvailabilityException! }
+type EndTeacherAvailabilityRangeSuccess { range: TeacherAvailabilityRange! }
+type RemoveAvailabilityExceptionSuccess { exceptionId: ID! }
+type TeacherAvailabilityValidationError { code: String!, message: String! }
+type AvailabilityExceptionSessionConflict { code: String!, message: String!, classSessionIds: [ID!]!, absenceRequestPath: String! }
+union SaveTeacherAvailabilityRangeResult = SaveTeacherAvailabilityRangeSuccess | TeacherAvailabilityValidationError
+union AddAvailabilityExceptionResult = AddAvailabilityExceptionSuccess | TeacherAvailabilityValidationError | AvailabilityExceptionSessionConflict
+union EndTeacherAvailabilityRangeResult = EndTeacherAvailabilityRangeSuccess | TeacherAvailabilityValidationError
+union RemoveAvailabilityExceptionResult = RemoveAvailabilityExceptionSuccess | TeacherAvailabilityValidationError
 
 type Topic { key: String!, label: String!, labelEn: String!, labelEs: String! }
 type Course { id: ID!, key: String!, targetLanguage: String!, curriculumLevel: CurriculumLevel!, title: String!, summary: String!, lessonUnits: [LessonUnit!]! }
@@ -119,6 +140,8 @@ type RoleWorkspace {
 }
 
 type Query {
+  teacherAvailability: TeacherAvailability!
+  teacherAvailabilityPreview(localDates: [String!]!): [TeacherAvailabilityOccurrence!]!
   administrationCurriculum(locale: InterfaceLocale!): AdministrationCurriculum!
   publicTeacherProfile(teacherUserId: ID!, locale: InterfaceLocale!): PublicTeacherProfile
   roleWorkspace(actingRole: UserRole!): RoleWorkspace!
@@ -126,6 +149,10 @@ type Query {
 }
 
 type Mutation {
+  saveTeacherAvailabilityRange(input: SaveTeacherAvailabilityRangeInput!): SaveTeacherAvailabilityRangeResult!
+  addAvailabilityException(input: AddAvailabilityExceptionInput!): AddAvailabilityExceptionResult!
+  endTeacherAvailabilityRange(input: EndTeacherAvailabilityRangeInput!): EndTeacherAvailabilityRangeResult!
+  removeAvailabilityException(input: RemoveAvailabilityExceptionInput!): RemoveAvailabilityExceptionResult!
   createCourse(input: CreateCourseInput!): CreateCourseResult!
   reviseCourseDetails(input: UpdateCourseInput!): UpdateCourseResult!
   createLessonUnit(input: CreateLessonUnitInput!): CreateLessonUnitResult!
