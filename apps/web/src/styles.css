@@ -194,10 +194,52 @@ h1 {
   background: transparent;
 }
 
+.curriculum-admin {
+  margin-top: 1.5rem;
+  padding: clamp(1rem, 3vw, 2rem);
+  border: 1px solid #d8cfbd;
+  border-radius: 1rem;
+  background: #fffdf8;
+}
+
+.curriculum-admin > header,
+.curriculum-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(16rem, 1fr);
+  gap: 1.5rem;
+}
+
+.sample-badge,
+.state-badge {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  color: #173d2b;
+  background: #e7efe9;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.state-retired { color: #594f3f; background: #eee7da; }
+.course-card { margin-bottom: 1rem; padding: 1rem; border: 1px solid #ddd4c4; border-radius: 0.75rem; }
+.course-card h4 { margin: 0.2rem 0; }
+.course-meta { color: #4e554f; font-size: 0.85rem; font-weight: 800; }
+.admin-forms { display: grid; align-content: start; gap: 1rem; }
+.admin-forms form { display: grid; gap: 0.65rem; padding: 1rem; border-radius: 0.75rem; background: #f4efe5; }
+.admin-forms label { display: grid; gap: 0.25rem; font-weight: 700; }
+.admin-forms input, .admin-forms select, .admin-forms textarea { width: 100%; padding: 0.6rem; border: 1px solid #766f61; border-radius: 0.4rem; font: inherit; }
+.admin-forms fieldset { display: grid; gap: 0.35rem; border: 1px solid #bfb5a4; }
+.admin-forms .check-label { grid-template-columns: auto 1fr; align-items: center; }
+.admin-forms .check-label input { width: auto; }
+.text-button { padding: 0; border: 0; color: #7c2d12; background: transparent; text-decoration: underline; }
+
 @media (max-width: 700px) {
   .app-shell {
     grid-template-columns: 1fr;
   }
+
+  .curriculum-admin > header,
+  .curriculum-grid { grid-template-columns: 1fr; }
 
   .context-rail {
     display: none;

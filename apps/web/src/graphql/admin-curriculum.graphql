@@ -1,0 +1,102 @@
+query AdministrationCurriculum($locale: InterfaceLocale!) {
+  administrationCurriculum(locale: $locale) {
+    topics { key label labelEn labelEs }
+    courses {
+      id targetLanguage curriculumLevel title summary
+      lessonUnits { id title summary order state objectives topics { key label } materials { id kind title structuredContent httpsUrl publisher } }
+    }
+    teachers { id displayName pronouns profileImageUrl professionalBiography taughtLanguages qualifiedCurriculumLevels teachingTopics { key label } completedSessionCount }
+  }
+}
+
+mutation CreateCourse($input: CreateCourseInput!) {
+  createCourse(input: $input) {
+    __typename
+    ... on CreateCourseSuccess { course { id targetLanguage curriculumLevel title summary } }
+    ... on CurriculumConflict { code message }
+  }
+}
+
+mutation ReviseCourseDetails($input: UpdateCourseInput!) {
+  reviseCourseDetails(input: $input) {
+    __typename
+    ... on UpdateCourseSuccess { course { id title summary } }
+    ... on CurriculumConflict { code message }
+  }
+}
+
+mutation CreateLessonUnit($input: CreateLessonUnitInput!) {
+  createLessonUnit(input: $input) {
+    __typename
+    ... on CreateLessonUnitSuccess { lessonUnit { id title order state } }
+    ... on CurriculumConflict { code message }
+  }
+}
+
+mutation ReviseLessonUnitIdentity($input: UpdateLessonUnitInput!) {
+  reviseLessonUnitIdentity(input: $input) {
+    __typename
+    ... on UpdateLessonUnitSuccess { lessonUnit { id title summary objectives topics { key } } }
+    ... on InstructionalIdentityLocked { code lessonUnitId }
+    ... on CurriculumConflict { code message }
+  }
+}
+
+mutation PlaceLessonUnitInCourse($input: ReorderLessonUnitInput!) {
+  placeLessonUnitInCourse(input: $input) {
+    __typename
+    ... on ReorderLessonUnitSuccess { lessonUnit { id order } }
+    ... on CurriculumConflict { code message }
+  }
+}
+
+mutation RetireLessonUnit($input: RetireLessonUnitInput!) {
+  retireLessonUnit(input: $input) {
+    __typename
+    ... on RetireLessonUnitSuccess { lessonUnit { id state } }
+    ... on CurriculumConflict { code message }
+  }
+}
+
+mutation SaveLocalizedTopic($input: UpsertTopicInput!) {
+  saveLocalizedTopic(input: $input) { topic { key label labelEn labelEs } }
+}
+
+mutation AddLessonMaterial($input: AddLessonMaterialInput!) {
+  addLessonMaterial(input: $input) {
+    __typename
+    ... on AddLessonMaterialSuccess { material { id kind title } }
+    ... on InvalidLessonMaterial { code message }
+    ... on CurriculumConflict { code message }
+  }
+}
+
+mutation ReviseLessonMaterial($input: ReviseLessonMaterialInput!) {
+  reviseLessonMaterial(input: $input) {
+    __typename
+    ... on ReviseLessonMaterialSuccess { material { id kind title structuredContent httpsUrl publisher } }
+    ... on InvalidLessonMaterial { code message }
+    ... on CurriculumConflict { code message }
+  }
+}
+
+mutation SaveTeacherProfile($input: SaveTeacherProfileInput!) {
+  saveTeacherProfile(input: $input) { teacherProfile { id displayName professionalBiography } }
+}
+
+mutation GrantTeacherQualification($input: ChangeTeacherQualificationInput!) {
+  grantTeacherQualification(input: $input) {
+    __typename
+    ... on ChangeTeacherQualificationSuccess { teacherProfile { id qualifiedCurriculumLevels } }
+    ... on CurriculumConflict { code message }
+  }
+}
+
+mutation RemoveTeacherQualification($input: ChangeTeacherQualificationInput!) {
+  removeTeacherQualification(input: $input) {
+    __typename
+    ... on ChangeTeacherQualificationSuccess { teacherProfile { id qualifiedCurriculumLevels } }
+    ... on TeacherQualificationRemovalBlocked { code classSessionIds }
+    ... on CurriculumConflict { code message }
+  }
+}

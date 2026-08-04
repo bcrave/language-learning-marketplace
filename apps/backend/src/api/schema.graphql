@@ -28,6 +28,57 @@ enum WorkspaceRelationshipScope {
   MARKETPLACE_WIDE
 }
 
+enum CurriculumLevel { A1 A2 B1 B2 C1 C2 }
+enum LessonUnitState { ACTIVE RETIRED }
+enum LessonMaterialKind { STRUCTURED_TEXT HTTPS_REFERENCE }
+
+type Topic { key: String!, label: String!, labelEn: String!, labelEs: String! }
+type Course { id: ID!, key: String!, targetLanguage: String!, curriculumLevel: CurriculumLevel!, title: String!, summary: String!, lessonUnits: [LessonUnit!]! }
+type LessonUnit { id: ID!, key: String!, courseId: ID!, title: String!, summary: String!, objectives: [String!]!, order: Int!, state: LessonUnitState!, topics: [Topic!]!, materials: [LessonMaterial!]! }
+type LessonMaterial { id: ID!, kind: LessonMaterialKind!, title: String!, structuredContent: String, httpsUrl: String, publisher: String }
+type TeacherQualification { targetLanguage: String!, curriculumLevel: CurriculumLevel! }
+type PublicTeacherProfile { id: ID!, displayName: String!, pronouns: String, profileImageUrl: String, professionalBiography: String!, taughtLanguages: [String!]!, qualifiedCurriculumLevels: [CurriculumLevel!]!, teachingTopics: [Topic!]!, completedSessionCount: Int! }
+type AdministrationCurriculum { courses: [Course!]!, topics: [Topic!]!, teachers: [PublicTeacherProfile!]! }
+
+input CreateCourseInput { idempotencyKey: ID!, targetLanguage: String!, curriculumLevel: CurriculumLevel!, title: String!, summary: String! }
+input UpdateCourseInput { courseId: ID!, title: String!, summary: String! }
+input CreateLessonUnitInput { idempotencyKey: ID!, courseId: ID!, title: String!, summary: String!, objectives: [String!]!, topicKeys: [String!]! }
+input UpdateLessonUnitInput { lessonUnitId: ID!, title: String!, summary: String!, objectives: [String!]!, topicKeys: [String!]! }
+input ReorderLessonUnitInput { lessonUnitId: ID!, order: Int! }
+input RetireLessonUnitInput { idempotencyKey: ID!, lessonUnitId: ID!, replacementLessonUnitId: ID }
+input UpsertTopicInput { idempotencyKey: ID!, key: String!, labelEn: String!, labelEs: String! }
+input StructuredTextBlockInput { type: String!, text: String, items: [String!], level: Int }
+input AddLessonMaterialInput { idempotencyKey: ID!, lessonUnitId: ID!, kind: LessonMaterialKind!, title: String!, structuredContent: [StructuredTextBlockInput!], httpsUrl: String, publisher: String }
+input ReviseLessonMaterialInput { idempotencyKey: ID!, materialId: ID!, kind: LessonMaterialKind!, title: String!, structuredContent: [StructuredTextBlockInput!], httpsUrl: String, publisher: String }
+input SaveTeacherProfileInput { idempotencyKey: ID!, teacherUserId: ID!, pronouns: String, profileImageUrl: String, professionalBiography: String!, topicKeys: [String!]! }
+input ChangeTeacherQualificationInput { idempotencyKey: ID!, teacherUserId: ID!, targetLanguage: String!, curriculumLevel: CurriculumLevel! }
+
+type CurriculumConflict { code: String!, message: String! }
+type InvalidLessonMaterial { code: String!, message: String! }
+type InstructionalIdentityLocked { code: String!, lessonUnitId: ID! }
+type TeacherQualificationRemovalBlocked { code: String!, classSessionIds: [ID!]! }
+type CreateCourseSuccess { course: Course! }
+type UpdateCourseSuccess { course: Course! }
+type CreateLessonUnitSuccess { lessonUnit: LessonUnit! }
+type UpdateLessonUnitSuccess { lessonUnit: LessonUnit! }
+type ReorderLessonUnitSuccess { lessonUnit: LessonUnit! }
+type RetireLessonUnitSuccess { lessonUnit: LessonUnit! }
+type UpsertTopicSuccess { topic: Topic! }
+type AddLessonMaterialSuccess { material: LessonMaterial! }
+type ReviseLessonMaterialSuccess { material: LessonMaterial! }
+type SaveTeacherProfileSuccess { teacherProfile: PublicTeacherProfile! }
+type ChangeTeacherQualificationSuccess { teacherProfile: PublicTeacherProfile! }
+union CreateCourseResult = CreateCourseSuccess | CurriculumConflict
+union UpdateCourseResult = UpdateCourseSuccess | CurriculumConflict
+union CreateLessonUnitResult = CreateLessonUnitSuccess | CurriculumConflict
+union UpdateLessonUnitResult = UpdateLessonUnitSuccess | InstructionalIdentityLocked | CurriculumConflict
+union ReorderLessonUnitResult = ReorderLessonUnitSuccess | CurriculumConflict
+union RetireLessonUnitResult = RetireLessonUnitSuccess | CurriculumConflict
+union AddLessonMaterialResult = AddLessonMaterialSuccess | InvalidLessonMaterial | CurriculumConflict
+union ReviseLessonMaterialResult = ReviseLessonMaterialSuccess | InvalidLessonMaterial | CurriculumConflict
+union GrantTeacherQualificationResult = ChangeTeacherQualificationSuccess | CurriculumConflict
+union RemoveTeacherQualificationResult = ChangeTeacherQualificationSuccess | TeacherQualificationRemovalBlocked | CurriculumConflict
+
 type User {
   id: ID!
   displayName: String!
@@ -68,11 +119,25 @@ type RoleWorkspace {
 }
 
 type Query {
+  administrationCurriculum(locale: InterfaceLocale!): AdministrationCurriculum!
+  publicTeacherProfile(teacherUserId: ID!, locale: InterfaceLocale!): PublicTeacherProfile
   roleWorkspace(actingRole: UserRole!): RoleWorkspace!
   studentWorkspace: StudentWorkspace!
 }
 
 type Mutation {
+  createCourse(input: CreateCourseInput!): CreateCourseResult!
+  reviseCourseDetails(input: UpdateCourseInput!): UpdateCourseResult!
+  createLessonUnit(input: CreateLessonUnitInput!): CreateLessonUnitResult!
+  reviseLessonUnitIdentity(input: UpdateLessonUnitInput!): UpdateLessonUnitResult!
+  placeLessonUnitInCourse(input: ReorderLessonUnitInput!): ReorderLessonUnitResult!
+  retireLessonUnit(input: RetireLessonUnitInput!): RetireLessonUnitResult!
+  saveLocalizedTopic(input: UpsertTopicInput!): UpsertTopicSuccess!
+  addLessonMaterial(input: AddLessonMaterialInput!): AddLessonMaterialResult!
+  reviseLessonMaterial(input: ReviseLessonMaterialInput!): ReviseLessonMaterialResult!
+  saveTeacherProfile(input: SaveTeacherProfileInput!): SaveTeacherProfileSuccess!
+  grantTeacherQualification(input: ChangeTeacherQualificationInput!): GrantTeacherQualificationResult!
+  removeTeacherQualification(input: ChangeTeacherQualificationInput!): RemoveTeacherQualificationResult!
   rememberRoleWorkspacePlace(input: RememberRoleWorkspacePlaceInput!): RolePlace!
   saveUserPreferences(input: SaveUserPreferencesInput!): SaveUserPreferencesPayload!
 }

@@ -22,7 +22,10 @@ describe("Interface Locale catalogs", () => {
     const englishKeys = Object.keys(interfaceMessages.en).sort();
     expect(Object.keys(interfaceMessages.es).sort()).toEqual(englishKeys);
 
-    const webSource = await sourceText("apps/web/src");
-    expect(englishKeys.filter((key) => !webSource.includes(`"${key}"`))).toEqual([]);
+    const applicationSource = [
+      await sourceText("apps/web/src"),
+      await sourceText("apps/backend/src"),
+    ].join("\n");
+    expect(englishKeys.filter((key) => !applicationSource.includes(`"${key}"`))).toEqual([]);
   });
 });

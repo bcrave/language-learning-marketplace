@@ -3,7 +3,7 @@ import { startPostgreSqlTemplate } from "@marketplace/test-support";
 import { parseAppConfig } from "../config.js";
 import { createDatabase } from "../database/database.js";
 import { migrateDatabase } from "../database/migrate.js";
-import { seedDemoStudents } from "../database/seed.js";
+import { seedDemoCurriculum, seedDemoStudents } from "../database/seed.js";
 
 const postgres = process.env.E2E_USE_TESTCONTAINERS === "true"
   ? await startPostgreSqlTemplate()
@@ -15,6 +15,7 @@ const db = createDatabase(config.DATABASE_URL);
 try {
   await migrateDatabase(db);
   await seedDemoStudents(db);
+  await seedDemoCurriculum(db);
 } finally {
   await db.destroy();
 }

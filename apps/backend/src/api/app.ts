@@ -9,6 +9,7 @@ import {
 } from "@marketplace/core";
 import { makeExecutableSchema } from "@graphql-tools/schema";
 import { createGraphQLError, createYoga } from "graphql-yoga";
+import { sql } from "kysely";
 
 import {
   loadRoleWorkspace,
@@ -18,6 +19,23 @@ import { createAuthenticator } from "../auth/create-authenticator.js";
 import type { AppConfig } from "../config.js";
 import type { Database } from "../database/database.js";
 import type { WorkspacePlace } from "../database/types.js";
+import {
+  addLessonMaterial,
+  administrationCurriculum,
+  administratorFor,
+  changeTeacherQualification,
+  createCourse,
+  createLessonUnit,
+  publicTeacherProfile,
+  recordCurriculumAudit,
+  reviseLessonMaterial,
+  retireLessonUnit,
+  placeLessonUnitInCourse,
+  saveTeacherProfile,
+  reviseLessonUnitIdentity,
+  reviseCourseDetails,
+  saveLocalizedTopic,
+} from "../curriculum/curriculum-service.js";
 import {
   InterfaceLocale,
   type Resolvers,
@@ -89,6 +107,10 @@ function graphQLInterfaceLocale(locale: "en" | "es" | null) {
   return locale === "es" ? InterfaceLocale.Es : InterfaceLocale.En;
 }
 
+function graphQLResult<T>(value: unknown): T {
+  return value as T;
+}
+
 export interface ApiContext {
   authenticator: Authenticator;
   correlationId: string;
@@ -111,7 +133,24 @@ export function createApi(options: {
   });
 
   const resolvers: Resolvers<ApiContext> = {
+      CreateCourseResult: { __resolveType: (value) => value.__typename! },
+      UpdateCourseResult: { __resolveType: (value) => value.__typename! },
+      CreateLessonUnitResult: { __resolveType: (value) => value.__typename! },
+      UpdateLessonUnitResult: { __resolveType: (value) => value.__typename! },
+      ReorderLessonUnitResult: { __resolveType: (value) => value.__typename! },
+      RetireLessonUnitResult: { __resolveType: (value) => value.__typename! },
+      AddLessonMaterialResult: { __resolveType: (value) => value.__typename! },
+      ReviseLessonMaterialResult: { __resolveType: (value) => value.__typename! },
+      GrantTeacherQualificationResult: { __resolveType: (value) => value.__typename! },
+      RemoveTeacherQualificationResult: { __resolveType: (value) => value.__typename! },
       Query: {
+        administrationCurriculum: async (_parent, { locale }, context) => {
+          const administrator = await authenticateAdministrator(context, "curriculum.read");
+          void administrator;
+          return graphQLResult(await administrationCurriculum(context.db, locale === InterfaceLocale.Es ? "es" : "en"));
+        },
+        publicTeacherProfile: async (_parent, { teacherUserId, locale }, context) =>
+          graphQLResult(await publicTeacherProfile(context.db, teacherUserId, locale === InterfaceLocale.Es ? "es" : "en")),
         roleWorkspace: async (
           _parent,
           { actingRole: requestedGraphQLRole },
@@ -232,6 +271,54 @@ export function createApi(options: {
         },
       },
       Mutation: {
+        createCourse: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "course.created");
+          return graphQLResult(await idempotentAdministrationMutation(context, administrator, "course.created", input.idempotencyKey, input, (transaction) => createCourse(transaction, administrator, input as unknown as Parameters<typeof createCourse>[2], context.correlationId)));
+        },
+        reviseCourseDetails: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "course.updated");
+          return graphQLResult(await auditedAdministrationMutation(context, administrator, "course.updated", () => reviseCourseDetails(context.db, administrator, input, context.correlationId)));
+        },
+        createLessonUnit: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "lesson-unit.created");
+          return graphQLResult(await idempotentAdministrationMutation(context, administrator, "lesson-unit.created", input.idempotencyKey, input, (transaction) => createLessonUnit(transaction, administrator, input as unknown as Parameters<typeof createLessonUnit>[2], context.correlationId)));
+        },
+        reviseLessonUnitIdentity: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "lesson-unit.updated");
+          return graphQLResult(await auditedAdministrationMutation(context, administrator, "lesson-unit.updated", () => reviseLessonUnitIdentity(context.db, administrator, input as unknown as Parameters<typeof reviseLessonUnitIdentity>[2], context.correlationId)));
+        },
+        placeLessonUnitInCourse: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "lesson-unit.reordered");
+          return graphQLResult(await auditedAdministrationMutation(context, administrator, "lesson-unit.reordered", () => placeLessonUnitInCourse(context.db, administrator, input, context.correlationId)));
+        },
+        retireLessonUnit: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "lesson-unit.retired");
+          return graphQLResult(await idempotentAdministrationMutation(context, administrator, "lesson-unit.retired", input.idempotencyKey, input, (transaction) => retireLessonUnit(transaction, administrator, input as unknown as Parameters<typeof retireLessonUnit>[2], context.correlationId)));
+        },
+        saveLocalizedTopic: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "topic.saved");
+          return graphQLResult(await idempotentAdministrationMutation(context, administrator, "topic.saved", input.idempotencyKey, input, (transaction) => saveLocalizedTopic(transaction, administrator, input, context.correlationId)));
+        },
+        addLessonMaterial: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "lesson-material.created");
+          return graphQLResult(await idempotentAdministrationMutation(context, administrator, "lesson-material.created", input.idempotencyKey, input, (transaction) => addLessonMaterial(transaction, administrator, input as unknown as Parameters<typeof addLessonMaterial>[2], context.correlationId)));
+        },
+        reviseLessonMaterial: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "lesson-material.revised");
+          return graphQLResult(await idempotentAdministrationMutation(context, administrator, "lesson-material.revised", input.idempotencyKey, input, (transaction) => reviseLessonMaterial(transaction, administrator, input as unknown as Parameters<typeof reviseLessonMaterial>[2], context.correlationId)));
+        },
+        saveTeacherProfile: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "teacher-profile.saved");
+          return graphQLResult(await idempotentAdministrationMutation(context, administrator, "teacher-profile.saved", input.idempotencyKey, input, (transaction) => saveTeacherProfile(transaction, administrator, input as unknown as Parameters<typeof saveTeacherProfile>[2], context.correlationId)));
+        },
+        grantTeacherQualification: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "teacher-qualification.granted");
+          return graphQLResult(await idempotentAdministrationMutation(context, administrator, "teacher-qualification.granted", input.idempotencyKey, input, (transaction) => changeTeacherQualification(transaction, administrator, input as unknown as Parameters<typeof changeTeacherQualification>[2], context.correlationId, "grant")));
+        },
+        removeTeacherQualification: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "teacher-qualification.removed");
+          return graphQLResult(await idempotentAdministrationMutation(context, administrator, "teacher-qualification.removed", input.idempotencyKey, input, (transaction) => changeTeacherQualification(transaction, administrator, input as unknown as Parameters<typeof changeTeacherQualification>[2], context.correlationId, "remove")));
+        },
         rememberRoleWorkspacePlace: async (
           _parent,
           { input },
@@ -395,6 +482,63 @@ export function createApi(options: {
         },
       },
   };
+
+  async function authenticateAdministrator(context: ApiContext, operation: string) {
+    const identity = await context.authenticator.authenticate(context.request);
+    if (!identity) {
+      throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+    }
+    const result = await administratorFor(context.db, identity);
+    if (result.status === "UNKNOWN_USER") {
+      throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+    }
+    if (result.status === "ROLE_REQUIRED") {
+      await recordCurriculumAudit(context.db, {
+        administratorId: result.userId!,
+        correlationId: context.correlationId,
+        operation,
+        targetType: "CurriculumAdministration",
+        targetId: result.userId,
+        outcome: "DENIED",
+        reasonCode: "PLATFORM_ADMINISTRATOR_ROLE_REQUIRED",
+      });
+      throw createGraphQLError("The Platform Administrator Role Assignment is required", { extensions: { code: "FORBIDDEN" } });
+    }
+    return result.administrator;
+  }
+
+  async function idempotentAdministrationMutation<T>(context: ApiContext, administrator: { id: string }, operation: string, idempotencyKey: string, input: object, perform: (transaction: Database) => Promise<T>): Promise<T | { __typename: "CurriculumConflict"; code: string; message: string }> {
+    const inputFingerprint = JSON.stringify(input);
+    try {
+      return await context.db.transaction().execute(async (transaction) => {
+        await sql`select pg_advisory_xact_lock(hashtextextended(${`${administrator.id}:${operation}:${idempotencyKey}`}, 0))`.execute(transaction);
+        await transaction.deleteFrom("mutation_idempotency_records").where("actor_user_id", "=", administrator.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).where("created_at", "<=", sql<Date>`now() - interval '7 days'`).execute();
+        const existing = await transaction.selectFrom("mutation_idempotency_records").select(["input_fingerprint", "outcome"]).where("actor_user_id", "=", administrator.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).executeTakeFirst();
+        if (existing) {
+          if (existing.input_fingerprint !== inputFingerprint) {
+            await recordCurriculumAudit(transaction, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType: "IdempotencyKey", targetId: administrator.id, outcome: "DENIED", reasonCode: "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_INPUT" });
+            return { __typename: "CurriculumConflict", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." };
+          }
+          return existing.outcome as T;
+        }
+        const outcome = await perform(transaction as Database);
+        await transaction.insertInto("mutation_idempotency_records").values({ actor_user_id: administrator.id, operation, idempotency_key: idempotencyKey, input_fingerprint: inputFingerprint, outcome: JSON.stringify(outcome as Record<string, unknown>) }).execute();
+        return outcome;
+      });
+    } catch (error) {
+      await recordCurriculumAudit(context.db, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType: "CurriculumAdministration", targetId: administrator.id, outcome: "FAILED", reasonCode: "UNEXPECTED_MUTATION_FAILURE" });
+      throw error;
+    }
+  }
+
+  async function auditedAdministrationMutation<T>(context: ApiContext, administrator: { id: string }, operation: string, perform: () => Promise<T>): Promise<T> {
+    try {
+      return await perform();
+    } catch (error) {
+      await recordCurriculumAudit(context.db, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType: "CurriculumAdministration", targetId: administrator.id, outcome: "FAILED", reasonCode: "UNEXPECTED_MUTATION_FAILURE" });
+      throw error;
+    }
+  }
 
   const schema = makeExecutableSchema({
     typeDefs,

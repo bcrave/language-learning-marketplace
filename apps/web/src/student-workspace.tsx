@@ -25,6 +25,7 @@ import {
   suggestedDisplayTimeZone,
   suggestedInterfaceLocale,
 } from "./interface-locale.js";
+import { AdminCurriculum } from "./admin-curriculum.js";
 
 const graphQLInterfaceLocales: Record<InterfaceLocale, GraphQLInterfaceLocale> = {
   en: "EN",
@@ -393,6 +394,9 @@ function WorkspaceContent({
             </p>
           )}
         </section>
+        {currentPlace === "ADMINISTRATION_OPERATIONS" && (
+          <AdminCurriculum locale={locale} />
+        )}
         <section className="workspace-card" id="settings" aria-labelledby="preferences-title">
           <h2 id="preferences-title">
             {intl.formatMessage({

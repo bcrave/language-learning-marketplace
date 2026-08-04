@@ -11,15 +11,193 @@ export type Scalars = {
   Float: { input: number; output: number; }
 };
 
+export type AddLessonMaterialInput = {
+  httpsUrl?: InputMaybe<Scalars['String']['input']>;
+  idempotencyKey: Scalars['ID']['input'];
+  kind: LessonMaterialKind;
+  lessonUnitId: Scalars['ID']['input'];
+  publisher?: InputMaybe<Scalars['String']['input']>;
+  structuredContent?: InputMaybe<Array<StructuredTextBlockInput>>;
+  title: Scalars['String']['input'];
+};
+
+export type AddLessonMaterialResult = AddLessonMaterialSuccess | CurriculumConflict | InvalidLessonMaterial;
+
+export type AddLessonMaterialSuccess = {
+  __typename?: 'AddLessonMaterialSuccess';
+  material: LessonMaterial;
+};
+
+export type AdministrationCurriculum = {
+  __typename?: 'AdministrationCurriculum';
+  courses: Array<Course>;
+  teachers: Array<PublicTeacherProfile>;
+  topics: Array<Topic>;
+};
+
+export type ChangeTeacherQualificationInput = {
+  curriculumLevel: CurriculumLevel;
+  idempotencyKey: Scalars['ID']['input'];
+  targetLanguage: Scalars['String']['input'];
+  teacherUserId: Scalars['ID']['input'];
+};
+
+export type ChangeTeacherQualificationSuccess = {
+  __typename?: 'ChangeTeacherQualificationSuccess';
+  teacherProfile: PublicTeacherProfile;
+};
+
+export type Course = {
+  __typename?: 'Course';
+  curriculumLevel: CurriculumLevel;
+  id: Scalars['ID']['output'];
+  key: Scalars['String']['output'];
+  lessonUnits: Array<LessonUnit>;
+  summary: Scalars['String']['output'];
+  targetLanguage: Scalars['String']['output'];
+  title: Scalars['String']['output'];
+};
+
+export type CreateCourseInput = {
+  curriculumLevel: CurriculumLevel;
+  idempotencyKey: Scalars['ID']['input'];
+  summary: Scalars['String']['input'];
+  targetLanguage: Scalars['String']['input'];
+  title: Scalars['String']['input'];
+};
+
+export type CreateCourseResult = CreateCourseSuccess | CurriculumConflict;
+
+export type CreateCourseSuccess = {
+  __typename?: 'CreateCourseSuccess';
+  course: Course;
+};
+
+export type CreateLessonUnitInput = {
+  courseId: Scalars['ID']['input'];
+  idempotencyKey: Scalars['ID']['input'];
+  objectives: Array<Scalars['String']['input']>;
+  summary: Scalars['String']['input'];
+  title: Scalars['String']['input'];
+  topicKeys: Array<Scalars['String']['input']>;
+};
+
+export type CreateLessonUnitResult = CreateLessonUnitSuccess | CurriculumConflict;
+
+export type CreateLessonUnitSuccess = {
+  __typename?: 'CreateLessonUnitSuccess';
+  lessonUnit: LessonUnit;
+};
+
+export type CurriculumConflict = {
+  __typename?: 'CurriculumConflict';
+  code: Scalars['String']['output'];
+  message: Scalars['String']['output'];
+};
+
+export enum CurriculumLevel {
+  A1 = 'A1',
+  A2 = 'A2',
+  B1 = 'B1',
+  B2 = 'B2',
+  C1 = 'C1',
+  C2 = 'C2'
+}
+
+export type GrantTeacherQualificationResult = ChangeTeacherQualificationSuccess | CurriculumConflict;
+
+export type InstructionalIdentityLocked = {
+  __typename?: 'InstructionalIdentityLocked';
+  code: Scalars['String']['output'];
+  lessonUnitId: Scalars['ID']['output'];
+};
+
 export enum InterfaceLocale {
   En = 'EN',
   Es = 'ES'
 }
 
+export type InvalidLessonMaterial = {
+  __typename?: 'InvalidLessonMaterial';
+  code: Scalars['String']['output'];
+  message: Scalars['String']['output'];
+};
+
+export type LessonMaterial = {
+  __typename?: 'LessonMaterial';
+  httpsUrl?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  kind: LessonMaterialKind;
+  publisher?: Maybe<Scalars['String']['output']>;
+  structuredContent?: Maybe<Scalars['String']['output']>;
+  title: Scalars['String']['output'];
+};
+
+export enum LessonMaterialKind {
+  HttpsReference = 'HTTPS_REFERENCE',
+  StructuredText = 'STRUCTURED_TEXT'
+}
+
+export type LessonUnit = {
+  __typename?: 'LessonUnit';
+  courseId: Scalars['ID']['output'];
+  id: Scalars['ID']['output'];
+  key: Scalars['String']['output'];
+  materials: Array<LessonMaterial>;
+  objectives: Array<Scalars['String']['output']>;
+  order: Scalars['Int']['output'];
+  state: LessonUnitState;
+  summary: Scalars['String']['output'];
+  title: Scalars['String']['output'];
+  topics: Array<Topic>;
+};
+
+export enum LessonUnitState {
+  Active = 'ACTIVE',
+  Retired = 'RETIRED'
+}
+
 export type Mutation = {
   __typename?: 'Mutation';
+  addLessonMaterial: AddLessonMaterialResult;
+  createCourse: CreateCourseResult;
+  createLessonUnit: CreateLessonUnitResult;
+  grantTeacherQualification: GrantTeacherQualificationResult;
+  placeLessonUnitInCourse: ReorderLessonUnitResult;
   rememberRoleWorkspacePlace: RolePlace;
+  removeTeacherQualification: RemoveTeacherQualificationResult;
+  retireLessonUnit: RetireLessonUnitResult;
+  reviseCourseDetails: UpdateCourseResult;
+  reviseLessonMaterial: ReviseLessonMaterialResult;
+  reviseLessonUnitIdentity: UpdateLessonUnitResult;
+  saveLocalizedTopic: UpsertTopicSuccess;
+  saveTeacherProfile: SaveTeacherProfileSuccess;
   saveUserPreferences: SaveUserPreferencesPayload;
+};
+
+
+export type MutationAddLessonMaterialArgs = {
+  input: AddLessonMaterialInput;
+};
+
+
+export type MutationCreateCourseArgs = {
+  input: CreateCourseInput;
+};
+
+
+export type MutationCreateLessonUnitArgs = {
+  input: CreateLessonUnitInput;
+};
+
+
+export type MutationGrantTeacherQualificationArgs = {
+  input: ChangeTeacherQualificationInput;
+};
+
+
+export type MutationPlaceLessonUnitInCourseArgs = {
+  input: ReorderLessonUnitInput;
 };
 
 
@@ -28,14 +206,75 @@ export type MutationRememberRoleWorkspacePlaceArgs = {
 };
 
 
+export type MutationRemoveTeacherQualificationArgs = {
+  input: ChangeTeacherQualificationInput;
+};
+
+
+export type MutationRetireLessonUnitArgs = {
+  input: RetireLessonUnitInput;
+};
+
+
+export type MutationReviseCourseDetailsArgs = {
+  input: UpdateCourseInput;
+};
+
+
+export type MutationReviseLessonMaterialArgs = {
+  input: ReviseLessonMaterialInput;
+};
+
+
+export type MutationReviseLessonUnitIdentityArgs = {
+  input: UpdateLessonUnitInput;
+};
+
+
+export type MutationSaveLocalizedTopicArgs = {
+  input: UpsertTopicInput;
+};
+
+
+export type MutationSaveTeacherProfileArgs = {
+  input: SaveTeacherProfileInput;
+};
+
+
 export type MutationSaveUserPreferencesArgs = {
   input: SaveUserPreferencesInput;
 };
 
+export type PublicTeacherProfile = {
+  __typename?: 'PublicTeacherProfile';
+  completedSessionCount: Scalars['Int']['output'];
+  displayName: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  professionalBiography: Scalars['String']['output'];
+  profileImageUrl?: Maybe<Scalars['String']['output']>;
+  pronouns?: Maybe<Scalars['String']['output']>;
+  qualifiedCurriculumLevels: Array<CurriculumLevel>;
+  taughtLanguages: Array<Scalars['String']['output']>;
+  teachingTopics: Array<Topic>;
+};
+
 export type Query = {
   __typename?: 'Query';
+  administrationCurriculum: AdministrationCurriculum;
+  publicTeacherProfile?: Maybe<PublicTeacherProfile>;
   roleWorkspace: RoleWorkspace;
   studentWorkspace: StudentWorkspace;
+};
+
+
+export type QueryAdministrationCurriculumArgs = {
+  locale: InterfaceLocale;
+};
+
+
+export type QueryPublicTeacherProfileArgs = {
+  locale: InterfaceLocale;
+  teacherUserId: Scalars['ID']['input'];
 };
 
 
@@ -46,6 +285,50 @@ export type QueryRoleWorkspaceArgs = {
 export type RememberRoleWorkspacePlaceInput = {
   actingRole: UserRole;
   place: WorkspacePlace;
+};
+
+export type RemoveTeacherQualificationResult = ChangeTeacherQualificationSuccess | CurriculumConflict | TeacherQualificationRemovalBlocked;
+
+export type ReorderLessonUnitInput = {
+  lessonUnitId: Scalars['ID']['input'];
+  order: Scalars['Int']['input'];
+};
+
+export type ReorderLessonUnitResult = CurriculumConflict | ReorderLessonUnitSuccess;
+
+export type ReorderLessonUnitSuccess = {
+  __typename?: 'ReorderLessonUnitSuccess';
+  lessonUnit: LessonUnit;
+};
+
+export type RetireLessonUnitInput = {
+  idempotencyKey: Scalars['ID']['input'];
+  lessonUnitId: Scalars['ID']['input'];
+  replacementLessonUnitId?: InputMaybe<Scalars['ID']['input']>;
+};
+
+export type RetireLessonUnitResult = CurriculumConflict | RetireLessonUnitSuccess;
+
+export type RetireLessonUnitSuccess = {
+  __typename?: 'RetireLessonUnitSuccess';
+  lessonUnit: LessonUnit;
+};
+
+export type ReviseLessonMaterialInput = {
+  httpsUrl?: InputMaybe<Scalars['String']['input']>;
+  idempotencyKey: Scalars['ID']['input'];
+  kind: LessonMaterialKind;
+  materialId: Scalars['ID']['input'];
+  publisher?: InputMaybe<Scalars['String']['input']>;
+  structuredContent?: InputMaybe<Array<StructuredTextBlockInput>>;
+  title: Scalars['String']['input'];
+};
+
+export type ReviseLessonMaterialResult = CurriculumConflict | InvalidLessonMaterial | ReviseLessonMaterialSuccess;
+
+export type ReviseLessonMaterialSuccess = {
+  __typename?: 'ReviseLessonMaterialSuccess';
+  material: LessonMaterial;
 };
 
 export type RolePlace = {
@@ -62,6 +345,20 @@ export type RoleWorkspace = {
   user: User;
 };
 
+export type SaveTeacherProfileInput = {
+  idempotencyKey: Scalars['ID']['input'];
+  professionalBiography: Scalars['String']['input'];
+  profileImageUrl?: InputMaybe<Scalars['String']['input']>;
+  pronouns?: InputMaybe<Scalars['String']['input']>;
+  teacherUserId: Scalars['ID']['input'];
+  topicKeys: Array<Scalars['String']['input']>;
+};
+
+export type SaveTeacherProfileSuccess = {
+  __typename?: 'SaveTeacherProfileSuccess';
+  teacherProfile: PublicTeacherProfile;
+};
+
 export type SaveUserPreferencesInput = {
   actingRole: UserRole;
   displayTimeZone: Scalars['String']['input'];
@@ -73,10 +370,77 @@ export type SaveUserPreferencesPayload = {
   user: User;
 };
 
+export type StructuredTextBlockInput = {
+  items?: InputMaybe<Array<Scalars['String']['input']>>;
+  level?: InputMaybe<Scalars['Int']['input']>;
+  text?: InputMaybe<Scalars['String']['input']>;
+  type: Scalars['String']['input'];
+};
+
 export type StudentWorkspace = {
   __typename?: 'StudentWorkspace';
   roles: Array<UserRole>;
   user: User;
+};
+
+export type TeacherQualification = {
+  __typename?: 'TeacherQualification';
+  curriculumLevel: CurriculumLevel;
+  targetLanguage: Scalars['String']['output'];
+};
+
+export type TeacherQualificationRemovalBlocked = {
+  __typename?: 'TeacherQualificationRemovalBlocked';
+  classSessionIds: Array<Scalars['ID']['output']>;
+  code: Scalars['String']['output'];
+};
+
+export type Topic = {
+  __typename?: 'Topic';
+  key: Scalars['String']['output'];
+  label: Scalars['String']['output'];
+  labelEn: Scalars['String']['output'];
+  labelEs: Scalars['String']['output'];
+};
+
+export type UpdateCourseInput = {
+  courseId: Scalars['ID']['input'];
+  summary: Scalars['String']['input'];
+  title: Scalars['String']['input'];
+};
+
+export type UpdateCourseResult = CurriculumConflict | UpdateCourseSuccess;
+
+export type UpdateCourseSuccess = {
+  __typename?: 'UpdateCourseSuccess';
+  course: Course;
+};
+
+export type UpdateLessonUnitInput = {
+  lessonUnitId: Scalars['ID']['input'];
+  objectives: Array<Scalars['String']['input']>;
+  summary: Scalars['String']['input'];
+  title: Scalars['String']['input'];
+  topicKeys: Array<Scalars['String']['input']>;
+};
+
+export type UpdateLessonUnitResult = CurriculumConflict | InstructionalIdentityLocked | UpdateLessonUnitSuccess;
+
+export type UpdateLessonUnitSuccess = {
+  __typename?: 'UpdateLessonUnitSuccess';
+  lessonUnit: LessonUnit;
+};
+
+export type UpsertTopicInput = {
+  idempotencyKey: Scalars['ID']['input'];
+  key: Scalars['String']['input'];
+  labelEn: Scalars['String']['input'];
+  labelEs: Scalars['String']['input'];
+};
+
+export type UpsertTopicSuccess = {
+  __typename?: 'UpsertTopicSuccess';
+  topic: Topic;
 };
 
 export type User = {
@@ -181,22 +545,117 @@ export type DirectiveResolverFn<TResult = Record<PropertyKey, never>, TParent = 
 
 
 
+/** Mapping of union types */
+export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
+  AddLessonMaterialResult:
+    | ( AddLessonMaterialSuccess )
+    | ( CurriculumConflict )
+    | ( InvalidLessonMaterial )
+  ;
+  CreateCourseResult:
+    | ( CreateCourseSuccess )
+    | ( CurriculumConflict )
+  ;
+  CreateLessonUnitResult:
+    | ( CreateLessonUnitSuccess )
+    | ( CurriculumConflict )
+  ;
+  GrantTeacherQualificationResult:
+    | ( ChangeTeacherQualificationSuccess )
+    | ( CurriculumConflict )
+  ;
+  RemoveTeacherQualificationResult:
+    | ( ChangeTeacherQualificationSuccess )
+    | ( CurriculumConflict )
+    | ( TeacherQualificationRemovalBlocked )
+  ;
+  ReorderLessonUnitResult:
+    | ( CurriculumConflict )
+    | ( ReorderLessonUnitSuccess )
+  ;
+  RetireLessonUnitResult:
+    | ( CurriculumConflict )
+    | ( RetireLessonUnitSuccess )
+  ;
+  ReviseLessonMaterialResult:
+    | ( CurriculumConflict )
+    | ( InvalidLessonMaterial )
+    | ( ReviseLessonMaterialSuccess )
+  ;
+  UpdateCourseResult:
+    | ( CurriculumConflict )
+    | ( UpdateCourseSuccess )
+  ;
+  UpdateLessonUnitResult:
+    | ( CurriculumConflict )
+    | ( InstructionalIdentityLocked )
+    | ( UpdateLessonUnitSuccess )
+  ;
+};
 
 
 /** Mapping between all available schema types and the resolvers types */
 export type ResolversTypes = {
+  AddLessonMaterialInput: AddLessonMaterialInput;
+  AddLessonMaterialResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['AddLessonMaterialResult']>;
+  AddLessonMaterialSuccess: ResolverTypeWrapper<AddLessonMaterialSuccess>;
+  AdministrationCurriculum: ResolverTypeWrapper<AdministrationCurriculum>;
   Boolean: ResolverTypeWrapper<Scalars['Boolean']['output']>;
+  ChangeTeacherQualificationInput: ChangeTeacherQualificationInput;
+  ChangeTeacherQualificationSuccess: ResolverTypeWrapper<ChangeTeacherQualificationSuccess>;
+  Course: ResolverTypeWrapper<Course>;
+  CreateCourseInput: CreateCourseInput;
+  CreateCourseResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['CreateCourseResult']>;
+  CreateCourseSuccess: ResolverTypeWrapper<CreateCourseSuccess>;
+  CreateLessonUnitInput: CreateLessonUnitInput;
+  CreateLessonUnitResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['CreateLessonUnitResult']>;
+  CreateLessonUnitSuccess: ResolverTypeWrapper<CreateLessonUnitSuccess>;
+  CurriculumConflict: ResolverTypeWrapper<CurriculumConflict>;
+  CurriculumLevel: CurriculumLevel;
+  GrantTeacherQualificationResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['GrantTeacherQualificationResult']>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
+  InstructionalIdentityLocked: ResolverTypeWrapper<InstructionalIdentityLocked>;
+  Int: ResolverTypeWrapper<Scalars['Int']['output']>;
   InterfaceLocale: InterfaceLocale;
+  InvalidLessonMaterial: ResolverTypeWrapper<InvalidLessonMaterial>;
+  LessonMaterial: ResolverTypeWrapper<LessonMaterial>;
+  LessonMaterialKind: LessonMaterialKind;
+  LessonUnit: ResolverTypeWrapper<LessonUnit>;
+  LessonUnitState: LessonUnitState;
   Mutation: ResolverTypeWrapper<Record<PropertyKey, never>>;
+  PublicTeacherProfile: ResolverTypeWrapper<PublicTeacherProfile>;
   Query: ResolverTypeWrapper<Record<PropertyKey, never>>;
   RememberRoleWorkspacePlaceInput: RememberRoleWorkspacePlaceInput;
+  RemoveTeacherQualificationResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RemoveTeacherQualificationResult']>;
+  ReorderLessonUnitInput: ReorderLessonUnitInput;
+  ReorderLessonUnitResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ReorderLessonUnitResult']>;
+  ReorderLessonUnitSuccess: ResolverTypeWrapper<ReorderLessonUnitSuccess>;
+  RetireLessonUnitInput: RetireLessonUnitInput;
+  RetireLessonUnitResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RetireLessonUnitResult']>;
+  RetireLessonUnitSuccess: ResolverTypeWrapper<RetireLessonUnitSuccess>;
+  ReviseLessonMaterialInput: ReviseLessonMaterialInput;
+  ReviseLessonMaterialResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ReviseLessonMaterialResult']>;
+  ReviseLessonMaterialSuccess: ResolverTypeWrapper<ReviseLessonMaterialSuccess>;
   RolePlace: ResolverTypeWrapper<RolePlace>;
   RoleWorkspace: ResolverTypeWrapper<RoleWorkspace>;
+  SaveTeacherProfileInput: SaveTeacherProfileInput;
+  SaveTeacherProfileSuccess: ResolverTypeWrapper<SaveTeacherProfileSuccess>;
   SaveUserPreferencesInput: SaveUserPreferencesInput;
   SaveUserPreferencesPayload: ResolverTypeWrapper<SaveUserPreferencesPayload>;
   String: ResolverTypeWrapper<Scalars['String']['output']>;
+  StructuredTextBlockInput: StructuredTextBlockInput;
   StudentWorkspace: ResolverTypeWrapper<StudentWorkspace>;
+  TeacherQualification: ResolverTypeWrapper<TeacherQualification>;
+  TeacherQualificationRemovalBlocked: ResolverTypeWrapper<TeacherQualificationRemovalBlocked>;
+  Topic: ResolverTypeWrapper<Topic>;
+  UpdateCourseInput: UpdateCourseInput;
+  UpdateCourseResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['UpdateCourseResult']>;
+  UpdateCourseSuccess: ResolverTypeWrapper<UpdateCourseSuccess>;
+  UpdateLessonUnitInput: UpdateLessonUnitInput;
+  UpdateLessonUnitResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['UpdateLessonUnitResult']>;
+  UpdateLessonUnitSuccess: ResolverTypeWrapper<UpdateLessonUnitSuccess>;
+  UpsertTopicInput: UpsertTopicInput;
+  UpsertTopicSuccess: ResolverTypeWrapper<UpsertTopicSuccess>;
   User: ResolverTypeWrapper<User>;
   UserRole: UserRole;
   WorkspacePlace: WorkspacePlace;
@@ -205,28 +664,222 @@ export type ResolversTypes = {
 
 /** Mapping between all available schema types and the resolvers parents */
 export type ResolversParentTypes = {
+  AddLessonMaterialInput: AddLessonMaterialInput;
+  AddLessonMaterialResult: ResolversUnionTypes<ResolversParentTypes>['AddLessonMaterialResult'];
+  AddLessonMaterialSuccess: AddLessonMaterialSuccess;
+  AdministrationCurriculum: AdministrationCurriculum;
   Boolean: Scalars['Boolean']['output'];
+  ChangeTeacherQualificationInput: ChangeTeacherQualificationInput;
+  ChangeTeacherQualificationSuccess: ChangeTeacherQualificationSuccess;
+  Course: Course;
+  CreateCourseInput: CreateCourseInput;
+  CreateCourseResult: ResolversUnionTypes<ResolversParentTypes>['CreateCourseResult'];
+  CreateCourseSuccess: CreateCourseSuccess;
+  CreateLessonUnitInput: CreateLessonUnitInput;
+  CreateLessonUnitResult: ResolversUnionTypes<ResolversParentTypes>['CreateLessonUnitResult'];
+  CreateLessonUnitSuccess: CreateLessonUnitSuccess;
+  CurriculumConflict: CurriculumConflict;
+  GrantTeacherQualificationResult: ResolversUnionTypes<ResolversParentTypes>['GrantTeacherQualificationResult'];
   ID: Scalars['ID']['output'];
+  InstructionalIdentityLocked: InstructionalIdentityLocked;
+  Int: Scalars['Int']['output'];
+  InvalidLessonMaterial: InvalidLessonMaterial;
+  LessonMaterial: LessonMaterial;
+  LessonUnit: LessonUnit;
   Mutation: Record<PropertyKey, never>;
+  PublicTeacherProfile: PublicTeacherProfile;
   Query: Record<PropertyKey, never>;
   RememberRoleWorkspacePlaceInput: RememberRoleWorkspacePlaceInput;
+  RemoveTeacherQualificationResult: ResolversUnionTypes<ResolversParentTypes>['RemoveTeacherQualificationResult'];
+  ReorderLessonUnitInput: ReorderLessonUnitInput;
+  ReorderLessonUnitResult: ResolversUnionTypes<ResolversParentTypes>['ReorderLessonUnitResult'];
+  ReorderLessonUnitSuccess: ReorderLessonUnitSuccess;
+  RetireLessonUnitInput: RetireLessonUnitInput;
+  RetireLessonUnitResult: ResolversUnionTypes<ResolversParentTypes>['RetireLessonUnitResult'];
+  RetireLessonUnitSuccess: RetireLessonUnitSuccess;
+  ReviseLessonMaterialInput: ReviseLessonMaterialInput;
+  ReviseLessonMaterialResult: ResolversUnionTypes<ResolversParentTypes>['ReviseLessonMaterialResult'];
+  ReviseLessonMaterialSuccess: ReviseLessonMaterialSuccess;
   RolePlace: RolePlace;
   RoleWorkspace: RoleWorkspace;
+  SaveTeacherProfileInput: SaveTeacherProfileInput;
+  SaveTeacherProfileSuccess: SaveTeacherProfileSuccess;
   SaveUserPreferencesInput: SaveUserPreferencesInput;
   SaveUserPreferencesPayload: SaveUserPreferencesPayload;
   String: Scalars['String']['output'];
+  StructuredTextBlockInput: StructuredTextBlockInput;
   StudentWorkspace: StudentWorkspace;
+  TeacherQualification: TeacherQualification;
+  TeacherQualificationRemovalBlocked: TeacherQualificationRemovalBlocked;
+  Topic: Topic;
+  UpdateCourseInput: UpdateCourseInput;
+  UpdateCourseResult: ResolversUnionTypes<ResolversParentTypes>['UpdateCourseResult'];
+  UpdateCourseSuccess: UpdateCourseSuccess;
+  UpdateLessonUnitInput: UpdateLessonUnitInput;
+  UpdateLessonUnitResult: ResolversUnionTypes<ResolversParentTypes>['UpdateLessonUnitResult'];
+  UpdateLessonUnitSuccess: UpdateLessonUnitSuccess;
+  UpsertTopicInput: UpsertTopicInput;
+  UpsertTopicSuccess: UpsertTopicSuccess;
   User: User;
 };
 
+export type AddLessonMaterialResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['AddLessonMaterialResult'] = ResolversParentTypes['AddLessonMaterialResult']> = {
+  __resolveType: TypeResolveFn<'AddLessonMaterialSuccess' | 'CurriculumConflict' | 'InvalidLessonMaterial', ParentType, ContextType>;
+};
+
+export type AddLessonMaterialSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['AddLessonMaterialSuccess'] = ResolversParentTypes['AddLessonMaterialSuccess']> = {
+  material?: Resolver<ResolversTypes['LessonMaterial'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type AdministrationCurriculumResolvers<ContextType = any, ParentType extends ResolversParentTypes['AdministrationCurriculum'] = ResolversParentTypes['AdministrationCurriculum']> = {
+  courses?: Resolver<Array<ResolversTypes['Course']>, ParentType, ContextType>;
+  teachers?: Resolver<Array<ResolversTypes['PublicTeacherProfile']>, ParentType, ContextType>;
+  topics?: Resolver<Array<ResolversTypes['Topic']>, ParentType, ContextType>;
+};
+
+export type ChangeTeacherQualificationSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['ChangeTeacherQualificationSuccess'] = ResolversParentTypes['ChangeTeacherQualificationSuccess']> = {
+  teacherProfile?: Resolver<ResolversTypes['PublicTeacherProfile'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type CourseResolvers<ContextType = any, ParentType extends ResolversParentTypes['Course'] = ResolversParentTypes['Course']> = {
+  curriculumLevel?: Resolver<ResolversTypes['CurriculumLevel'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  key?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  lessonUnits?: Resolver<Array<ResolversTypes['LessonUnit']>, ParentType, ContextType>;
+  summary?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  targetLanguage?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
+export type CreateCourseResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['CreateCourseResult'] = ResolversParentTypes['CreateCourseResult']> = {
+  __resolveType: TypeResolveFn<'CreateCourseSuccess' | 'CurriculumConflict', ParentType, ContextType>;
+};
+
+export type CreateCourseSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['CreateCourseSuccess'] = ResolversParentTypes['CreateCourseSuccess']> = {
+  course?: Resolver<ResolversTypes['Course'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type CreateLessonUnitResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['CreateLessonUnitResult'] = ResolversParentTypes['CreateLessonUnitResult']> = {
+  __resolveType: TypeResolveFn<'CreateLessonUnitSuccess' | 'CurriculumConflict', ParentType, ContextType>;
+};
+
+export type CreateLessonUnitSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['CreateLessonUnitSuccess'] = ResolversParentTypes['CreateLessonUnitSuccess']> = {
+  lessonUnit?: Resolver<ResolversTypes['LessonUnit'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type CurriculumConflictResolvers<ContextType = any, ParentType extends ResolversParentTypes['CurriculumConflict'] = ResolversParentTypes['CurriculumConflict']> = {
+  code?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type GrantTeacherQualificationResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['GrantTeacherQualificationResult'] = ResolversParentTypes['GrantTeacherQualificationResult']> = {
+  __resolveType: TypeResolveFn<'ChangeTeacherQualificationSuccess' | 'CurriculumConflict', ParentType, ContextType>;
+};
+
+export type InstructionalIdentityLockedResolvers<ContextType = any, ParentType extends ResolversParentTypes['InstructionalIdentityLocked'] = ResolversParentTypes['InstructionalIdentityLocked']> = {
+  code?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  lessonUnitId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type InvalidLessonMaterialResolvers<ContextType = any, ParentType extends ResolversParentTypes['InvalidLessonMaterial'] = ResolversParentTypes['InvalidLessonMaterial']> = {
+  code?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type LessonMaterialResolvers<ContextType = any, ParentType extends ResolversParentTypes['LessonMaterial'] = ResolversParentTypes['LessonMaterial']> = {
+  httpsUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  kind?: Resolver<ResolversTypes['LessonMaterialKind'], ParentType, ContextType>;
+  publisher?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  structuredContent?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
+export type LessonUnitResolvers<ContextType = any, ParentType extends ResolversParentTypes['LessonUnit'] = ResolversParentTypes['LessonUnit']> = {
+  courseId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  key?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  materials?: Resolver<Array<ResolversTypes['LessonMaterial']>, ParentType, ContextType>;
+  objectives?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
+  order?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  state?: Resolver<ResolversTypes['LessonUnitState'], ParentType, ContextType>;
+  summary?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  topics?: Resolver<Array<ResolversTypes['Topic']>, ParentType, ContextType>;
+};
+
 export type MutationResolvers<ContextType = any, ParentType extends ResolversParentTypes['Mutation'] = ResolversParentTypes['Mutation']> = {
+  addLessonMaterial?: Resolver<ResolversTypes['AddLessonMaterialResult'], ParentType, ContextType, RequireFields<MutationAddLessonMaterialArgs, 'input'>>;
+  createCourse?: Resolver<ResolversTypes['CreateCourseResult'], ParentType, ContextType, RequireFields<MutationCreateCourseArgs, 'input'>>;
+  createLessonUnit?: Resolver<ResolversTypes['CreateLessonUnitResult'], ParentType, ContextType, RequireFields<MutationCreateLessonUnitArgs, 'input'>>;
+  grantTeacherQualification?: Resolver<ResolversTypes['GrantTeacherQualificationResult'], ParentType, ContextType, RequireFields<MutationGrantTeacherQualificationArgs, 'input'>>;
+  placeLessonUnitInCourse?: Resolver<ResolversTypes['ReorderLessonUnitResult'], ParentType, ContextType, RequireFields<MutationPlaceLessonUnitInCourseArgs, 'input'>>;
   rememberRoleWorkspacePlace?: Resolver<ResolversTypes['RolePlace'], ParentType, ContextType, RequireFields<MutationRememberRoleWorkspacePlaceArgs, 'input'>>;
+  removeTeacherQualification?: Resolver<ResolversTypes['RemoveTeacherQualificationResult'], ParentType, ContextType, RequireFields<MutationRemoveTeacherQualificationArgs, 'input'>>;
+  retireLessonUnit?: Resolver<ResolversTypes['RetireLessonUnitResult'], ParentType, ContextType, RequireFields<MutationRetireLessonUnitArgs, 'input'>>;
+  reviseCourseDetails?: Resolver<ResolversTypes['UpdateCourseResult'], ParentType, ContextType, RequireFields<MutationReviseCourseDetailsArgs, 'input'>>;
+  reviseLessonMaterial?: Resolver<ResolversTypes['ReviseLessonMaterialResult'], ParentType, ContextType, RequireFields<MutationReviseLessonMaterialArgs, 'input'>>;
+  reviseLessonUnitIdentity?: Resolver<ResolversTypes['UpdateLessonUnitResult'], ParentType, ContextType, RequireFields<MutationReviseLessonUnitIdentityArgs, 'input'>>;
+  saveLocalizedTopic?: Resolver<ResolversTypes['UpsertTopicSuccess'], ParentType, ContextType, RequireFields<MutationSaveLocalizedTopicArgs, 'input'>>;
+  saveTeacherProfile?: Resolver<ResolversTypes['SaveTeacherProfileSuccess'], ParentType, ContextType, RequireFields<MutationSaveTeacherProfileArgs, 'input'>>;
   saveUserPreferences?: Resolver<ResolversTypes['SaveUserPreferencesPayload'], ParentType, ContextType, RequireFields<MutationSaveUserPreferencesArgs, 'input'>>;
 };
 
+export type PublicTeacherProfileResolvers<ContextType = any, ParentType extends ResolversParentTypes['PublicTeacherProfile'] = ResolversParentTypes['PublicTeacherProfile']> = {
+  completedSessionCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  displayName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  professionalBiography?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  profileImageUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  pronouns?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  qualifiedCurriculumLevels?: Resolver<Array<ResolversTypes['CurriculumLevel']>, ParentType, ContextType>;
+  taughtLanguages?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
+  teachingTopics?: Resolver<Array<ResolversTypes['Topic']>, ParentType, ContextType>;
+};
+
 export type QueryResolvers<ContextType = any, ParentType extends ResolversParentTypes['Query'] = ResolversParentTypes['Query']> = {
+  administrationCurriculum?: Resolver<ResolversTypes['AdministrationCurriculum'], ParentType, ContextType, RequireFields<QueryAdministrationCurriculumArgs, 'locale'>>;
+  publicTeacherProfile?: Resolver<Maybe<ResolversTypes['PublicTeacherProfile']>, ParentType, ContextType, RequireFields<QueryPublicTeacherProfileArgs, 'locale' | 'teacherUserId'>>;
   roleWorkspace?: Resolver<ResolversTypes['RoleWorkspace'], ParentType, ContextType, RequireFields<QueryRoleWorkspaceArgs, 'actingRole'>>;
   studentWorkspace?: Resolver<ResolversTypes['StudentWorkspace'], ParentType, ContextType>;
+};
+
+export type RemoveTeacherQualificationResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['RemoveTeacherQualificationResult'] = ResolversParentTypes['RemoveTeacherQualificationResult']> = {
+  __resolveType: TypeResolveFn<'ChangeTeacherQualificationSuccess' | 'CurriculumConflict' | 'TeacherQualificationRemovalBlocked', ParentType, ContextType>;
+};
+
+export type ReorderLessonUnitResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['ReorderLessonUnitResult'] = ResolversParentTypes['ReorderLessonUnitResult']> = {
+  __resolveType: TypeResolveFn<'CurriculumConflict' | 'ReorderLessonUnitSuccess', ParentType, ContextType>;
+};
+
+export type ReorderLessonUnitSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['ReorderLessonUnitSuccess'] = ResolversParentTypes['ReorderLessonUnitSuccess']> = {
+  lessonUnit?: Resolver<ResolversTypes['LessonUnit'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type RetireLessonUnitResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['RetireLessonUnitResult'] = ResolversParentTypes['RetireLessonUnitResult']> = {
+  __resolveType: TypeResolveFn<'CurriculumConflict' | 'RetireLessonUnitSuccess', ParentType, ContextType>;
+};
+
+export type RetireLessonUnitSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['RetireLessonUnitSuccess'] = ResolversParentTypes['RetireLessonUnitSuccess']> = {
+  lessonUnit?: Resolver<ResolversTypes['LessonUnit'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type ReviseLessonMaterialResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['ReviseLessonMaterialResult'] = ResolversParentTypes['ReviseLessonMaterialResult']> = {
+  __resolveType: TypeResolveFn<'CurriculumConflict' | 'InvalidLessonMaterial' | 'ReviseLessonMaterialSuccess', ParentType, ContextType>;
+};
+
+export type ReviseLessonMaterialSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['ReviseLessonMaterialSuccess'] = ResolversParentTypes['ReviseLessonMaterialSuccess']> = {
+  material?: Resolver<ResolversTypes['LessonMaterial'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
 export type RolePlaceResolvers<ContextType = any, ParentType extends ResolversParentTypes['RolePlace'] = ResolversParentTypes['RolePlace']> = {
@@ -241,6 +894,10 @@ export type RoleWorkspaceResolvers<ContextType = any, ParentType extends Resolve
   user?: Resolver<ResolversTypes['User'], ParentType, ContextType>;
 };
 
+export type SaveTeacherProfileSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['SaveTeacherProfileSuccess'] = ResolversParentTypes['SaveTeacherProfileSuccess']> = {
+  teacherProfile?: Resolver<ResolversTypes['PublicTeacherProfile'], ParentType, ContextType>;
+};
+
 export type SaveUserPreferencesPayloadResolvers<ContextType = any, ParentType extends ResolversParentTypes['SaveUserPreferencesPayload'] = ResolversParentTypes['SaveUserPreferencesPayload']> = {
   user?: Resolver<ResolversTypes['User'], ParentType, ContextType>;
 };
@@ -248,6 +905,46 @@ export type SaveUserPreferencesPayloadResolvers<ContextType = any, ParentType ex
 export type StudentWorkspaceResolvers<ContextType = any, ParentType extends ResolversParentTypes['StudentWorkspace'] = ResolversParentTypes['StudentWorkspace']> = {
   roles?: Resolver<Array<ResolversTypes['UserRole']>, ParentType, ContextType>;
   user?: Resolver<ResolversTypes['User'], ParentType, ContextType>;
+};
+
+export type TeacherQualificationResolvers<ContextType = any, ParentType extends ResolversParentTypes['TeacherQualification'] = ResolversParentTypes['TeacherQualification']> = {
+  curriculumLevel?: Resolver<ResolversTypes['CurriculumLevel'], ParentType, ContextType>;
+  targetLanguage?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
+export type TeacherQualificationRemovalBlockedResolvers<ContextType = any, ParentType extends ResolversParentTypes['TeacherQualificationRemovalBlocked'] = ResolversParentTypes['TeacherQualificationRemovalBlocked']> = {
+  classSessionIds?: Resolver<Array<ResolversTypes['ID']>, ParentType, ContextType>;
+  code?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type TopicResolvers<ContextType = any, ParentType extends ResolversParentTypes['Topic'] = ResolversParentTypes['Topic']> = {
+  key?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  label?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  labelEn?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  labelEs?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
+export type UpdateCourseResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['UpdateCourseResult'] = ResolversParentTypes['UpdateCourseResult']> = {
+  __resolveType: TypeResolveFn<'CurriculumConflict' | 'UpdateCourseSuccess', ParentType, ContextType>;
+};
+
+export type UpdateCourseSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['UpdateCourseSuccess'] = ResolversParentTypes['UpdateCourseSuccess']> = {
+  course?: Resolver<ResolversTypes['Course'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type UpdateLessonUnitResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['UpdateLessonUnitResult'] = ResolversParentTypes['UpdateLessonUnitResult']> = {
+  __resolveType: TypeResolveFn<'CurriculumConflict' | 'InstructionalIdentityLocked' | 'UpdateLessonUnitSuccess', ParentType, ContextType>;
+};
+
+export type UpdateLessonUnitSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['UpdateLessonUnitSuccess'] = ResolversParentTypes['UpdateLessonUnitSuccess']> = {
+  lessonUnit?: Resolver<ResolversTypes['LessonUnit'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type UpsertTopicSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['UpsertTopicSuccess'] = ResolversParentTypes['UpsertTopicSuccess']> = {
+  topic?: Resolver<ResolversTypes['Topic'], ParentType, ContextType>;
 };
 
 export type UserResolvers<ContextType = any, ParentType extends ResolversParentTypes['User'] = ResolversParentTypes['User']> = {
@@ -258,12 +955,44 @@ export type UserResolvers<ContextType = any, ParentType extends ResolversParentT
 };
 
 export type Resolvers<ContextType = any> = {
+  AddLessonMaterialResult?: AddLessonMaterialResultResolvers<ContextType>;
+  AddLessonMaterialSuccess?: AddLessonMaterialSuccessResolvers<ContextType>;
+  AdministrationCurriculum?: AdministrationCurriculumResolvers<ContextType>;
+  ChangeTeacherQualificationSuccess?: ChangeTeacherQualificationSuccessResolvers<ContextType>;
+  Course?: CourseResolvers<ContextType>;
+  CreateCourseResult?: CreateCourseResultResolvers<ContextType>;
+  CreateCourseSuccess?: CreateCourseSuccessResolvers<ContextType>;
+  CreateLessonUnitResult?: CreateLessonUnitResultResolvers<ContextType>;
+  CreateLessonUnitSuccess?: CreateLessonUnitSuccessResolvers<ContextType>;
+  CurriculumConflict?: CurriculumConflictResolvers<ContextType>;
+  GrantTeacherQualificationResult?: GrantTeacherQualificationResultResolvers<ContextType>;
+  InstructionalIdentityLocked?: InstructionalIdentityLockedResolvers<ContextType>;
+  InvalidLessonMaterial?: InvalidLessonMaterialResolvers<ContextType>;
+  LessonMaterial?: LessonMaterialResolvers<ContextType>;
+  LessonUnit?: LessonUnitResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
+  PublicTeacherProfile?: PublicTeacherProfileResolvers<ContextType>;
   Query?: QueryResolvers<ContextType>;
+  RemoveTeacherQualificationResult?: RemoveTeacherQualificationResultResolvers<ContextType>;
+  ReorderLessonUnitResult?: ReorderLessonUnitResultResolvers<ContextType>;
+  ReorderLessonUnitSuccess?: ReorderLessonUnitSuccessResolvers<ContextType>;
+  RetireLessonUnitResult?: RetireLessonUnitResultResolvers<ContextType>;
+  RetireLessonUnitSuccess?: RetireLessonUnitSuccessResolvers<ContextType>;
+  ReviseLessonMaterialResult?: ReviseLessonMaterialResultResolvers<ContextType>;
+  ReviseLessonMaterialSuccess?: ReviseLessonMaterialSuccessResolvers<ContextType>;
   RolePlace?: RolePlaceResolvers<ContextType>;
   RoleWorkspace?: RoleWorkspaceResolvers<ContextType>;
+  SaveTeacherProfileSuccess?: SaveTeacherProfileSuccessResolvers<ContextType>;
   SaveUserPreferencesPayload?: SaveUserPreferencesPayloadResolvers<ContextType>;
   StudentWorkspace?: StudentWorkspaceResolvers<ContextType>;
+  TeacherQualification?: TeacherQualificationResolvers<ContextType>;
+  TeacherQualificationRemovalBlocked?: TeacherQualificationRemovalBlockedResolvers<ContextType>;
+  Topic?: TopicResolvers<ContextType>;
+  UpdateCourseResult?: UpdateCourseResultResolvers<ContextType>;
+  UpdateCourseSuccess?: UpdateCourseSuccessResolvers<ContextType>;
+  UpdateLessonUnitResult?: UpdateLessonUnitResultResolvers<ContextType>;
+  UpdateLessonUnitSuccess?: UpdateLessonUnitSuccessResolvers<ContextType>;
+  UpsertTopicSuccess?: UpsertTopicSuccessResolvers<ContextType>;
   User?: UserResolvers<ContextType>;
 };
 

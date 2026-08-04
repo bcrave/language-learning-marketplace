@@ -10,7 +10,7 @@ import type { createApi } from "./app.js";
 const GRAPHQL_BODY_LIMIT_BYTES = 1_000_000;
 const SOURCE_REQUEST_LIMIT = 120;
 const RATE_LIMIT_WINDOW_MILLISECONDS = 60_000;
-const CURRENT_SCHEMA_MIGRATION = "0002_map_external_identities.sql";
+const CURRENT_SCHEMA_MIGRATION = "0005_curriculum_administration.sql";
 
 class SourceRateLimiter {
   readonly #counters = new Map<string, { count: number; startedAt: number }>();

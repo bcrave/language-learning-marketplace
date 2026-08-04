@@ -136,6 +136,17 @@ test("each English acting-role workspace is accessible", async ({ page }) => {
   }
 });
 
+test("a Platform Administrator opens the localized canonical curriculum", async ({ page }) => {
+  await page.goto("/student");
+  await page.getByRole("combobox", { name: "Rol activo" }).selectOption("PLATFORM_ADMINISTRATOR");
+
+  await expect(page.getByRole("heading", { name: "Administración del currículo" })).toBeVisible();
+  await expect(page.getByText("Currículo de muestra")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Everyday English Foundations" })).toBeVisible();
+  await expect(page.getByText("Conversación cotidiana").first()).toBeVisible();
+  await expectNoSeriousAccessibilityViolations(page);
+});
+
 test("a fresh deep link waits for an explicit authorized role choice", async ({
   page,
 }) => {
