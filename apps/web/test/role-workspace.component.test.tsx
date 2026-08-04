@@ -1,5 +1,5 @@
 import { MockedProvider } from "@apollo/client/testing/react";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
@@ -17,6 +17,149 @@ afterEach(() => {
 });
 
 describe("Role workspace navigation", () => {
+  it("requires a new explicit choice after client-side navigation changes roles", async () => {
+    window.sessionStorage.setItem("marketplace.actingRole", "TEACHER");
+    const router = createMemoryRouter(workspaceRouteObjects, {
+      initialEntries: ["/teacher/schedule"],
+    });
+
+    render(
+      <MockedProvider
+        mocks={[
+          {
+            request: {
+              query: RoleWorkspaceDocument,
+              variables: { actingRole: "TEACHER" },
+            },
+            result: {
+              data: {
+                roleWorkspace: {
+                  actingRole: "TEACHER",
+                  relationshipScope: "ASSIGNED_CLASS_SESSIONS",
+                  user: {
+                    id: "00000000-0000-4000-8000-000000000010",
+                    displayName: "María Torres",
+                    interfaceLocale: "EN",
+                    displayTimeZone: "America/Denver",
+                  },
+                  rolePlaces: [
+                    { role: "TEACHER", place: "TEACHER_SCHEDULE" },
+                    {
+                      role: "PLATFORM_ADMINISTRATOR",
+                      place: "ADMINISTRATION_OPERATIONS",
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        ]}
+      >
+        <RouterProvider router={router} />
+      </MockedProvider>,
+    );
+
+    await screen.findByRole("heading", { name: "Teaching schedule" });
+    await act(() => router.navigate("/administration/operations"));
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Change to the Platform Administrator workspace?",
+      }),
+    ).toBeVisible();
+    expect(window.sessionStorage.getItem("marketplace.actingRole")).toBe(
+      "TEACHER",
+    );
+  });
+
+  it("follows the server-remembered Student place from the canonical entry", async () => {
+    render(
+      <MockedProvider
+        mocks={[
+          {
+            request: {
+              query: RoleWorkspaceDocument,
+              variables: { actingRole: "STUDENT" },
+            },
+            result: {
+              data: {
+                roleWorkspace: {
+                  actingRole: "STUDENT",
+                  relationshipScope: "SELF",
+                  user: {
+                    id: "00000000-0000-4000-8000-000000000010",
+                    displayName: "María Torres",
+                    interfaceLocale: "EN",
+                    displayTimeZone: "America/Denver",
+                  },
+                  rolePlaces: [
+                    { role: "STUDENT", place: "STUDENT_LEARNING" },
+                  ],
+                },
+              },
+            },
+          },
+          {
+            request: {
+              query: RoleWorkspaceDocument,
+              variables: { actingRole: "STUDENT" },
+            },
+            result: {
+              data: {
+                roleWorkspace: {
+                  actingRole: "STUDENT",
+                  relationshipScope: "SELF",
+                  user: {
+                    id: "00000000-0000-4000-8000-000000000010",
+                    displayName: "María Torres",
+                    interfaceLocale: "EN",
+                    displayTimeZone: "America/Denver",
+                  },
+                  rolePlaces: [
+                    { role: "STUDENT", place: "STUDENT_LEARNING" },
+                  ],
+                },
+              },
+            },
+          },
+        ]}
+      >
+        <RouterProvider
+          router={createMemoryRouter(workspaceRouteObjects, {
+            initialEntries: ["/student"],
+          })}
+        />
+      </MockedProvider>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "My learning" }),
+    ).toBeVisible();
+  });
+
+  it("guards the Student landing alias when another acting role is current", async () => {
+    window.sessionStorage.setItem("marketplace.actingRole", "TEACHER");
+
+    render(
+      <MockedProvider>
+        <RouterProvider
+          router={createMemoryRouter(workspaceRouteObjects, {
+            initialEntries: ["/student"],
+          })}
+        />
+      </MockedProvider>,
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Change to the Student workspace?",
+      }),
+    ).toBeVisible();
+    expect(window.sessionStorage.getItem("marketplace.actingRole")).toBe(
+      "TEACHER",
+    );
+  });
+
   it("requires authorization after an explicit incompatible deep-link choice", async () => {
     window.sessionStorage.setItem("marketplace.actingRole", "STUDENT");
 

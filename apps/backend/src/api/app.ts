@@ -10,6 +10,10 @@ import {
 import { makeExecutableSchema } from "@graphql-tools/schema";
 import { createGraphQLError, createYoga } from "graphql-yoga";
 
+import {
+  loadRoleWorkspace,
+  rememberRoleWorkspacePlace,
+} from "../authorization/role-workspace-service.js";
 import { createAuthenticator } from "../auth/create-authenticator.js";
 import type { AppConfig } from "../config.js";
 import type { Database } from "../database/database.js";
@@ -71,17 +75,6 @@ const workspacePlacesByGraphQL: Record<GraphQLWorkspacePlace, WorkspacePlace> = 
   [GraphQLWorkspacePlace.AdministrationPeople]: "ADMINISTRATION_PEOPLE",
 };
 
-const workspaceRolesByPlace: Record<WorkspacePlace, UserRole> = {
-  STUDENT_DISCOVERY: "STUDENT",
-  STUDENT_LEARNING: "STUDENT",
-  TEACHER_SCHEDULE: "TEACHER",
-  TEACHER_AVAILABILITY: "TEACHER",
-  ORGANIZATION_STUDENTS: "ORGANIZATION_MANAGER",
-  ORGANIZATION_REPORTS: "ORGANIZATION_MANAGER",
-  ADMINISTRATION_OPERATIONS: "PLATFORM_ADMINISTRATOR",
-  ADMINISTRATION_PEOPLE: "PLATFORM_ADMINISTRATOR",
-};
-
 const relationshipScopesByRole: Record<UserRole, WorkspaceRelationshipScope> = {
   STUDENT: WorkspaceRelationshipScope.Self,
   TEACHER: WorkspaceRelationshipScope.AssignedClassSessions,
@@ -132,55 +125,19 @@ export function createApi(options: {
           }
 
           const actingRole = userRolesByGraphQL[requestedGraphQLRole];
-          const result = await context.db.transaction().execute(async (transaction) => {
-            const user = await transaction
-              .selectFrom("users")
-              .select(["id", "display_name", "display_time_zone", "interface_locale"])
-              .where("identity_issuer", "=", identity.issuer)
-              .where("identity_subject", "=", identity.subject)
-              .executeTakeFirst();
-            if (!user) return null;
+          const result = await loadRoleWorkspace(
+            context.db,
+            identity,
+            actingRole,
+            context.correlationId,
+          );
 
-            const roles = await transaction
-              .selectFrom("role_assignments")
-              .select("role")
-              .where("user_id", "=", user.id)
-              .orderBy("role")
-              .execute();
-            const hasActingRole = roles.some(({ role }) => role === actingRole);
-            const rememberedPlaces = hasActingRole
-              ? await transaction
-                  .selectFrom("role_workspace_places")
-                  .select(["role", "place"])
-                  .where("user_id", "=", user.id)
-                  .execute()
-              : [];
-
-            if (!hasActingRole) {
-              await transaction
-                .insertInto("audit_entries")
-                .values({
-                  actor_user_id: user.id,
-                  acting_role: actingRole,
-                  operation: "role-workspace.opened",
-                  target_type: "User",
-                  target_id: user.id,
-                  outcome: "DENIED",
-                  reason_code: "ROLE_ASSIGNMENT_REQUIRED",
-                  correlation_id: context.correlationId,
-                })
-                .execute();
-            }
-
-            return { hasActingRole, rememberedPlaces, roles, user };
-          });
-
-          if (!result) {
+          if (result.status === "UNKNOWN_USER") {
             throw createGraphQLError("Authentication is required", {
               extensions: { code: "UNAUTHENTICATED" },
             });
           }
-          if (!result.hasActingRole) {
+          if (result.status === "ROLE_ASSIGNMENT_REQUIRED") {
             throw createGraphQLError("The selected Role Assignment is required", {
               extensions: { code: "FORBIDDEN" },
             });
@@ -194,11 +151,11 @@ export function createApi(options: {
             relationshipScope: relationshipScopesByRole[actingRole],
             user: {
               id: result.user.id,
-              displayName: result.user.display_name,
-              displayTimeZone: result.user.display_time_zone,
-              interfaceLocale: graphQLInterfaceLocale(result.user.interface_locale),
+              displayName: result.user.displayName,
+              displayTimeZone: result.user.displayTimeZone,
+              interfaceLocale: graphQLInterfaceLocale(result.user.interfaceLocale),
             },
-            rolePlaces: result.roles.map(({ role }) => ({
+            rolePlaces: result.roles.map((role) => ({
               role: graphQLUserRoles[role],
               place:
                 graphQLWorkspacePlaces[
@@ -289,99 +246,32 @@ export function createApi(options: {
 
           const actingRole = userRolesByGraphQL[input.actingRole];
           const place = workspacePlacesByGraphQL[input.place];
-          const user = await context.db
-            .selectFrom("users")
-            .select("id")
-            .where("identity_issuer", "=", identity.issuer)
-            .where("identity_subject", "=", identity.subject)
-            .executeTakeFirst();
-          if (!user) {
+          const result = await rememberRoleWorkspacePlace(
+            context.db,
+            identity,
+            actingRole,
+            place,
+            context.correlationId,
+          );
+          if (result === "UNKNOWN_USER") {
             throw createGraphQLError("Authentication is required", {
               extensions: { code: "UNAUTHENTICATED" },
             });
           }
-
-          const hasActingRole = await context.db
-            .selectFrom("role_assignments")
-            .select("role")
-            .where("user_id", "=", user.id)
-            .where("role", "=", actingRole)
-            .executeTakeFirst();
-          const denialReason = !hasActingRole
-            ? "ROLE_ASSIGNMENT_REQUIRED"
-            : workspaceRolesByPlace[place] !== actingRole
-              ? "INCOMPATIBLE_WORKSPACE_PLACE"
-              : null;
-          if (denialReason) {
-            await context.db
-              .insertInto("audit_entries")
-              .values({
-                actor_user_id: user.id,
-                acting_role: actingRole,
-                operation: "role-workspace-place.remembered",
-                target_type: "User",
-                target_id: user.id,
-                outcome: "DENIED",
-                reason_code: denialReason,
-                correlation_id: context.correlationId,
-              })
-              .execute();
+          if (result !== "SUCCEEDED") {
             throw createGraphQLError(
-              denialReason === "ROLE_ASSIGNMENT_REQUIRED"
+              result === "ROLE_ASSIGNMENT_REQUIRED"
                 ? "The selected Role Assignment is required"
                 : "The workspace place is not compatible with the acting role",
               {
                 extensions: {
                   code:
-                    denialReason === "ROLE_ASSIGNMENT_REQUIRED"
+                    result === "ROLE_ASSIGNMENT_REQUIRED"
                       ? "FORBIDDEN"
                       : "BAD_USER_INPUT",
                 },
               },
             );
-          }
-
-          try {
-            await context.db.transaction().execute(async (transaction) => {
-              await transaction
-                .insertInto("role_workspace_places")
-                .values({ user_id: user.id, role: actingRole, place })
-                .onConflict((conflict) =>
-                  conflict.columns(["user_id", "role"]).doUpdateSet({
-                    place,
-                    updated_at: new Date(),
-                  }),
-                )
-                .execute();
-              await transaction
-                .insertInto("audit_entries")
-                .values({
-                  actor_user_id: user.id,
-                  acting_role: actingRole,
-                  operation: "role-workspace-place.remembered",
-                  target_type: "User",
-                  target_id: user.id,
-                  outcome: "SUCCEEDED",
-                  reason_code: "WORKSPACE_PLACE_REMEMBERED",
-                  correlation_id: context.correlationId,
-                })
-                .execute();
-            });
-          } catch (error) {
-            await context.db
-              .insertInto("audit_entries")
-              .values({
-                actor_user_id: user.id,
-                acting_role: actingRole,
-                operation: "role-workspace-place.remembered",
-                target_type: "User",
-                target_id: user.id,
-                outcome: "FAILED",
-                reason_code: "WORKSPACE_PLACE_REMEMBER_FAILED",
-                correlation_id: context.correlationId,
-              })
-              .execute();
-            throw error;
           }
 
           return { role: input.actingRole, place: input.place };

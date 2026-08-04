@@ -5,7 +5,7 @@ import {
 } from "@marketplace/core";
 import { Temporal } from "@js-temporal/polyfill";
 import { useMutation, useQuery } from "@apollo/client/react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FormattedMessage, IntlProvider, useIntl } from "react-intl";
 import { useNavigate } from "react-router-dom";
 
@@ -520,10 +520,12 @@ export function RoleWorkspaceScreen({
   actingRole,
   currentPlace,
   onAccessDenied,
+  preferRememberedPlace = false,
 }: {
   actingRole: UserRole;
   currentPlace: WorkspacePlace;
   onAccessDenied: () => void;
+  preferRememberedPlace?: boolean;
 }) {
   const navigate = useNavigate();
   const { data, error, loading } = useQuery(RoleWorkspaceDocument, {
@@ -532,6 +534,20 @@ export function RoleWorkspaceScreen({
   });
   const [rememberPlace] = useMutation(RememberRoleWorkspacePlaceDocument);
   const rememberingPlace = useRef<WorkspacePlace | null>(null);
+  const rememberAndCachePlace = useCallback(
+    async (place: WorkspacePlace) => {
+      await rememberPlace({ variables: { input: { actingRole, place } } });
+      const rolePaths = JSON.parse(
+        window.sessionStorage.getItem("marketplace.rolePaths") ?? "{}",
+      ) as Record<string, string>;
+      rolePaths[actingRole] = workspacePlacePresentation[place].path;
+      window.sessionStorage.setItem(
+        "marketplace.rolePaths",
+        JSON.stringify(rolePaths),
+      );
+    },
+    [actingRole, rememberPlace],
+  );
 
   useEffect(() => {
     if (!data) return;
@@ -557,26 +573,28 @@ export function RoleWorkspaceScreen({
     const rememberedPlace = workspace.rolePlaces.find(
       ({ role }) => role === actingRole,
     )?.place;
-    const currentPath = workspacePlacePresentation[currentPlace].path;
+    if (preferRememberedPlace && rememberedPlace) {
+      navigate(workspacePlacePresentation[rememberedPlace].path, {
+        replace: true,
+        state: { explicitRole: actingRole },
+      });
+      return;
+    }
     if (
       rememberedPlace !== currentPlace &&
       rememberingPlace.current !== currentPlace
     ) {
       rememberingPlace.current = currentPlace;
-      void rememberPlace({
-        variables: { input: { actingRole, place: currentPlace } },
-      }).then(() => {
-        const rolePaths = JSON.parse(
-          window.sessionStorage.getItem("marketplace.rolePaths") ?? "{}",
-        ) as Record<string, string>;
-        rolePaths[actingRole] = currentPath;
-        window.sessionStorage.setItem(
-          "marketplace.rolePaths",
-          JSON.stringify(rolePaths),
-        );
-      });
+      void rememberAndCachePlace(currentPlace);
     }
-  }, [actingRole, currentPlace, data, rememberPlace]);
+  }, [
+    actingRole,
+    currentPlace,
+    data,
+    navigate,
+    preferRememberedPlace,
+    rememberAndCachePlace,
+  ]);
 
   if (loading) return <WorkspaceStatus messageId="workspace.loading" role="status" />;
   if (error || !data) return <WorkspaceAccessError onSafeReturn={onAccessDenied} />;
@@ -593,17 +611,7 @@ export function RoleWorkspaceScreen({
         rolePlaces,
         onPlaceSelected: (place) => {
           rememberingPlace.current = place;
-          void rememberPlace({
-            variables: { input: { actingRole, place } },
-          }).then(() => {
-            const rolePaths = JSON.parse(
-              window.sessionStorage.getItem("marketplace.rolePaths") ?? "{}",
-            ) as Record<string, string>;
-            rolePaths[actingRole] = workspacePlacePresentation[place].path;
-            window.sessionStorage.setItem(
-              "marketplace.rolePaths",
-              JSON.stringify(rolePaths),
-            );
+          void rememberAndCachePlace(place).then(() => {
             navigate(workspacePlacePresentation[place].path);
           });
         },

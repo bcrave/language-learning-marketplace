@@ -55,6 +55,10 @@ async function main() {
 }
 
 const invokedPath = process.argv[1];
-if (invokedPath && import.meta.url === pathToFileURL(invokedPath).href) {
+if (
+  process.env.BUNDLED_TEST_API !== "true" &&
+  invokedPath &&
+  import.meta.url === pathToFileURL(invokedPath).href
+) {
   await main();
 }

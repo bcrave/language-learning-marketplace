@@ -49,11 +49,15 @@ function rememberedPath(role: UserRole) {
 }
 
 function GuardedWorkspaceRoute({
+  allowInitialDefault = false,
   actingRole,
   place,
+  preferRememberedPlace = false,
 }: {
+  allowInitialDefault?: boolean;
   actingRole: UserRole;
   place: WorkspacePlace;
+  preferRememberedPlace?: boolean;
 }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -67,9 +71,17 @@ function GuardedWorkspaceRoute({
   ) as UserRole | null;
   const explicitRole = (location.state as { explicitRole?: UserRole } | null)
     ?.explicitRole;
-  const [confirmed, setConfirmed] = useState(
-    storedRole === actingRole || explicitRole === actingRole,
+  const [confirmedRole, setConfirmedRole] = useState<UserRole | null>(
+    storedRole === actingRole ||
+      explicitRole === actingRole ||
+      (allowInitialDefault && storedRole === null)
+      ? actingRole
+      : null,
   );
+  const confirmed =
+    confirmedRole === actingRole ||
+    explicitRole === actingRole ||
+    storedRole === actingRole;
 
   if (!confirmed && storedRole !== actingRole) {
     const returnRole = storedRole ?? "STUDENT";
@@ -88,7 +100,7 @@ function GuardedWorkspaceRoute({
         <div className="guard-actions">
           <button
             type="button"
-            onClick={() => setConfirmed(true)}
+            onClick={() => setConfirmedRole(actingRole)}
           >
             {intl.formatMessage(
               { id: "workspace.deepLink.change" },
@@ -121,6 +133,7 @@ function GuardedWorkspaceRoute({
     <RoleWorkspaceScreen
       actingRole={actingRole}
       currentPlace={place}
+      preferRememberedPlace={preferRememberedPlace}
       onAccessDenied={() =>
         navigate(storedRole ? rememberedPath(storedRole) : "/student", {
           replace: true,
@@ -142,16 +155,24 @@ function SafeReturnRoute() {
   );
 }
 
+function StudentLandingRoute() {
+  const storedRole = window.sessionStorage.getItem(
+    "marketplace.actingRole",
+  ) as UserRole | null;
+  return (
+    <GuardedWorkspaceRoute
+      actingRole="STUDENT"
+      allowInitialDefault={storedRole === null}
+      place="STUDENT_DISCOVERY"
+      preferRememberedPlace
+    />
+  );
+}
+
 export const workspaceRouteObjects: RouteObject[] = [
   {
     path: "/student",
-    element: (
-      <Navigate
-        replace
-        state={{ explicitRole: "STUDENT" }}
-        to={defaultPath("STUDENT")}
-      />
-    ),
+    element: <StudentLandingRoute />,
   },
   ...Object.entries(workspacePlacePresentation).map(
     ([place, presentation]): RouteObject => ({

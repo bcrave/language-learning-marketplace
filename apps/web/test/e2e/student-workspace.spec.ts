@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 const ENGLISH_STUDENT_ID = "00000000-0000-4000-8000-000000000002";
 const FIRST_USE_STUDENT_ID = "00000000-0000-4000-8000-000000000003";
+const LIMITED_STUDENT_ID = "00000000-0000-4000-8000-000000000004";
 
 async function expectNoSeriousAccessibilityViolations(page: Page) {
   const accessibility = await new AxeBuilder({ page }).analyze();
@@ -56,11 +57,35 @@ test("a multi-role User switches explicitly and returns to each role's last plac
   await expect(page).toHaveURL(/\/teacher\/schedule$/);
   await page.getByRole("link", { name: "Disponibilidad" }).click();
   await expect(page).toHaveURL(/\/teacher\/availability$/);
+  await expectNoSeriousAccessibilityViolations(page);
 
-  await page.getByRole("combobox", { name: "Rol activo" }).selectOption("STUDENT");
+  await page.goto("/student");
+  await expect(
+    page.getByRole("heading", { name: "¿Cambiar al espacio de estudiante?" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Cambiar a estudiante" }).click();
   await expect(page).toHaveURL(/\/student\/discover$/);
+  await page.getByRole("link", { name: "Mi aprendizaje" }).click();
+  await expect(page).toHaveURL(/\/student\/learning$/);
   await page.getByRole("combobox", { name: "Rol activo" }).selectOption("TEACHER");
   await expect(page).toHaveURL(/\/teacher\/availability$/);
+  await expect(
+    page.getByRole("heading", { name: "Disponibilidad" }),
+  ).toBeVisible();
+
+  await page.goto("/student");
+  await page.getByRole("button", { name: "Cambiar a estudiante" }).click();
+  await expect(page).toHaveURL(/\/student\/learning$/);
+  await page.getByRole("combobox", { name: "Rol activo" }).selectOption("TEACHER");
+  await expect(page).toHaveURL(/\/teacher\/availability$/);
+
+  await page
+    .getByRole("combobox", { name: "Rol activo" })
+    .selectOption("ORGANIZATION_MANAGER");
+  await expect(
+    page.getByRole("heading", { name: "Estudiantes patrocinados" }),
+  ).toBeVisible();
+  await expectNoSeriousAccessibilityViolations(page);
 
   await page.goto("/administration/operations");
   await expect(
@@ -69,8 +94,10 @@ test("a multi-role User switches explicitly and returns to each role's last plac
     }),
   ).toBeVisible();
   await expectNoSeriousAccessibilityViolations(page);
-  await page.getByRole("button", { name: "Volver a docente" }).click();
-  await expect(page).toHaveURL(/\/teacher\/availability$/);
+  await page
+    .getByRole("button", { name: "Volver a responsable de organización" })
+    .click();
+  await expect(page).toHaveURL(/\/organization\/students$/);
 
   await page.goto("/administration/operations");
   await page
@@ -83,6 +110,30 @@ test("a multi-role User switches explicitly and returns to each role's last plac
     page.getByRole("combobox", { name: "Rol activo" }),
   ).toHaveValue("PLATFORM_ADMINISTRATOR");
   await expect(page).toHaveURL(/\/administration\/operations$/);
+  await expectNoSeriousAccessibilityViolations(page);
+});
+
+test("each English acting-role workspace is accessible", async ({ page }) => {
+  await page.route("**/graphql", async (route) => {
+    await route.continue({
+      headers: {
+        ...route.request().headers(),
+        "x-demo-user-id": ENGLISH_STUDENT_ID,
+      },
+    });
+  });
+  await page.goto("/student");
+
+  const actingRole = page.getByRole("combobox", { name: "Acting role" });
+  for (const [role, heading] of [
+    ["TEACHER", "Teaching schedule"],
+    ["ORGANIZATION_MANAGER", "Sponsored Students"],
+    ["PLATFORM_ADMINISTRATOR", "Marketplace operations"],
+  ] as const) {
+    await actingRole.selectOption(role);
+    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+    await expectNoSeriousAccessibilityViolations(page);
+  }
 });
 
 test("a fresh deep link waits for an explicit authorized role choice", async ({
@@ -114,12 +165,12 @@ test("an unassigned deep-link role is denied and keeps the current role", async 
     await route.continue({
       headers: {
         ...route.request().headers(),
-        "x-demo-user-id": ENGLISH_STUDENT_ID,
+        "x-demo-user-id": LIMITED_STUDENT_ID,
       },
     });
   });
   await page.goto("/student");
-  await expect(page.getByRole("heading", { name: "Hello, Alex Morgan" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Hello, Casey Nguyen" })).toBeVisible();
 
   await page.goto("/teacher/schedule");
   await page.getByRole("button", { name: "Change to Teacher" }).click();
@@ -143,6 +194,9 @@ test.describe("mobile role navigation", () => {
     await expect(
       page.getByRole("navigation", { name: "Menú de recorridos" }),
     ).toBeVisible();
+    await page
+      .getByRole("link", { name: "Descubrir sesiones de clase" })
+      .click();
     await expect(
       page.getByRole("link", { name: "Descubrir sesiones de clase" }),
     ).toHaveAttribute("aria-current", "page");

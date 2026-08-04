@@ -4,37 +4,45 @@ import { resolve } from "node:path";
 import { build } from "esbuild";
 
 const outputDirectory = resolve("dist");
+const isTestBuild = globalThis.process.env.BUILD_TARGET === "test";
 await rm(outputDirectory, { force: true, recursive: true });
 
 await build({
   bundle: true,
-  define: { "process.env.NODE_ENV": '"production"' },
+  define: {
+    "process.env.BUNDLED_TEST_API": isTestBuild ? '"true"' : '"false"',
+    "process.env.NODE_ENV": isTestBuild ? '"test"' : '"production"',
+  },
   entryNames: "[dir]/[name]",
-  entryPoints: [
-    "src/api/main.ts",
-    "src/database/migrate.ts",
-    "src/database/seed.ts",
-    "src/worker/main.ts",
-  ],
+  entryPoints: isTestBuild
+    ? ["src/api/test-main.ts"]
+    : [
+        "src/api/main.ts",
+        "src/database/migrate.ts",
+        "src/database/seed.ts",
+        "src/worker/main.ts",
+      ],
   format: "esm",
   minifySyntax: true,
   outbase: "src",
   outdir: outputDirectory,
   packages: "external",
   platform: "node",
-  plugins: [
-    {
-      name: "production-authenticator",
-      setup(context) {
-        context.onResolve(
-          { filter: /auth\/create-authenticator\.js$/ },
-          () => ({
-            path: resolve("src/auth/create-authenticator.production.ts"),
-          }),
-        );
-      },
-    },
-  ],
+  plugins: isTestBuild
+    ? []
+    : [
+        {
+          name: "production-authenticator",
+          setup(context) {
+            context.onResolve(
+              { filter: /auth\/create-authenticator\.js$/ },
+              () => ({
+                path: resolve("src/auth/create-authenticator.production.ts"),
+              }),
+            );
+          },
+        },
+      ],
   sourcemap: false,
   target: "node24",
   treeShaking: true,

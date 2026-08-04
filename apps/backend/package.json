@@ -4,12 +4,14 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:test": "BUILD_TARGET=test node scripts/build.mjs",
     "db:migrate": "tsx src/database/migrate.ts",
     "db:seed": "tsx src/database/seed.ts",
     "dev:api": "tsx watch src/api/main.ts",
     "dev:test-api": "tsx src/api/test-main.ts",
     "dev:worker": "tsx watch src/worker/main.ts",
     "start:api": "node dist/api/main.js",
+    "start:test-api": "node dist/api/test-main.js",
     "start:worker": "node dist/worker/main.js",
     "typecheck": "tsc -p tsconfig.json"
   },

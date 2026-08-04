@@ -7,6 +7,7 @@ import { migrateDatabase } from "./migrate.js";
 export const DEMO_STUDENT_ID = "00000000-0000-4000-8000-000000000001";
 export const DEMO_ENGLISH_STUDENT_ID = "00000000-0000-4000-8000-000000000002";
 export const DEMO_FIRST_USE_STUDENT_ID = "00000000-0000-4000-8000-000000000003";
+export const DEMO_LIMITED_STUDENT_ID = "00000000-0000-4000-8000-000000000004";
 
 export async function seedDemoStudents(db: Database) {
   const demoStudents = [
@@ -34,6 +35,14 @@ export async function seedDemoStudents(db: Database) {
       interface_locale: null,
       display_time_zone: null,
     },
+    {
+      id: DEMO_LIMITED_STUDENT_ID,
+      identity_issuer: "https://fake.local/",
+      identity_subject: DEMO_LIMITED_STUDENT_ID,
+      display_name: "Casey Nguyen",
+      interface_locale: "en" as const,
+      display_time_zone: "America/Chicago",
+    },
   ];
   for (const student of demoStudents) {
     await db
@@ -50,7 +59,11 @@ export async function seedDemoStudents(db: Database) {
       { user_id: DEMO_STUDENT_ID, role: "ORGANIZATION_MANAGER" },
       { user_id: DEMO_STUDENT_ID, role: "PLATFORM_ADMINISTRATOR" },
       { user_id: DEMO_ENGLISH_STUDENT_ID, role: "STUDENT" },
+      { user_id: DEMO_ENGLISH_STUDENT_ID, role: "TEACHER" },
+      { user_id: DEMO_ENGLISH_STUDENT_ID, role: "ORGANIZATION_MANAGER" },
+      { user_id: DEMO_ENGLISH_STUDENT_ID, role: "PLATFORM_ADMINISTRATOR" },
       { user_id: DEMO_FIRST_USE_STUDENT_ID, role: "STUDENT" },
+      { user_id: DEMO_LIMITED_STUDENT_ID, role: "STUDENT" },
     ])
     .onConflict((conflict) => conflict.columns(["user_id", "role"]).doNothing())
     .execute();
@@ -68,6 +81,10 @@ async function main() {
 }
 
 const invokedPath = process.argv[1];
-if (invokedPath && import.meta.url === pathToFileURL(invokedPath).href) {
+if (
+  process.env.BUNDLED_TEST_API !== "true" &&
+  invokedPath &&
+  import.meta.url === pathToFileURL(invokedPath).href
+) {
   await main();
 }

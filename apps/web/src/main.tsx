@@ -81,7 +81,7 @@ function AuthenticatedApp({
 const root = document.getElementById("root");
 if (!root) throw new Error("Application root is missing");
 
-if (import.meta.env.DEV) {
+if (import.meta.env.DEV || import.meta.env.MODE === "test") {
   void import("./development-main.js").then(({ renderDevelopmentApp }) => {
     renderDevelopmentApp(createRoot(root));
   });

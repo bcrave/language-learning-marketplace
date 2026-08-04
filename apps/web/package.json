@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
+    "build:test": "vite build --mode test",
     "dev": "vite --host 127.0.0.1",
+    "preview": "vite preview --host 127.0.0.1 --port 5173",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
