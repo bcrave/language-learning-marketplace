@@ -79,7 +79,7 @@ async function notifyAssignedTeacher(transaction: Database, classSessionId: stri
   const now = Temporal.Now.instant();
   const imminent = Temporal.Instant.compare(startsAtInstant, now) >= 0
     && startsAtInstant.since(now).total({ unit: "hours" }) <= 24;
-  await notifyClassSessionTeacher(transaction, teacherUserId, "class-session.teacher-assigned.teacher", classSessionId, startsAt, { imminent });
+  await notifyClassSessionTeacher(transaction, { teacherUserId, messageId: "class-session.teacher-assigned.teacher", classSessionId, startsAt, imminent });
 }
 
 export async function publishClassSession(
