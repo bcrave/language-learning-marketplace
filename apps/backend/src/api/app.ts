@@ -54,6 +54,12 @@ import {
   type Weekday,
 } from "../teacher-availability/teacher-availability-service.js";
 import {
+  processSubscriptionProviderEvent,
+  scheduleSubscriptionCancellation,
+  subscriptionForStudent,
+  undoSubscriptionCancellation,
+} from "../subscription/subscription-service.js";
+import {
   InterfaceLocale,
   type Resolvers,
   UserRole as GraphQLUserRole,
@@ -167,7 +173,14 @@ export function createApi(options: {
       PublishClassSessionResult: { __resolveType: (value) => value.__typename! },
       ChangeClassSessionSeatCapacityResult: { __resolveType: (value) => value.__typename! },
       AdjustClassCreditsResult: { __resolveType: (value) => value.__typename! },
+      ProcessSubscriptionProviderEventResult: { __resolveType: (value) => value.__typename! },
+      ScheduleSubscriptionCancellationResult: { __resolveType: (value) => value.__typename! },
+      UndoSubscriptionCancellationResult: { __resolveType: (value) => value.__typename! },
       Query: {
+        studentSubscription: async (_parent, _arguments, context) => {
+          const student = await authenticateStudent(context, "subscription.read", "Subscription");
+          return graphQLResult(await subscriptionForStudent(context.db, student.id));
+        },
         studentClassCredits: async (_parent, _arguments, context) => {
           const student = await authenticateStudent(context, "class-credit.read");
           return graphQLResult(await classCreditsForStudent(context.db, student.id));
@@ -322,6 +335,44 @@ export function createApi(options: {
         },
       },
       Mutation: {
+        processSubscriptionProviderEvent: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "subscription.provider-event.processed");
+          if (options.nodeEnv === "production") {
+            await recordAdministrationAudit(context.db, { administratorId: administrator.id, correlationId: context.correlationId, operation: "subscription.provider-event.processed", targetType: "Subscription", targetId: input.studentUserId, outcome: "DENIED", reasonCode: "PROVIDER_EVENT_COMMAND_DISABLED_IN_PUBLIC_DEMO" });
+            throw createGraphQLError("Subscription Provider Event simulation is unavailable in the public demonstration", { extensions: { code: "FORBIDDEN" } });
+          }
+          return graphQLResult(await idempotentAdministrationMutation(
+            context,
+            administrator,
+            "subscription.provider-event.processed",
+            input.idempotencyKey,
+            input,
+            (transaction) => processSubscriptionProviderEvent(transaction, administrator, input, context.correlationId),
+            { __typename: "SubscriptionConflict", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+          ));
+        },
+        scheduleSubscriptionCancellation: async (_parent, { input }, context) => {
+          const student = await authenticateStudent(context, "subscription.cancellation-scheduled");
+          return graphQLResult(await idempotentStudentMutation(
+            context,
+            student,
+            "subscription.cancellation-scheduled",
+            input.idempotencyKey,
+            input,
+            (transaction) => scheduleSubscriptionCancellation(transaction, student, context.correlationId),
+          ));
+        },
+        undoSubscriptionCancellation: async (_parent, { input }, context) => {
+          const student = await authenticateStudent(context, "subscription.cancellation-undone");
+          return graphQLResult(await idempotentStudentMutation(
+            context,
+            student,
+            "subscription.cancellation-undone",
+            input.idempotencyKey,
+            input,
+            (transaction) => undoSubscriptionCancellation(transaction, student, context.correlationId),
+          ));
+        },
         adjustClassCredits: async (_parent, { input }, context) => {
           const administrator = await authenticateAdministrator(context, "class-credit.adjusted");
           return graphQLResult(await idempotentAdministrationMutation(
@@ -612,12 +663,12 @@ export function createApi(options: {
     return result.teacher;
   }
 
-  async function authenticateStudent(context: ApiContext, operation: string) {
+  async function authenticateStudent(context: ApiContext, operation: string, targetType?: string) {
     const identity = await context.authenticator.authenticate(context.request);
     if (!identity) {
       throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
     }
-    const result = await studentFor(context.db, identity, context.correlationId, operation);
+    const result = await studentFor(context.db, identity, context.correlationId, operation, targetType);
     if (result.status === "UNKNOWN_USER") {
       throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
     }
@@ -650,7 +701,9 @@ export function createApi(options: {
     }
   }
 
-  async function idempotentAdministrationMutation<T>(context: ApiContext, administrator: { id: string }, operation: string, idempotencyKey: string, input: object, perform: (transaction: Database) => Promise<T>): Promise<T | { __typename: "CurriculumConflict"; code: string; message: string }> {
+  function idempotentAdministrationMutation<T>(context: ApiContext, administrator: { id: string }, operation: string, idempotencyKey: string, input: object, perform: (transaction: Database) => Promise<T>): Promise<T | { __typename: "CurriculumConflict"; code: string; message: string }>;
+  function idempotentAdministrationMutation<T, C extends { __typename: string; code: string; message: string }>(context: ApiContext, administrator: { id: string }, operation: string, idempotencyKey: string, input: object, perform: (transaction: Database) => Promise<T>, idempotencyConflict: C): Promise<T | C>;
+  async function idempotentAdministrationMutation<T, C extends { __typename: string; code: string; message: string }>(context: ApiContext, administrator: { id: string }, operation: string, idempotencyKey: string, input: object, perform: (transaction: Database) => Promise<T>, idempotencyConflict?: C): Promise<T | C | { __typename: "CurriculumConflict"; code: string; message: string }> {
     const inputFingerprint = JSON.stringify(input);
     try {
       return await context.db.transaction().execute(async (transaction) => {
@@ -660,7 +713,7 @@ export function createApi(options: {
         if (existing) {
           if (existing.input_fingerprint !== inputFingerprint) {
             await recordAdministrationAudit(transaction, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType: "IdempotencyKey", targetId: administrator.id, outcome: "DENIED", reasonCode: "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_INPUT" });
-            return { __typename: "CurriculumConflict", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." };
+            return idempotencyConflict ?? { __typename: "CurriculumConflict", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." };
           }
           const replaySucceeded = typeof existing.outcome === "object"
             && existing.outcome !== null
@@ -678,6 +731,47 @@ export function createApi(options: {
       await recordAdministrationAudit(context.db, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType: "CurriculumAdministration", targetId: administrator.id, outcome: "FAILED", reasonCode: "UNEXPECTED_MUTATION_FAILURE" });
       throw error;
     }
+  }
+
+  async function idempotentStudentMutation<T>(
+    context: ApiContext,
+    student: { id: string },
+    operation: string,
+    idempotencyKey: string,
+    input: object,
+    perform: (transaction: Database) => Promise<T>,
+  ): Promise<T | { __typename: "SubscriptionConflict"; code: string; message: string }> {
+    const inputFingerprint = JSON.stringify(input);
+    try {
+      return await context.db.transaction().execute(async (transaction) => {
+        await sql`select pg_advisory_xact_lock(hashtextextended(${`${student.id}:${operation}:${idempotencyKey}`}, 0))`.execute(transaction);
+        await transaction.deleteFrom("mutation_idempotency_records").where("actor_user_id", "=", student.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).where("created_at", "<=", sql<Date>`now() - interval '7 days'`).execute();
+        const existing = await transaction.selectFrom("mutation_idempotency_records").select(["input_fingerprint", "outcome"]).where("actor_user_id", "=", student.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).executeTakeFirst();
+        if (existing) {
+          if (existing.input_fingerprint !== inputFingerprint) {
+            await recordStudentSubscriptionAudit(transaction as Database, student.id, operation, context.correlationId, "DENIED", "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_INPUT");
+            return { __typename: "SubscriptionConflict", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." };
+          }
+          const replaySucceeded = typeof existing.outcome === "object"
+            && existing.outcome !== null
+            && "__typename" in existing.outcome
+            && typeof existing.outcome.__typename === "string"
+            && existing.outcome.__typename.endsWith("Success");
+          await recordStudentSubscriptionAudit(transaction as Database, student.id, operation, context.correlationId, replaySucceeded ? "SUCCEEDED" : "DENIED", replaySucceeded ? "IDEMPOTENT_REPLAY_SUCCEEDED" : "IDEMPOTENT_REPLAY_DENIED");
+          return existing.outcome as T;
+        }
+        const outcome = await perform(transaction as Database);
+        await transaction.insertInto("mutation_idempotency_records").values({ actor_user_id: student.id, operation, idempotency_key: idempotencyKey, input_fingerprint: inputFingerprint, outcome: JSON.stringify(outcome as Record<string, unknown>) }).execute();
+        return outcome;
+      });
+    } catch (error) {
+      await recordStudentSubscriptionAudit(context.db, student.id, operation, context.correlationId, "FAILED", "UNEXPECTED_MUTATION_FAILURE");
+      throw error;
+    }
+  }
+
+  async function recordStudentSubscriptionAudit(db: Database, studentId: string, operation: string, correlationId: string, outcome: "SUCCEEDED" | "DENIED" | "FAILED", reasonCode: string) {
+    await db.insertInto("audit_entries").values({ actor_user_id: studentId, acting_role: "STUDENT", operation, target_type: "Subscription", target_id: studentId, outcome, reason_code: reasonCode, correlation_id: correlationId }).execute();
   }
 
   async function auditedAdministrationMutation<T>(context: ApiContext, administrator: { id: string }, operation: string, perform: () => Promise<T>): Promise<T> {

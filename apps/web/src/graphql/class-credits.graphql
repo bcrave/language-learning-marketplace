@@ -54,3 +54,49 @@ mutation AdjustClassCredits($input: AdjustClassCreditsInput!) {
     }
   }
 }
+
+query StudentSubscription {
+  studentSubscription {
+    id
+    state
+    anchorDay
+    accountingTimeUtc
+    activatedAt
+    nextAnniversaryAt
+    cancellationEffectiveAt
+  }
+}
+
+mutation ScheduleSubscriptionCancellation($input: SubscriptionLifecycleInput!) {
+  scheduleSubscriptionCancellation(input: $input) {
+    ... on ScheduleSubscriptionCancellationSuccess {
+      subscription {
+        id
+        state
+        anchorDay
+        accountingTimeUtc
+        activatedAt
+        nextAnniversaryAt
+        cancellationEffectiveAt
+      }
+    }
+    ... on SubscriptionConflict { code message }
+  }
+}
+
+mutation UndoSubscriptionCancellation($input: SubscriptionLifecycleInput!) {
+  undoSubscriptionCancellation(input: $input) {
+    ... on UndoSubscriptionCancellationSuccess {
+      subscription {
+        id
+        state
+        anchorDay
+        accountingTimeUtc
+        activatedAt
+        nextAnniversaryAt
+        cancellationEffectiveAt
+      }
+    }
+    ... on SubscriptionConflict { code message }
+  }
+}

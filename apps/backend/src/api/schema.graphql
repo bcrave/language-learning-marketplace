@@ -43,6 +43,19 @@ enum ClassCreditAdjustmentErrorCode { INVALID_ADJUSTMENT INVALID_REASON STUDENT_
 type ClassCreditAdjustmentError { code: ClassCreditAdjustmentErrorCode!, message: String! }
 union AdjustClassCreditsResult = AdjustClassCreditsSuccess | ClassCreditAdjustmentError | CurriculumConflict
 
+enum SubscriptionState { ACTIVE CANCELLATION_SCHEDULED CANCELLED }
+enum SubscriptionProviderEventType { ACTIVATED RENEWED CANCELLED REACTIVATED }
+type Subscription { id: ID!, studentUserId: ID!, state: SubscriptionState!, anchorDay: Int!, accountingTimeUtc: String!, activatedAt: String!, nextAnniversaryAt: String, cancellationEffectiveAt: String }
+input ProcessSubscriptionProviderEventInput { idempotencyKey: ID!, providerEventId: ID!, studentUserId: ID!, eventType: SubscriptionProviderEventType!, effectiveAt: String!, reason: String! }
+input SubscriptionLifecycleInput { idempotencyKey: ID! }
+type ProcessSubscriptionProviderEventSuccess { subscription: Subscription!, account: ClassCreditAccount! }
+type ScheduleSubscriptionCancellationSuccess { subscription: Subscription! }
+type UndoSubscriptionCancellationSuccess { subscription: Subscription! }
+type SubscriptionConflict { code: String!, message: String! }
+union ProcessSubscriptionProviderEventResult = ProcessSubscriptionProviderEventSuccess | SubscriptionConflict
+union ScheduleSubscriptionCancellationResult = ScheduleSubscriptionCancellationSuccess | SubscriptionConflict
+union UndoSubscriptionCancellationResult = UndoSubscriptionCancellationSuccess | SubscriptionConflict
+
 type ClassSession { id: ID!, lessonUnitId: ID!, teacherUserId: ID!, startsAt: String!, endsAt: String!, schedulingTimeZone: String!, seatCapacity: Int!, occupiedSeats: Int! }
 input PublishClassSessionInput { idempotencyKey: ID!, lessonUnitId: ID!, teacherUserId: ID!, startsAtLocal: String!, schedulingTimeZone: String!, timeDisambiguation: LocalTimeDisambiguation!, seatCapacity: Int = 5 }
 type PublishClassSessionSuccess { classSession: ClassSession! }
@@ -161,6 +174,7 @@ type RoleWorkspace {
 }
 
 type Query {
+  studentSubscription: Subscription
   studentClassCredits: ClassCreditAccount!
   administrationClassCredits(studentUserId: ID!): ClassCreditAccount
   administrationClassSessions: [ClassSession!]!
@@ -173,6 +187,9 @@ type Query {
 }
 
 type Mutation {
+  processSubscriptionProviderEvent(input: ProcessSubscriptionProviderEventInput!): ProcessSubscriptionProviderEventResult!
+  scheduleSubscriptionCancellation(input: SubscriptionLifecycleInput!): ScheduleSubscriptionCancellationResult!
+  undoSubscriptionCancellation(input: SubscriptionLifecycleInput!): UndoSubscriptionCancellationResult!
   adjustClassCredits(input: AdjustClassCreditsInput!): AdjustClassCreditsResult!
   publishClassSession(input: PublishClassSessionInput!): PublishClassSessionResult!
   changeClassSessionSeatCapacity(input: ChangeClassSessionSeatCapacityInput!): ChangeClassSessionSeatCapacityResult!

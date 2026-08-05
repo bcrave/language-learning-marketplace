@@ -5,9 +5,13 @@ import { useIntl } from "react-intl";
 import {
   AdjustClassCreditsDocument,
   AdministrationClassCreditsDocument,
+  ScheduleSubscriptionCancellationDocument,
   type AdministrationClassCreditsQuery,
+  type StudentSubscriptionQuery,
   type StudentClassCreditsQuery,
+  StudentSubscriptionDocument,
   StudentClassCreditsDocument,
+  UndoSubscriptionCancellationDocument,
 } from "./generated/graphql.js";
 
 type ClassCreditAccount = NonNullable<AdministrationClassCreditsQuery["administrationClassCredits"]>;
@@ -58,6 +62,71 @@ export function StudentClassCredits() {
     <section className="workspace-card" aria-labelledby="student-class-credits-title">
       <h2 id="student-class-credits-title">{intl.formatMessage({ id: "classCredits.studentTitle" })}</h2>
       <AccountView account={data.studentClassCredits} />
+    </section>
+  );
+}
+
+const subscriptionStateMessageIds = {
+  ACTIVE: "subscription.state.active",
+  CANCELLATION_SCHEDULED: "subscription.state.cancellationScheduled",
+  CANCELLED: "subscription.state.cancelled",
+} as const;
+
+export function StudentSubscription({
+  idempotencyKeyFactory = () => crypto.randomUUID(),
+}: {
+  idempotencyKeyFactory?: () => string;
+}) {
+  const intl = useIntl();
+  const { data, error, loading } = useQuery(StudentSubscriptionDocument);
+  const [schedule, { loading: scheduling }] = useMutation(ScheduleSubscriptionCancellationDocument);
+  const [undo, { loading: undoing }] = useMutation(UndoSubscriptionCancellationDocument);
+  const [subscription, setSubscription] = useState<StudentSubscriptionQuery["studentSubscription"]>();
+  const [announcement, setAnnouncement] = useState<"scheduled" | "undone" | null>(null);
+  const [failure, setFailure] = useState(false);
+  const [pendingAttempt, setPendingAttempt] = useState<{ action: "schedule" | "undo"; key: string } | null>(null);
+  const current = subscription === undefined ? data?.studentSubscription : subscription;
+
+  async function changeSubscription(action: "schedule" | "undo") {
+    setAnnouncement(null);
+    setFailure(false);
+    const key = pendingAttempt?.action === action ? pendingAttempt.key : idempotencyKeyFactory();
+    setPendingAttempt({ action, key });
+    try {
+      const outcome = action === "schedule"
+        ? (await schedule({ variables: { input: { idempotencyKey: key } } })).data?.scheduleSubscriptionCancellation
+        : (await undo({ variables: { input: { idempotencyKey: key } } })).data?.undoSubscriptionCancellation;
+      if (outcome && "subscription" in outcome) {
+        setSubscription(outcome.subscription);
+        setAnnouncement(action === "schedule" ? "scheduled" : "undone");
+        setPendingAttempt(null);
+      } else {
+        setPendingAttempt(null);
+        setFailure(true);
+      }
+    } catch {
+      setFailure(true);
+    }
+  }
+
+  if (loading) return <p role="status">{intl.formatMessage({ id: "subscription.loading" })}</p>;
+  if (error || !data) return <p role="alert">{intl.formatMessage({ id: "subscription.loadError" })}</p>;
+  return (
+    <section className="workspace-card" aria-labelledby="student-subscription-title">
+      <h2 id="student-subscription-title">{intl.formatMessage({ id: "subscription.title" })}</h2>
+      {!current ? <p>{intl.formatMessage({ id: "subscription.none" })}</p> : <>
+        <p><strong>{intl.formatMessage({ id: subscriptionStateMessageIds[current.state] })}</strong></p>
+        {current.nextAnniversaryAt && <p>{intl.formatMessage({ id: "subscription.nextAnniversary" }, {
+          date: intl.formatDate(current.nextAnniversaryAt, { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }),
+        })}</p>}
+        {current.cancellationEffectiveAt && <p>{intl.formatMessage({ id: "subscription.cancellationEffective" }, {
+          date: intl.formatDate(current.cancellationEffectiveAt, { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }),
+        })}</p>}
+        {current.state === "ACTIVE" && <button disabled={scheduling} type="button" onClick={() => void changeSubscription("schedule")}>{intl.formatMessage({ id: "subscription.scheduleCancellation" })}</button>}
+        {current.state === "CANCELLATION_SCHEDULED" && <button disabled={undoing} type="button" onClick={() => void changeSubscription("undo")}>{intl.formatMessage({ id: "subscription.keep" })}</button>}
+      </>}
+      {announcement && <p role="status">{intl.formatMessage({ id: announcement === "scheduled" ? "subscription.scheduled" : "subscription.undone" })}</p>}
+      {failure && <p role="alert">{intl.formatMessage({ id: "subscription.changeError" })}</p>}
     </section>
   );
 }

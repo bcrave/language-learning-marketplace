@@ -5,6 +5,7 @@ import { canonicalCurriculumFixtures } from "./canonical-curriculum-fixtures.js"
 import { createDatabase, type Database } from "./database.js";
 import { migrateDatabase } from "./migrate.js";
 import type { CurriculumLevel } from "./types.js";
+import { monthlySubscriptionAnniversary } from "../subscription/subscription-time.js";
 
 export const DEMO_STUDENT_ID = "00000000-0000-4000-8000-000000000001";
 export const DEMO_ENGLISH_STUDENT_ID = "00000000-0000-4000-8000-000000000002";
@@ -69,6 +70,51 @@ export async function seedDemoStudents(db: Database) {
     ])
     .onConflict((conflict) => conflict.columns(["user_id", "role"]).doNothing())
     .execute();
+}
+
+export async function seedDemoSubscription(db: Database, now = new Date()) {
+  if (!db.isTransaction) {
+    await db.transaction().execute((transaction) => seedDemoSubscription(transaction as Database, now));
+    return;
+  }
+  const activatedAt = new Date(now.getTime() - 24 * 60 * 60 * 1_000);
+  activatedAt.setUTCMilliseconds(0);
+  const nextAnniversaryAt = monthlySubscriptionAnniversary(activatedAt, 1);
+  await db.insertInto("class_credit_accounts").values({ student_user_id: DEMO_STUDENT_ID })
+    .onConflict((conflict) => conflict.column("student_user_id").doNothing()).execute();
+  const grant = await db.insertInto("class_credit_ledger_entries").values({
+    student_user_id: DEMO_STUDENT_ID,
+    amount: 8,
+    source: "SUBSCRIPTION_GRANT",
+    source_reference: "canonical-subscription:initial",
+    reason: null,
+  }).onConflict((conflict) => conflict.columns(["source", "source_reference"]).doNothing())
+    .returning("id").executeTakeFirst();
+  if (grant) {
+    const account = await db.selectFrom("class_credit_accounts").select("available_balance")
+      .where("student_user_id", "=", DEMO_STUDENT_ID).forUpdate().executeTakeFirstOrThrow();
+    await db.updateTable("class_credit_accounts").set({ available_balance: account.available_balance + 8, updated_at: now })
+      .where("student_user_id", "=", DEMO_STUDENT_ID).executeTakeFirstOrThrow();
+  }
+  await db.insertInto("subscriptions").values({
+    id: "00000000-0000-4000-8000-000000000031",
+    student_user_id: DEMO_STUDENT_ID,
+    state: "ACTIVE",
+    activated_at: activatedAt,
+    anchor_day: activatedAt.getUTCDate(),
+    accounting_time_utc: [activatedAt.getUTCHours(), activatedAt.getUTCMinutes(), activatedAt.getUTCSeconds()].map((part) => String(part).padStart(2, "0")).join(":"),
+    next_anniversary_at: nextAnniversaryAt,
+    cancellation_effective_at: null,
+  }).onConflict((conflict) => conflict.column("student_user_id").doUpdateSet({
+    state: "ACTIVE",
+    activated_at: activatedAt,
+    anchor_day: activatedAt.getUTCDate(),
+    accounting_time_utc: [activatedAt.getUTCHours(), activatedAt.getUTCMinutes(), activatedAt.getUTCSeconds()].map((part) => String(part).padStart(2, "0")).join(":"),
+    renewal_count: 0,
+    next_anniversary_at: nextAnniversaryAt,
+    cancellation_effective_at: null,
+    updated_at: now,
+  })).execute();
 }
 
 const referenceFixtures: Record<string, [string, string]> = {
@@ -142,6 +188,7 @@ async function main() {
   try {
     await migrateDatabase(db);
     await seedDemoStudents(db);
+    await seedDemoSubscription(db);
     await seedDemoCurriculum(db);
   } finally {
     await db.destroy();

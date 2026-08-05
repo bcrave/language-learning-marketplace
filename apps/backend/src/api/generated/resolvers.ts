@@ -328,6 +328,7 @@ export type Mutation = {
   endTeacherAvailabilityRange: EndTeacherAvailabilityRangeResult;
   grantTeacherQualification: GrantTeacherQualificationResult;
   placeLessonUnitInCourse: ReorderLessonUnitResult;
+  processSubscriptionProviderEvent: ProcessSubscriptionProviderEventResult;
   publishClassSession: PublishClassSessionResult;
   rememberRoleWorkspacePlace: RolePlace;
   removeAvailabilityException: RemoveAvailabilityExceptionResult;
@@ -340,6 +341,8 @@ export type Mutation = {
   saveTeacherAvailabilityRange: SaveTeacherAvailabilityRangeResult;
   saveTeacherProfile: SaveTeacherProfileSuccess;
   saveUserPreferences: SaveUserPreferencesPayload;
+  scheduleSubscriptionCancellation: ScheduleSubscriptionCancellationResult;
+  undoSubscriptionCancellation: UndoSubscriptionCancellationResult;
 };
 
 
@@ -385,6 +388,11 @@ export type MutationGrantTeacherQualificationArgs = {
 
 export type MutationPlaceLessonUnitInCourseArgs = {
   input: ReorderLessonUnitInput;
+};
+
+
+export type MutationProcessSubscriptionProviderEventArgs = {
+  input: ProcessSubscriptionProviderEventInput;
 };
 
 
@@ -447,6 +455,33 @@ export type MutationSaveUserPreferencesArgs = {
   input: SaveUserPreferencesInput;
 };
 
+
+export type MutationScheduleSubscriptionCancellationArgs = {
+  input: SubscriptionLifecycleInput;
+};
+
+
+export type MutationUndoSubscriptionCancellationArgs = {
+  input: SubscriptionLifecycleInput;
+};
+
+export type ProcessSubscriptionProviderEventInput = {
+  effectiveAt: Scalars['String']['input'];
+  eventType: SubscriptionProviderEventType;
+  idempotencyKey: Scalars['ID']['input'];
+  providerEventId: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+  studentUserId: Scalars['ID']['input'];
+};
+
+export type ProcessSubscriptionProviderEventResult = ProcessSubscriptionProviderEventSuccess | SubscriptionConflict;
+
+export type ProcessSubscriptionProviderEventSuccess = {
+  __typename?: 'ProcessSubscriptionProviderEventSuccess';
+  account: ClassCreditAccount;
+  subscription: Subscription;
+};
+
 export type PublicTeacherProfile = {
   __typename?: 'PublicTeacherProfile';
   completedSessionCount: Scalars['Int']['output'];
@@ -485,6 +520,7 @@ export type Query = {
   publicTeacherProfile?: Maybe<PublicTeacherProfile>;
   roleWorkspace: RoleWorkspace;
   studentClassCredits: ClassCreditAccount;
+  studentSubscription?: Maybe<Subscription>;
   studentWorkspace: StudentWorkspace;
   teacherAvailability: TeacherAvailability;
   teacherAvailabilityPreview: Array<TeacherAvailabilityOccurrence>;
@@ -632,6 +668,13 @@ export type SaveUserPreferencesPayload = {
   user: User;
 };
 
+export type ScheduleSubscriptionCancellationResult = ScheduleSubscriptionCancellationSuccess | SubscriptionConflict;
+
+export type ScheduleSubscriptionCancellationSuccess = {
+  __typename?: 'ScheduleSubscriptionCancellationSuccess';
+  subscription: Subscription;
+};
+
 export type StructuredTextBlockInput = {
   items?: InputMaybe<Array<Scalars['String']['input']>>;
   level?: InputMaybe<Scalars['Int']['input']>;
@@ -644,6 +687,41 @@ export type StudentWorkspace = {
   roles: Array<UserRole>;
   user: User;
 };
+
+export type Subscription = {
+  __typename?: 'Subscription';
+  accountingTimeUtc: Scalars['String']['output'];
+  activatedAt: Scalars['String']['output'];
+  anchorDay: Scalars['Int']['output'];
+  cancellationEffectiveAt?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  nextAnniversaryAt?: Maybe<Scalars['String']['output']>;
+  state: SubscriptionState;
+  studentUserId: Scalars['ID']['output'];
+};
+
+export type SubscriptionConflict = {
+  __typename?: 'SubscriptionConflict';
+  code: Scalars['String']['output'];
+  message: Scalars['String']['output'];
+};
+
+export type SubscriptionLifecycleInput = {
+  idempotencyKey: Scalars['ID']['input'];
+};
+
+export enum SubscriptionProviderEventType {
+  Activated = 'ACTIVATED',
+  Cancelled = 'CANCELLED',
+  Reactivated = 'REACTIVATED',
+  Renewed = 'RENEWED'
+}
+
+export enum SubscriptionState {
+  Active = 'ACTIVE',
+  CancellationScheduled = 'CANCELLATION_SCHEDULED',
+  Cancelled = 'CANCELLED'
+}
 
 export type TeacherAvailability = {
   __typename?: 'TeacherAvailability';
@@ -697,6 +775,13 @@ export type Topic = {
   label: Scalars['String']['output'];
   labelEn: Scalars['String']['output'];
   labelEs: Scalars['String']['output'];
+};
+
+export type UndoSubscriptionCancellationResult = SubscriptionConflict | UndoSubscriptionCancellationSuccess;
+
+export type UndoSubscriptionCancellationSuccess = {
+  __typename?: 'UndoSubscriptionCancellationSuccess';
+  subscription: Subscription;
 };
 
 export type UpdateCourseInput = {
@@ -889,6 +974,10 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( ChangeTeacherQualificationSuccess )
     | ( CurriculumConflict )
   ;
+  ProcessSubscriptionProviderEventResult:
+    | ( ProcessSubscriptionProviderEventSuccess )
+    | ( SubscriptionConflict )
+  ;
   PublishClassSessionResult:
     | ( ClassSessionPublicationError )
     | ( CurriculumConflict )
@@ -919,6 +1008,14 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
   SaveTeacherAvailabilityRangeResult:
     | ( SaveTeacherAvailabilityRangeSuccess )
     | ( TeacherAvailabilityValidationError )
+  ;
+  ScheduleSubscriptionCancellationResult:
+    | ( ScheduleSubscriptionCancellationSuccess )
+    | ( SubscriptionConflict )
+  ;
+  UndoSubscriptionCancellationResult:
+    | ( SubscriptionConflict )
+    | ( UndoSubscriptionCancellationSuccess )
   ;
   UpdateCourseResult:
     | ( CurriculumConflict )
@@ -986,6 +1083,9 @@ export type ResolversTypes = {
   LessonUnitState: LessonUnitState;
   LocalTimeDisambiguation: LocalTimeDisambiguation;
   Mutation: ResolverTypeWrapper<Record<PropertyKey, never>>;
+  ProcessSubscriptionProviderEventInput: ProcessSubscriptionProviderEventInput;
+  ProcessSubscriptionProviderEventResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ProcessSubscriptionProviderEventResult']>;
+  ProcessSubscriptionProviderEventSuccess: ResolverTypeWrapper<ProcessSubscriptionProviderEventSuccess>;
   PublicTeacherProfile: ResolverTypeWrapper<PublicTeacherProfile>;
   PublishClassSessionInput: PublishClassSessionInput;
   PublishClassSessionResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['PublishClassSessionResult']>;
@@ -1014,9 +1114,16 @@ export type ResolversTypes = {
   SaveTeacherProfileSuccess: ResolverTypeWrapper<SaveTeacherProfileSuccess>;
   SaveUserPreferencesInput: SaveUserPreferencesInput;
   SaveUserPreferencesPayload: ResolverTypeWrapper<SaveUserPreferencesPayload>;
+  ScheduleSubscriptionCancellationResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ScheduleSubscriptionCancellationResult']>;
+  ScheduleSubscriptionCancellationSuccess: ResolverTypeWrapper<ScheduleSubscriptionCancellationSuccess>;
   String: ResolverTypeWrapper<Scalars['String']['output']>;
   StructuredTextBlockInput: StructuredTextBlockInput;
   StudentWorkspace: ResolverTypeWrapper<StudentWorkspace>;
+  Subscription: ResolverTypeWrapper<Record<PropertyKey, never>>;
+  SubscriptionConflict: ResolverTypeWrapper<SubscriptionConflict>;
+  SubscriptionLifecycleInput: SubscriptionLifecycleInput;
+  SubscriptionProviderEventType: SubscriptionProviderEventType;
+  SubscriptionState: SubscriptionState;
   TeacherAvailability: ResolverTypeWrapper<TeacherAvailability>;
   TeacherAvailabilityOccurrence: ResolverTypeWrapper<TeacherAvailabilityOccurrence>;
   TeacherAvailabilityRange: ResolverTypeWrapper<TeacherAvailabilityRange>;
@@ -1024,6 +1131,8 @@ export type ResolversTypes = {
   TeacherQualification: ResolverTypeWrapper<TeacherQualification>;
   TeacherQualificationRemovalBlocked: ResolverTypeWrapper<TeacherQualificationRemovalBlocked>;
   Topic: ResolverTypeWrapper<Topic>;
+  UndoSubscriptionCancellationResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['UndoSubscriptionCancellationResult']>;
+  UndoSubscriptionCancellationSuccess: ResolverTypeWrapper<UndoSubscriptionCancellationSuccess>;
   UpdateCourseInput: UpdateCourseInput;
   UpdateCourseResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['UpdateCourseResult']>;
   UpdateCourseSuccess: ResolverTypeWrapper<UpdateCourseSuccess>;
@@ -1084,6 +1193,9 @@ export type ResolversParentTypes = {
   LessonMaterial: LessonMaterial;
   LessonUnit: LessonUnit;
   Mutation: Record<PropertyKey, never>;
+  ProcessSubscriptionProviderEventInput: ProcessSubscriptionProviderEventInput;
+  ProcessSubscriptionProviderEventResult: ResolversUnionTypes<ResolversParentTypes>['ProcessSubscriptionProviderEventResult'];
+  ProcessSubscriptionProviderEventSuccess: ProcessSubscriptionProviderEventSuccess;
   PublicTeacherProfile: PublicTeacherProfile;
   PublishClassSessionInput: PublishClassSessionInput;
   PublishClassSessionResult: ResolversUnionTypes<ResolversParentTypes>['PublishClassSessionResult'];
@@ -1112,9 +1224,14 @@ export type ResolversParentTypes = {
   SaveTeacherProfileSuccess: SaveTeacherProfileSuccess;
   SaveUserPreferencesInput: SaveUserPreferencesInput;
   SaveUserPreferencesPayload: SaveUserPreferencesPayload;
+  ScheduleSubscriptionCancellationResult: ResolversUnionTypes<ResolversParentTypes>['ScheduleSubscriptionCancellationResult'];
+  ScheduleSubscriptionCancellationSuccess: ScheduleSubscriptionCancellationSuccess;
   String: Scalars['String']['output'];
   StructuredTextBlockInput: StructuredTextBlockInput;
   StudentWorkspace: StudentWorkspace;
+  Subscription: Record<PropertyKey, never>;
+  SubscriptionConflict: SubscriptionConflict;
+  SubscriptionLifecycleInput: SubscriptionLifecycleInput;
   TeacherAvailability: TeacherAvailability;
   TeacherAvailabilityOccurrence: TeacherAvailabilityOccurrence;
   TeacherAvailabilityRange: TeacherAvailabilityRange;
@@ -1122,6 +1239,8 @@ export type ResolversParentTypes = {
   TeacherQualification: TeacherQualification;
   TeacherQualificationRemovalBlocked: TeacherQualificationRemovalBlocked;
   Topic: Topic;
+  UndoSubscriptionCancellationResult: ResolversUnionTypes<ResolversParentTypes>['UndoSubscriptionCancellationResult'];
+  UndoSubscriptionCancellationSuccess: UndoSubscriptionCancellationSuccess;
   UpdateCourseInput: UpdateCourseInput;
   UpdateCourseResult: ResolversUnionTypes<ResolversParentTypes>['UpdateCourseResult'];
   UpdateCourseSuccess: UpdateCourseSuccess;
@@ -1332,6 +1451,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   endTeacherAvailabilityRange?: Resolver<ResolversTypes['EndTeacherAvailabilityRangeResult'], ParentType, ContextType, RequireFields<MutationEndTeacherAvailabilityRangeArgs, 'input'>>;
   grantTeacherQualification?: Resolver<ResolversTypes['GrantTeacherQualificationResult'], ParentType, ContextType, RequireFields<MutationGrantTeacherQualificationArgs, 'input'>>;
   placeLessonUnitInCourse?: Resolver<ResolversTypes['ReorderLessonUnitResult'], ParentType, ContextType, RequireFields<MutationPlaceLessonUnitInCourseArgs, 'input'>>;
+  processSubscriptionProviderEvent?: Resolver<ResolversTypes['ProcessSubscriptionProviderEventResult'], ParentType, ContextType, RequireFields<MutationProcessSubscriptionProviderEventArgs, 'input'>>;
   publishClassSession?: Resolver<ResolversTypes['PublishClassSessionResult'], ParentType, ContextType, RequireFields<MutationPublishClassSessionArgs, 'input'>>;
   rememberRoleWorkspacePlace?: Resolver<ResolversTypes['RolePlace'], ParentType, ContextType, RequireFields<MutationRememberRoleWorkspacePlaceArgs, 'input'>>;
   removeAvailabilityException?: Resolver<ResolversTypes['RemoveAvailabilityExceptionResult'], ParentType, ContextType, RequireFields<MutationRemoveAvailabilityExceptionArgs, 'input'>>;
@@ -1344,6 +1464,18 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   saveTeacherAvailabilityRange?: Resolver<ResolversTypes['SaveTeacherAvailabilityRangeResult'], ParentType, ContextType, RequireFields<MutationSaveTeacherAvailabilityRangeArgs, 'input'>>;
   saveTeacherProfile?: Resolver<ResolversTypes['SaveTeacherProfileSuccess'], ParentType, ContextType, RequireFields<MutationSaveTeacherProfileArgs, 'input'>>;
   saveUserPreferences?: Resolver<ResolversTypes['SaveUserPreferencesPayload'], ParentType, ContextType, RequireFields<MutationSaveUserPreferencesArgs, 'input'>>;
+  scheduleSubscriptionCancellation?: Resolver<ResolversTypes['ScheduleSubscriptionCancellationResult'], ParentType, ContextType, RequireFields<MutationScheduleSubscriptionCancellationArgs, 'input'>>;
+  undoSubscriptionCancellation?: Resolver<ResolversTypes['UndoSubscriptionCancellationResult'], ParentType, ContextType, RequireFields<MutationUndoSubscriptionCancellationArgs, 'input'>>;
+};
+
+export type ProcessSubscriptionProviderEventResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['ProcessSubscriptionProviderEventResult'] = ResolversParentTypes['ProcessSubscriptionProviderEventResult']> = {
+  __resolveType: TypeResolveFn<'ProcessSubscriptionProviderEventSuccess' | 'SubscriptionConflict', ParentType, ContextType>;
+};
+
+export type ProcessSubscriptionProviderEventSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['ProcessSubscriptionProviderEventSuccess'] = ResolversParentTypes['ProcessSubscriptionProviderEventSuccess']> = {
+  account?: Resolver<ResolversTypes['ClassCreditAccount'], ParentType, ContextType>;
+  subscription?: Resolver<ResolversTypes['Subscription'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
 export type PublicTeacherProfileResolvers<ContextType = any, ParentType extends ResolversParentTypes['PublicTeacherProfile'] = ResolversParentTypes['PublicTeacherProfile']> = {
@@ -1374,6 +1506,7 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   publicTeacherProfile?: Resolver<Maybe<ResolversTypes['PublicTeacherProfile']>, ParentType, ContextType, RequireFields<QueryPublicTeacherProfileArgs, 'locale' | 'teacherUserId'>>;
   roleWorkspace?: Resolver<ResolversTypes['RoleWorkspace'], ParentType, ContextType, RequireFields<QueryRoleWorkspaceArgs, 'actingRole'>>;
   studentClassCredits?: Resolver<ResolversTypes['ClassCreditAccount'], ParentType, ContextType>;
+  studentSubscription?: Resolver<Maybe<ResolversTypes['Subscription']>, ParentType, ContextType>;
   studentWorkspace?: Resolver<ResolversTypes['StudentWorkspace'], ParentType, ContextType>;
   teacherAvailability?: Resolver<ResolversTypes['TeacherAvailability'], ParentType, ContextType>;
   teacherAvailabilityPreview?: Resolver<Array<ResolversTypes['TeacherAvailabilityOccurrence']>, ParentType, ContextType, RequireFields<QueryTeacherAvailabilityPreviewArgs, 'localDates'>>;
@@ -1448,9 +1581,35 @@ export type SaveUserPreferencesPayloadResolvers<ContextType = any, ParentType ex
   user?: Resolver<ResolversTypes['User'], ParentType, ContextType>;
 };
 
+export type ScheduleSubscriptionCancellationResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['ScheduleSubscriptionCancellationResult'] = ResolversParentTypes['ScheduleSubscriptionCancellationResult']> = {
+  __resolveType: TypeResolveFn<'ScheduleSubscriptionCancellationSuccess' | 'SubscriptionConflict', ParentType, ContextType>;
+};
+
+export type ScheduleSubscriptionCancellationSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['ScheduleSubscriptionCancellationSuccess'] = ResolversParentTypes['ScheduleSubscriptionCancellationSuccess']> = {
+  subscription?: Resolver<ResolversTypes['Subscription'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
 export type StudentWorkspaceResolvers<ContextType = any, ParentType extends ResolversParentTypes['StudentWorkspace'] = ResolversParentTypes['StudentWorkspace']> = {
   roles?: Resolver<Array<ResolversTypes['UserRole']>, ParentType, ContextType>;
   user?: Resolver<ResolversTypes['User'], ParentType, ContextType>;
+};
+
+export type SubscriptionResolvers<ContextType = any, ParentType extends ResolversParentTypes['Subscription'] = ResolversParentTypes['Subscription']> = {
+  accountingTimeUtc?: SubscriptionResolver<ResolversTypes['String'], "accountingTimeUtc", ParentType, ContextType>;
+  activatedAt?: SubscriptionResolver<ResolversTypes['String'], "activatedAt", ParentType, ContextType>;
+  anchorDay?: SubscriptionResolver<ResolversTypes['Int'], "anchorDay", ParentType, ContextType>;
+  cancellationEffectiveAt?: SubscriptionResolver<Maybe<ResolversTypes['String']>, "cancellationEffectiveAt", ParentType, ContextType>;
+  id?: SubscriptionResolver<ResolversTypes['ID'], "id", ParentType, ContextType>;
+  nextAnniversaryAt?: SubscriptionResolver<Maybe<ResolversTypes['String']>, "nextAnniversaryAt", ParentType, ContextType>;
+  state?: SubscriptionResolver<ResolversTypes['SubscriptionState'], "state", ParentType, ContextType>;
+  studentUserId?: SubscriptionResolver<ResolversTypes['ID'], "studentUserId", ParentType, ContextType>;
+};
+
+export type SubscriptionConflictResolvers<ContextType = any, ParentType extends ResolversParentTypes['SubscriptionConflict'] = ResolversParentTypes['SubscriptionConflict']> = {
+  code?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
 export type TeacherAvailabilityResolvers<ContextType = any, ParentType extends ResolversParentTypes['TeacherAvailability'] = ResolversParentTypes['TeacherAvailability']> = {
@@ -1500,6 +1659,15 @@ export type TopicResolvers<ContextType = any, ParentType extends ResolversParent
   label?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   labelEn?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   labelEs?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
+export type UndoSubscriptionCancellationResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['UndoSubscriptionCancellationResult'] = ResolversParentTypes['UndoSubscriptionCancellationResult']> = {
+  __resolveType: TypeResolveFn<'SubscriptionConflict' | 'UndoSubscriptionCancellationSuccess', ParentType, ContextType>;
+};
+
+export type UndoSubscriptionCancellationSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['UndoSubscriptionCancellationSuccess'] = ResolversParentTypes['UndoSubscriptionCancellationSuccess']> = {
+  subscription?: Resolver<ResolversTypes['Subscription'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
 export type UpdateCourseResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['UpdateCourseResult'] = ResolversParentTypes['UpdateCourseResult']> = {
@@ -1564,6 +1732,8 @@ export type Resolvers<ContextType = any> = {
   LessonMaterial?: LessonMaterialResolvers<ContextType>;
   LessonUnit?: LessonUnitResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
+  ProcessSubscriptionProviderEventResult?: ProcessSubscriptionProviderEventResultResolvers<ContextType>;
+  ProcessSubscriptionProviderEventSuccess?: ProcessSubscriptionProviderEventSuccessResolvers<ContextType>;
   PublicTeacherProfile?: PublicTeacherProfileResolvers<ContextType>;
   PublishClassSessionResult?: PublishClassSessionResultResolvers<ContextType>;
   PublishClassSessionSuccess?: PublishClassSessionSuccessResolvers<ContextType>;
@@ -1583,7 +1753,11 @@ export type Resolvers<ContextType = any> = {
   SaveTeacherAvailabilityRangeSuccess?: SaveTeacherAvailabilityRangeSuccessResolvers<ContextType>;
   SaveTeacherProfileSuccess?: SaveTeacherProfileSuccessResolvers<ContextType>;
   SaveUserPreferencesPayload?: SaveUserPreferencesPayloadResolvers<ContextType>;
+  ScheduleSubscriptionCancellationResult?: ScheduleSubscriptionCancellationResultResolvers<ContextType>;
+  ScheduleSubscriptionCancellationSuccess?: ScheduleSubscriptionCancellationSuccessResolvers<ContextType>;
   StudentWorkspace?: StudentWorkspaceResolvers<ContextType>;
+  Subscription?: SubscriptionResolvers<ContextType>;
+  SubscriptionConflict?: SubscriptionConflictResolvers<ContextType>;
   TeacherAvailability?: TeacherAvailabilityResolvers<ContextType>;
   TeacherAvailabilityOccurrence?: TeacherAvailabilityOccurrenceResolvers<ContextType>;
   TeacherAvailabilityRange?: TeacherAvailabilityRangeResolvers<ContextType>;
@@ -1591,6 +1765,8 @@ export type Resolvers<ContextType = any> = {
   TeacherQualification?: TeacherQualificationResolvers<ContextType>;
   TeacherQualificationRemovalBlocked?: TeacherQualificationRemovalBlockedResolvers<ContextType>;
   Topic?: TopicResolvers<ContextType>;
+  UndoSubscriptionCancellationResult?: UndoSubscriptionCancellationResultResolvers<ContextType>;
+  UndoSubscriptionCancellationSuccess?: UndoSubscriptionCancellationSuccessResolvers<ContextType>;
   UpdateCourseResult?: UpdateCourseResultResolvers<ContextType>;
   UpdateCourseSuccess?: UpdateCourseSuccessResolvers<ContextType>;
   UpdateLessonUnitResult?: UpdateLessonUnitResultResolvers<ContextType>;

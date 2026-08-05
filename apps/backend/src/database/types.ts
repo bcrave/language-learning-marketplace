@@ -69,11 +69,13 @@ export interface TeacherQualificationsTable { id: Generated<string>; teacher_use
 export interface ClassSessionsTable { id: Generated<string>; lesson_unit_id: string; teacher_user_id: string; starts_at: Date; scheduling_time_zone: string; seat_capacity: Generated<number>; occupied_seats: Generated<number>; state: "PUBLISHED" | "CANCELLED" }
 export interface ScheduleCommitmentsTable { id: Generated<string>; user_id: string; class_session_id: string; commitment_role: "STUDENT" | "TEACHER"; starts_at: Date; ends_at: Date; active: Generated<boolean> }
 export interface ClassSessionRemindersTable { id: Generated<string>; class_session_id: string; recipient_user_id: string; commitment_role: "STUDENT" | "TEACHER"; due_at: Date; terminal_outcome: "DELIVERED" | "SUPPRESSED" | null; completed_at: Date | null }
-export interface InAppNotificationsTable { id: Generated<string>; recipient_user_id: string; message_id: string; variables: JSONColumnType<Record<string, unknown>>; created_at: Generated<Date> }
-export interface EmailNotificationIntentsTable { id: Generated<string>; recipient_user_id: string; message_id: string; locale: "en" | "es"; variables: JSONColumnType<Record<string, unknown>>; rendered_content: string; created_at: Generated<Date> }
+export interface InAppNotificationsTable { id: Generated<string>; recipient_user_id: string; message_id: string; variables: JSONColumnType<Record<string, unknown>>; source_reference: Generated<string | null>; created_at: Generated<Date> }
+export interface EmailNotificationIntentsTable { id: Generated<string>; recipient_user_id: string; message_id: string; locale: "en" | "es"; variables: JSONColumnType<Record<string, unknown>>; rendered_content: string; source_reference: Generated<string | null>; created_at: Generated<Date> }
 export interface MutationIdempotencyRecordsTable { actor_user_id: string; operation: string; idempotency_key: string; input_fingerprint: string; outcome: JSONColumnType<Record<string, unknown>>; created_at: Generated<Date> }
 export interface ClassCreditAccountsTable { student_user_id: string; available_balance: Generated<number>; updated_at: Generated<Date> }
 export interface ClassCreditLedgerEntriesTable { id: Generated<string>; student_user_id: string; amount: number; source: "CREDIT_ADJUSTMENT" | "SUBSCRIPTION_GRANT" | "ORGANIZATION_CREDIT_GRANT" | "BOOKING_DEDUCTION" | "BOOKING_REFUND"; source_reference: string; reason: string | null; created_at: Generated<Date> }
+export interface SubscriptionsTable { id: Generated<string>; student_user_id: string; state: "ACTIVE" | "CANCELLATION_SCHEDULED" | "CANCELLED"; activated_at: Date; anchor_day: number; accounting_time_utc: string; renewal_count: Generated<number>; next_anniversary_at: Date | null; cancellation_effective_at: Date | null; updated_at: Generated<Date> }
+export interface SubscriptionProviderEventsTable { provider_event_id: string; student_user_id: string; event_type: "ACTIVATED" | "RENEWED" | "CANCELLED" | "REACTIVATED"; effective_at: Date; reason: string; input_fingerprint: string; outcome: JSONColumnType<Record<string, unknown>>; created_at: Generated<Date> }
 export interface TeacherAvailabilitySettingsTable { teacher_user_id: string; time_zone: string; updated_at: Generated<Date> }
 export interface TeacherAvailabilityRangesTable { id: Generated<string>; teacher_user_id: string; weekday: number; start_local_time: string; end_local_time: string; effective_from: string; effective_until: string | null; time_zone: string; created_at: Generated<Date> }
 export interface AvailabilityExceptionsTable { id: Generated<string>; teacher_user_id: string; starts_at_local: string; ends_at_local: string; starts_at: Date; ends_at: Date; time_zone: string; removed_at: Date | null; created_at: Generated<Date> }
@@ -101,6 +103,8 @@ export interface DatabaseSchema {
   mutation_idempotency_records: MutationIdempotencyRecordsTable;
   class_credit_accounts: ClassCreditAccountsTable;
   class_credit_ledger_entries: ClassCreditLedgerEntriesTable;
+  subscriptions: SubscriptionsTable;
+  subscription_provider_events: SubscriptionProviderEventsTable;
   teacher_availability_settings: TeacherAvailabilitySettingsTable;
   teacher_availability_ranges: TeacherAvailabilityRangesTable;
   availability_exceptions: AvailabilityExceptionsTable;
