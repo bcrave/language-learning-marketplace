@@ -7,6 +7,7 @@ export async function studentFor(
   identity: UserIdentity,
   correlationId: string,
   operation: string,
+  targetType = "ClassCreditAccount",
 ) {
   const user = await db.selectFrom("users")
     .select("id")
@@ -24,7 +25,7 @@ export async function studentFor(
       actor_user_id: user.id,
       acting_role: "STUDENT",
       operation,
-      target_type: "ClassCreditAccount",
+      target_type: targetType,
       target_id: user.id,
       outcome: "DENIED",
       reason_code: "STUDENT_ROLE_REQUIRED",

@@ -44,3 +44,35 @@ mutation SaveUserPreferences($input: SaveUserPreferencesInput!) {
     }
   }
 }
+
+query StudentPlacements {
+  studentPlacements { targetLanguage curriculumLevel }
+}
+
+query ClassSessionDiscoveryOptions {
+  classSessionDiscoveryOptions {
+    targetLanguages
+    topics { key label }
+    teachers { id displayName }
+  }
+}
+
+query DiscoverClassSessions($input: ClassSessionDiscoveryInput!) {
+  discoverClassSessions(input: $input) {
+    appliedFilter { targetLanguage curriculumLevel teacherUserId topicKeys localDate }
+    nodes {
+      id startsAt endsAt schedulingTimeZone seatCapacity occupiedSeats
+      lessonUnit { id title summary objectives topics { key label } }
+      teacherProfile {
+        id displayName pronouns profileImageUrl professionalBiography
+        taughtLanguages qualifiedCurriculumLevels teachingTopics { key label }
+        completedSessionCount
+      }
+    }
+    pageInfo { endCursor hasNextPage }
+  }
+}
+
+mutation SetStudentPlacement($input: SetStudentPlacementInput!) {
+  setStudentPlacement(input: $input) { targetLanguage curriculumLevel }
+}
