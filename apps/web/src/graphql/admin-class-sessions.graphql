@@ -1,0 +1,25 @@
+query AdministrationClassSessions($locale: InterfaceLocale!) {
+  administrationCurriculum(locale: $locale) {
+    courses { id title lessonUnits { id title state } }
+    teachers { id displayName taughtLanguages qualifiedCurriculumLevels }
+  }
+  administrationClassSessions { id lessonUnitId teacherUserId startsAt endsAt schedulingTimeZone seatCapacity occupiedSeats }
+}
+
+mutation PublishClassSession($input: PublishClassSessionInput!) {
+  publishClassSession(input: $input) {
+    __typename
+    ... on PublishClassSessionSuccess { classSession { id lessonUnitId teacherUserId startsAt endsAt schedulingTimeZone seatCapacity occupiedSeats } }
+    ... on ClassSessionPublicationError { code message }
+    ... on CurriculumConflict { conflictCode: code message }
+  }
+}
+
+mutation ChangeClassSessionSeatCapacity($input: ChangeClassSessionSeatCapacityInput!) {
+  changeClassSessionSeatCapacity(input: $input) {
+    __typename
+    ... on ChangeClassSessionSeatCapacitySuccess { classSession { id lessonUnitId teacherUserId startsAt endsAt schedulingTimeZone seatCapacity occupiedSeats } }
+    ... on ClassSessionSeatCapacityError { code message }
+    ... on CurriculumConflict { conflictCode: code message }
+  }
+}

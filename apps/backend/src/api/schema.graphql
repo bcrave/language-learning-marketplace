@@ -34,6 +34,18 @@ enum LessonMaterialKind { STRUCTURED_TEXT HTTPS_REFERENCE }
 enum Weekday { MONDAY TUESDAY WEDNESDAY THURSDAY FRIDAY SATURDAY SUNDAY }
 enum LocalTimeDisambiguation { REJECT EARLIER LATER }
 
+type ClassSession { id: ID!, lessonUnitId: ID!, teacherUserId: ID!, startsAt: String!, endsAt: String!, schedulingTimeZone: String!, seatCapacity: Int!, occupiedSeats: Int! }
+input PublishClassSessionInput { idempotencyKey: ID!, lessonUnitId: ID!, teacherUserId: ID!, startsAtLocal: String!, schedulingTimeZone: String!, timeDisambiguation: LocalTimeDisambiguation!, seatCapacity: Int = 5 }
+type PublishClassSessionSuccess { classSession: ClassSession! }
+enum ClassSessionPublicationErrorCode { INVALID_SEAT_CAPACITY INVALID_SCHEDULING_TIME_ZONE LOCAL_TIME_FOLD LOCAL_TIME_GAP INVALID_LOCAL_DATE_TIME INVALID_LESSON_UNIT TEACHER_QUALIFICATION_REQUIRED TEACHER_AVAILABILITY_REQUIRED AVAILABILITY_EXCEPTION_CONFLICT TEACHER_SCHEDULE_CONFLICT }
+type ClassSessionPublicationError { code: ClassSessionPublicationErrorCode!, message: String! }
+union PublishClassSessionResult = PublishClassSessionSuccess | ClassSessionPublicationError | CurriculumConflict
+input ChangeClassSessionSeatCapacityInput { idempotencyKey: ID!, classSessionId: ID!, seatCapacity: Int! }
+type ChangeClassSessionSeatCapacitySuccess { classSession: ClassSession! }
+enum ClassSessionSeatCapacityErrorCode { INVALID_SEAT_CAPACITY CLASS_SESSION_NOT_FOUND SEAT_CAPACITY_BELOW_OCCUPIED_SEATS }
+type ClassSessionSeatCapacityError { code: ClassSessionSeatCapacityErrorCode!, message: String! }
+union ChangeClassSessionSeatCapacityResult = ChangeClassSessionSeatCapacitySuccess | ClassSessionSeatCapacityError | CurriculumConflict
+
 type TeacherAvailabilityRange { id: ID!, weekday: Weekday!, startLocalTime: String!, endLocalTime: String!, effectiveFrom: String!, effectiveUntil: String, timeZone: String! }
 type AvailabilityException { id: ID!, startsAtLocal: String!, endsAtLocal: String!, startsAt: String!, endsAt: String!, timeZone: String! }
 type TeacherAvailability { timeZone: String!, weeklyRanges: [TeacherAvailabilityRange!]!, exceptions: [AvailabilityException!]! }
@@ -140,6 +152,7 @@ type RoleWorkspace {
 }
 
 type Query {
+  administrationClassSessions: [ClassSession!]!
   teacherAvailability: TeacherAvailability!
   teacherAvailabilityPreview(localDates: [String!]!): [TeacherAvailabilityOccurrence!]!
   administrationCurriculum(locale: InterfaceLocale!): AdministrationCurriculum!
@@ -149,6 +162,8 @@ type Query {
 }
 
 type Mutation {
+  publishClassSession(input: PublishClassSessionInput!): PublishClassSessionResult!
+  changeClassSessionSeatCapacity(input: ChangeClassSessionSeatCapacityInput!): ChangeClassSessionSeatCapacityResult!
   saveTeacherAvailabilityRange(input: SaveTeacherAvailabilityRangeInput!): SaveTeacherAvailabilityRangeResult!
   addAvailabilityException(input: AddAvailabilityExceptionInput!): AddAvailabilityExceptionResult!
   endTeacherAvailabilityRange(input: EndTeacherAvailabilityRangeInput!): EndTeacherAvailabilityRangeResult!

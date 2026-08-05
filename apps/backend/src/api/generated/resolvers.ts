@@ -68,6 +68,19 @@ export type AvailabilityExceptionSessionConflict = {
   message: Scalars['String']['output'];
 };
 
+export type ChangeClassSessionSeatCapacityInput = {
+  classSessionId: Scalars['ID']['input'];
+  idempotencyKey: Scalars['ID']['input'];
+  seatCapacity: Scalars['Int']['input'];
+};
+
+export type ChangeClassSessionSeatCapacityResult = ChangeClassSessionSeatCapacitySuccess | ClassSessionSeatCapacityError | CurriculumConflict;
+
+export type ChangeClassSessionSeatCapacitySuccess = {
+  __typename?: 'ChangeClassSessionSeatCapacitySuccess';
+  classSession: ClassSession;
+};
+
 export type ChangeTeacherQualificationInput = {
   curriculumLevel: CurriculumLevel;
   idempotencyKey: Scalars['ID']['input'];
@@ -79,6 +92,49 @@ export type ChangeTeacherQualificationSuccess = {
   __typename?: 'ChangeTeacherQualificationSuccess';
   teacherProfile: PublicTeacherProfile;
 };
+
+export type ClassSession = {
+  __typename?: 'ClassSession';
+  endsAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  lessonUnitId: Scalars['ID']['output'];
+  occupiedSeats: Scalars['Int']['output'];
+  schedulingTimeZone: Scalars['String']['output'];
+  seatCapacity: Scalars['Int']['output'];
+  startsAt: Scalars['String']['output'];
+  teacherUserId: Scalars['ID']['output'];
+};
+
+export type ClassSessionPublicationError = {
+  __typename?: 'ClassSessionPublicationError';
+  code: ClassSessionPublicationErrorCode;
+  message: Scalars['String']['output'];
+};
+
+export enum ClassSessionPublicationErrorCode {
+  AvailabilityExceptionConflict = 'AVAILABILITY_EXCEPTION_CONFLICT',
+  InvalidLessonUnit = 'INVALID_LESSON_UNIT',
+  InvalidLocalDateTime = 'INVALID_LOCAL_DATE_TIME',
+  InvalidSchedulingTimeZone = 'INVALID_SCHEDULING_TIME_ZONE',
+  InvalidSeatCapacity = 'INVALID_SEAT_CAPACITY',
+  LocalTimeFold = 'LOCAL_TIME_FOLD',
+  LocalTimeGap = 'LOCAL_TIME_GAP',
+  TeacherAvailabilityRequired = 'TEACHER_AVAILABILITY_REQUIRED',
+  TeacherQualificationRequired = 'TEACHER_QUALIFICATION_REQUIRED',
+  TeacherScheduleConflict = 'TEACHER_SCHEDULE_CONFLICT'
+}
+
+export type ClassSessionSeatCapacityError = {
+  __typename?: 'ClassSessionSeatCapacityError';
+  code: ClassSessionSeatCapacityErrorCode;
+  message: Scalars['String']['output'];
+};
+
+export enum ClassSessionSeatCapacityErrorCode {
+  ClassSessionNotFound = 'CLASS_SESSION_NOT_FOUND',
+  InvalidSeatCapacity = 'INVALID_SEAT_CAPACITY',
+  SeatCapacityBelowOccupiedSeats = 'SEAT_CAPACITY_BELOW_OCCUPIED_SEATS'
+}
 
 export type Course = {
   __typename?: 'Course';
@@ -213,11 +269,13 @@ export type Mutation = {
   __typename?: 'Mutation';
   addAvailabilityException: AddAvailabilityExceptionResult;
   addLessonMaterial: AddLessonMaterialResult;
+  changeClassSessionSeatCapacity: ChangeClassSessionSeatCapacityResult;
   createCourse: CreateCourseResult;
   createLessonUnit: CreateLessonUnitResult;
   endTeacherAvailabilityRange: EndTeacherAvailabilityRangeResult;
   grantTeacherQualification: GrantTeacherQualificationResult;
   placeLessonUnitInCourse: ReorderLessonUnitResult;
+  publishClassSession: PublishClassSessionResult;
   rememberRoleWorkspacePlace: RolePlace;
   removeAvailabilityException: RemoveAvailabilityExceptionResult;
   removeTeacherQualification: RemoveTeacherQualificationResult;
@@ -239,6 +297,11 @@ export type MutationAddAvailabilityExceptionArgs = {
 
 export type MutationAddLessonMaterialArgs = {
   input: AddLessonMaterialInput;
+};
+
+
+export type MutationChangeClassSessionSeatCapacityArgs = {
+  input: ChangeClassSessionSeatCapacityInput;
 };
 
 
@@ -264,6 +327,11 @@ export type MutationGrantTeacherQualificationArgs = {
 
 export type MutationPlaceLessonUnitInCourseArgs = {
   input: ReorderLessonUnitInput;
+};
+
+
+export type MutationPublishClassSessionArgs = {
+  input: PublishClassSessionInput;
 };
 
 
@@ -334,8 +402,26 @@ export type PublicTeacherProfile = {
   teachingTopics: Array<Topic>;
 };
 
+export type PublishClassSessionInput = {
+  idempotencyKey: Scalars['ID']['input'];
+  lessonUnitId: Scalars['ID']['input'];
+  schedulingTimeZone: Scalars['String']['input'];
+  seatCapacity?: InputMaybe<Scalars['Int']['input']>;
+  startsAtLocal: Scalars['String']['input'];
+  teacherUserId: Scalars['ID']['input'];
+  timeDisambiguation: LocalTimeDisambiguation;
+};
+
+export type PublishClassSessionResult = ClassSessionPublicationError | CurriculumConflict | PublishClassSessionSuccess;
+
+export type PublishClassSessionSuccess = {
+  __typename?: 'PublishClassSessionSuccess';
+  classSession: ClassSession;
+};
+
 export type Query = {
   __typename?: 'Query';
+  administrationClassSessions: Array<ClassSession>;
   administrationCurriculum: AdministrationCurriculum;
   publicTeacherProfile?: Maybe<PublicTeacherProfile>;
   roleWorkspace: RoleWorkspace;
@@ -712,6 +798,11 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( CurriculumConflict )
     | ( InvalidLessonMaterial )
   ;
+  ChangeClassSessionSeatCapacityResult:
+    | ( ChangeClassSessionSeatCapacitySuccess )
+    | ( ClassSessionSeatCapacityError )
+    | ( CurriculumConflict )
+  ;
   CreateCourseResult:
     | ( CreateCourseSuccess )
     | ( CurriculumConflict )
@@ -727,6 +818,11 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
   GrantTeacherQualificationResult:
     | ( ChangeTeacherQualificationSuccess )
     | ( CurriculumConflict )
+  ;
+  PublishClassSessionResult:
+    | ( ClassSessionPublicationError )
+    | ( CurriculumConflict )
+    | ( PublishClassSessionSuccess )
   ;
   RemoveAvailabilityExceptionResult:
     | ( RemoveAvailabilityExceptionSuccess )
@@ -778,8 +874,16 @@ export type ResolversTypes = {
   AvailabilityException: ResolverTypeWrapper<AvailabilityException>;
   AvailabilityExceptionSessionConflict: ResolverTypeWrapper<AvailabilityExceptionSessionConflict>;
   Boolean: ResolverTypeWrapper<Scalars['Boolean']['output']>;
+  ChangeClassSessionSeatCapacityInput: ChangeClassSessionSeatCapacityInput;
+  ChangeClassSessionSeatCapacityResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ChangeClassSessionSeatCapacityResult']>;
+  ChangeClassSessionSeatCapacitySuccess: ResolverTypeWrapper<ChangeClassSessionSeatCapacitySuccess>;
   ChangeTeacherQualificationInput: ChangeTeacherQualificationInput;
   ChangeTeacherQualificationSuccess: ResolverTypeWrapper<ChangeTeacherQualificationSuccess>;
+  ClassSession: ResolverTypeWrapper<ClassSession>;
+  ClassSessionPublicationError: ResolverTypeWrapper<ClassSessionPublicationError>;
+  ClassSessionPublicationErrorCode: ClassSessionPublicationErrorCode;
+  ClassSessionSeatCapacityError: ResolverTypeWrapper<ClassSessionSeatCapacityError>;
+  ClassSessionSeatCapacityErrorCode: ClassSessionSeatCapacityErrorCode;
   Course: ResolverTypeWrapper<Course>;
   CreateCourseInput: CreateCourseInput;
   CreateCourseResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['CreateCourseResult']>;
@@ -805,6 +909,9 @@ export type ResolversTypes = {
   LocalTimeDisambiguation: LocalTimeDisambiguation;
   Mutation: ResolverTypeWrapper<Record<PropertyKey, never>>;
   PublicTeacherProfile: ResolverTypeWrapper<PublicTeacherProfile>;
+  PublishClassSessionInput: PublishClassSessionInput;
+  PublishClassSessionResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['PublishClassSessionResult']>;
+  PublishClassSessionSuccess: ResolverTypeWrapper<PublishClassSessionSuccess>;
   Query: ResolverTypeWrapper<Record<PropertyKey, never>>;
   RememberRoleWorkspacePlaceInput: RememberRoleWorkspacePlaceInput;
   RemoveAvailabilityExceptionInput: RemoveAvailabilityExceptionInput;
@@ -866,8 +973,14 @@ export type ResolversParentTypes = {
   AvailabilityException: AvailabilityException;
   AvailabilityExceptionSessionConflict: AvailabilityExceptionSessionConflict;
   Boolean: Scalars['Boolean']['output'];
+  ChangeClassSessionSeatCapacityInput: ChangeClassSessionSeatCapacityInput;
+  ChangeClassSessionSeatCapacityResult: ResolversUnionTypes<ResolversParentTypes>['ChangeClassSessionSeatCapacityResult'];
+  ChangeClassSessionSeatCapacitySuccess: ChangeClassSessionSeatCapacitySuccess;
   ChangeTeacherQualificationInput: ChangeTeacherQualificationInput;
   ChangeTeacherQualificationSuccess: ChangeTeacherQualificationSuccess;
+  ClassSession: ClassSession;
+  ClassSessionPublicationError: ClassSessionPublicationError;
+  ClassSessionSeatCapacityError: ClassSessionSeatCapacityError;
   Course: Course;
   CreateCourseInput: CreateCourseInput;
   CreateCourseResult: ResolversUnionTypes<ResolversParentTypes>['CreateCourseResult'];
@@ -888,6 +1001,9 @@ export type ResolversParentTypes = {
   LessonUnit: LessonUnit;
   Mutation: Record<PropertyKey, never>;
   PublicTeacherProfile: PublicTeacherProfile;
+  PublishClassSessionInput: PublishClassSessionInput;
+  PublishClassSessionResult: ResolversUnionTypes<ResolversParentTypes>['PublishClassSessionResult'];
+  PublishClassSessionSuccess: PublishClassSessionSuccess;
   Query: Record<PropertyKey, never>;
   RememberRoleWorkspacePlaceInput: RememberRoleWorkspacePlaceInput;
   RemoveAvailabilityExceptionInput: RemoveAvailabilityExceptionInput;
@@ -974,8 +1090,40 @@ export type AvailabilityExceptionSessionConflictResolvers<ContextType = any, Par
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
+export type ChangeClassSessionSeatCapacityResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['ChangeClassSessionSeatCapacityResult'] = ResolversParentTypes['ChangeClassSessionSeatCapacityResult']> = {
+  __resolveType: TypeResolveFn<'ChangeClassSessionSeatCapacitySuccess' | 'ClassSessionSeatCapacityError' | 'CurriculumConflict', ParentType, ContextType>;
+};
+
+export type ChangeClassSessionSeatCapacitySuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['ChangeClassSessionSeatCapacitySuccess'] = ResolversParentTypes['ChangeClassSessionSeatCapacitySuccess']> = {
+  classSession?: Resolver<ResolversTypes['ClassSession'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
 export type ChangeTeacherQualificationSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['ChangeTeacherQualificationSuccess'] = ResolversParentTypes['ChangeTeacherQualificationSuccess']> = {
   teacherProfile?: Resolver<ResolversTypes['PublicTeacherProfile'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type ClassSessionResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassSession'] = ResolversParentTypes['ClassSession']> = {
+  endsAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  lessonUnitId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  occupiedSeats?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  schedulingTimeZone?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  seatCapacity?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  startsAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  teacherUserId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+};
+
+export type ClassSessionPublicationErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassSessionPublicationError'] = ResolversParentTypes['ClassSessionPublicationError']> = {
+  code?: Resolver<ResolversTypes['ClassSessionPublicationErrorCode'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type ClassSessionSeatCapacityErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassSessionSeatCapacityError'] = ResolversParentTypes['ClassSessionSeatCapacityError']> = {
+  code?: Resolver<ResolversTypes['ClassSessionSeatCapacityErrorCode'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
@@ -1063,11 +1211,13 @@ export type LessonUnitResolvers<ContextType = any, ParentType extends ResolversP
 export type MutationResolvers<ContextType = any, ParentType extends ResolversParentTypes['Mutation'] = ResolversParentTypes['Mutation']> = {
   addAvailabilityException?: Resolver<ResolversTypes['AddAvailabilityExceptionResult'], ParentType, ContextType, RequireFields<MutationAddAvailabilityExceptionArgs, 'input'>>;
   addLessonMaterial?: Resolver<ResolversTypes['AddLessonMaterialResult'], ParentType, ContextType, RequireFields<MutationAddLessonMaterialArgs, 'input'>>;
+  changeClassSessionSeatCapacity?: Resolver<ResolversTypes['ChangeClassSessionSeatCapacityResult'], ParentType, ContextType, RequireFields<MutationChangeClassSessionSeatCapacityArgs, 'input'>>;
   createCourse?: Resolver<ResolversTypes['CreateCourseResult'], ParentType, ContextType, RequireFields<MutationCreateCourseArgs, 'input'>>;
   createLessonUnit?: Resolver<ResolversTypes['CreateLessonUnitResult'], ParentType, ContextType, RequireFields<MutationCreateLessonUnitArgs, 'input'>>;
   endTeacherAvailabilityRange?: Resolver<ResolversTypes['EndTeacherAvailabilityRangeResult'], ParentType, ContextType, RequireFields<MutationEndTeacherAvailabilityRangeArgs, 'input'>>;
   grantTeacherQualification?: Resolver<ResolversTypes['GrantTeacherQualificationResult'], ParentType, ContextType, RequireFields<MutationGrantTeacherQualificationArgs, 'input'>>;
   placeLessonUnitInCourse?: Resolver<ResolversTypes['ReorderLessonUnitResult'], ParentType, ContextType, RequireFields<MutationPlaceLessonUnitInCourseArgs, 'input'>>;
+  publishClassSession?: Resolver<ResolversTypes['PublishClassSessionResult'], ParentType, ContextType, RequireFields<MutationPublishClassSessionArgs, 'input'>>;
   rememberRoleWorkspacePlace?: Resolver<ResolversTypes['RolePlace'], ParentType, ContextType, RequireFields<MutationRememberRoleWorkspacePlaceArgs, 'input'>>;
   removeAvailabilityException?: Resolver<ResolversTypes['RemoveAvailabilityExceptionResult'], ParentType, ContextType, RequireFields<MutationRemoveAvailabilityExceptionArgs, 'input'>>;
   removeTeacherQualification?: Resolver<ResolversTypes['RemoveTeacherQualificationResult'], ParentType, ContextType, RequireFields<MutationRemoveTeacherQualificationArgs, 'input'>>;
@@ -1093,7 +1243,17 @@ export type PublicTeacherProfileResolvers<ContextType = any, ParentType extends 
   teachingTopics?: Resolver<Array<ResolversTypes['Topic']>, ParentType, ContextType>;
 };
 
+export type PublishClassSessionResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['PublishClassSessionResult'] = ResolversParentTypes['PublishClassSessionResult']> = {
+  __resolveType: TypeResolveFn<'ClassSessionPublicationError' | 'CurriculumConflict' | 'PublishClassSessionSuccess', ParentType, ContextType>;
+};
+
+export type PublishClassSessionSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['PublishClassSessionSuccess'] = ResolversParentTypes['PublishClassSessionSuccess']> = {
+  classSession?: Resolver<ResolversTypes['ClassSession'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
 export type QueryResolvers<ContextType = any, ParentType extends ResolversParentTypes['Query'] = ResolversParentTypes['Query']> = {
+  administrationClassSessions?: Resolver<Array<ResolversTypes['ClassSession']>, ParentType, ContextType>;
   administrationCurriculum?: Resolver<ResolversTypes['AdministrationCurriculum'], ParentType, ContextType, RequireFields<QueryAdministrationCurriculumArgs, 'locale'>>;
   publicTeacherProfile?: Resolver<Maybe<ResolversTypes['PublicTeacherProfile']>, ParentType, ContextType, RequireFields<QueryPublicTeacherProfileArgs, 'locale' | 'teacherUserId'>>;
   roleWorkspace?: Resolver<ResolversTypes['RoleWorkspace'], ParentType, ContextType, RequireFields<QueryRoleWorkspaceArgs, 'actingRole'>>;
@@ -1262,7 +1422,12 @@ export type Resolvers<ContextType = any> = {
   AdministrationCurriculum?: AdministrationCurriculumResolvers<ContextType>;
   AvailabilityException?: AvailabilityExceptionResolvers<ContextType>;
   AvailabilityExceptionSessionConflict?: AvailabilityExceptionSessionConflictResolvers<ContextType>;
+  ChangeClassSessionSeatCapacityResult?: ChangeClassSessionSeatCapacityResultResolvers<ContextType>;
+  ChangeClassSessionSeatCapacitySuccess?: ChangeClassSessionSeatCapacitySuccessResolvers<ContextType>;
   ChangeTeacherQualificationSuccess?: ChangeTeacherQualificationSuccessResolvers<ContextType>;
+  ClassSession?: ClassSessionResolvers<ContextType>;
+  ClassSessionPublicationError?: ClassSessionPublicationErrorResolvers<ContextType>;
+  ClassSessionSeatCapacityError?: ClassSessionSeatCapacityErrorResolvers<ContextType>;
   Course?: CourseResolvers<ContextType>;
   CreateCourseResult?: CreateCourseResultResolvers<ContextType>;
   CreateCourseSuccess?: CreateCourseSuccessResolvers<ContextType>;
@@ -1278,6 +1443,8 @@ export type Resolvers<ContextType = any> = {
   LessonUnit?: LessonUnitResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
   PublicTeacherProfile?: PublicTeacherProfileResolvers<ContextType>;
+  PublishClassSessionResult?: PublishClassSessionResultResolvers<ContextType>;
+  PublishClassSessionSuccess?: PublishClassSessionSuccessResolvers<ContextType>;
   Query?: QueryResolvers<ContextType>;
   RemoveAvailabilityExceptionResult?: RemoveAvailabilityExceptionResultResolvers<ContextType>;
   RemoveAvailabilityExceptionSuccess?: RemoveAvailabilityExceptionSuccessResolvers<ContextType>;

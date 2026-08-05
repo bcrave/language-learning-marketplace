@@ -45,3 +45,18 @@ export function resolveWeeklyRangeOccurrence(
     endsAt: resolveLocalDateTime(`${localDate}T${endLocalTime}`, timeZone, "REJECT"),
   };
 }
+
+export function resolveFixedDurationLocalInterval(
+  localDateTime: string,
+  timeZone: string,
+  disambiguation: LocalTimeDisambiguation,
+  minutes: number,
+) {
+  const startsAt = resolveLocalDateTime(localDateTime, timeZone, disambiguation);
+  const endsAt = startsAt.add({ minutes });
+  return {
+    startsAt,
+    endsAt,
+    endsAtLocal: endsAt.toZonedDateTimeISO(timeZone).toPlainDateTime(),
+  };
+}

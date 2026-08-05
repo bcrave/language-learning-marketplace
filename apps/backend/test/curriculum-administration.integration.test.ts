@@ -153,7 +153,7 @@ describe("Curriculum administration GraphQL API", () => {
       id: randomUUID(),
       lesson_unit_id: lessonUnit.id,
       teacher_user_id: teacherId,
-      starts_at: new Date(Date.now() + 86_400_000),
+      starts_at: new Date(Date.now() + 2 * 86_400_000),
       state: "PUBLISHED",
     }).execute();
 

@@ -65,7 +65,8 @@ export interface LessonMaterialsTable { id: Generated<string>; lesson_unit_id: s
 export interface TeacherProfilesTable { teacher_user_id: string; pronouns: string | null; profile_image_url: string | null; professional_bio: string; updated_at: Generated<Date> }
 export interface TeacherProfileTopicsTable { teacher_user_id: string; topic_key: string }
 export interface TeacherQualificationsTable { id: Generated<string>; teacher_user_id: string; target_language: string; curriculum_level: CurriculumLevel; granted_by_user_id: string; granted_at: Generated<Date> }
-export interface ClassSessionsTable { id: string; lesson_unit_id: string; teacher_user_id: string; starts_at: Date; state: "PUBLISHED" | "CANCELLED" }
+export interface ClassSessionsTable { id: Generated<string>; lesson_unit_id: string; teacher_user_id: string; starts_at: Date; scheduling_time_zone: Generated<string>; seat_capacity: Generated<number>; occupied_seats: Generated<number>; state: "PUBLISHED" | "CANCELLED" }
+export interface ScheduleCommitmentsTable { id: Generated<string>; user_id: string; class_session_id: string; commitment_role: "STUDENT" | "TEACHER"; starts_at: Date; ends_at: Date; active: Generated<boolean> }
 export interface InAppNotificationsTable { id: Generated<string>; recipient_user_id: string; message_id: string; variables: JSONColumnType<Record<string, unknown>>; created_at: Generated<Date> }
 export interface EmailNotificationIntentsTable { id: Generated<string>; recipient_user_id: string; message_id: string; locale: "en" | "es"; variables: JSONColumnType<Record<string, unknown>>; rendered_content: string; created_at: Generated<Date> }
 export interface MutationIdempotencyRecordsTable { actor_user_id: string; operation: string; idempotency_key: string; input_fingerprint: string; outcome: JSONColumnType<Record<string, unknown>>; created_at: Generated<Date> }
@@ -89,6 +90,7 @@ export interface DatabaseSchema {
   teacher_profile_topics: TeacherProfileTopicsTable;
   teacher_qualifications: TeacherQualificationsTable;
   class_sessions: ClassSessionsTable;
+  schedule_commitments: ScheduleCommitmentsTable;
   in_app_notifications: InAppNotificationsTable;
   email_notification_intents: EmailNotificationIntentsTable;
   mutation_idempotency_records: MutationIdempotencyRecordsTable;

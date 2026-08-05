@@ -16,6 +16,7 @@ import {
   rememberRoleWorkspacePlace,
 } from "../authorization/role-workspace-service.js";
 import { createAuthenticator } from "../auth/create-authenticator.js";
+import { administrationClassSessions, changeClassSessionSeatCapacity, publishClassSession } from "../class-session/class-session-service.js";
 import type { AppConfig } from "../config.js";
 import type { Database } from "../database/database.js";
 import type { WorkspacePlace } from "../database/types.js";
@@ -157,7 +158,13 @@ export function createApi(options: {
       AddAvailabilityExceptionResult: { __resolveType: (value) => value.__typename! },
       EndTeacherAvailabilityRangeResult: { __resolveType: (value) => value.__typename! },
       RemoveAvailabilityExceptionResult: { __resolveType: (value) => value.__typename! },
+      PublishClassSessionResult: { __resolveType: (value) => value.__typename! },
+      ChangeClassSessionSeatCapacityResult: { __resolveType: (value) => value.__typename! },
       Query: {
+        administrationClassSessions: async (_parent, _arguments, context) => {
+          await authenticateAdministrator(context, "class-session-administration.read");
+          return graphQLResult(await administrationClassSessions(context.db));
+        },
         teacherAvailability: async (_parent, _arguments, context) => {
           const teacher = await authenticateTeacher(context, "teacher-availability.read");
           return graphQLResult(await loadTeacherAvailability(context.db, teacher));
@@ -300,6 +307,14 @@ export function createApi(options: {
         },
       },
       Mutation: {
+        publishClassSession: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "class-session.published");
+          return graphQLResult(await idempotentAdministrationMutation(context, administrator, "class-session.published", input.idempotencyKey, input, (transaction) => publishClassSession(transaction, administrator, input, context.correlationId)));
+        },
+        changeClassSessionSeatCapacity: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "class-session.seat-capacity-changed");
+          return graphQLResult(await idempotentAdministrationMutation(context, administrator, "class-session.seat-capacity-changed", input.idempotencyKey, input, (transaction) => changeClassSessionSeatCapacity(transaction, administrator, input, context.correlationId)));
+        },
         saveTeacherAvailabilityRange: async (_parent, { input }, context) => {
           const teacher = await authenticateTeacher(context, "teacher-availability.changed");
           return graphQLResult(await auditedTeacherMutation(context, teacher, "teacher-availability.changed", () =>
@@ -606,6 +621,7 @@ export function createApi(options: {
             await recordCurriculumAudit(transaction, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType: "IdempotencyKey", targetId: administrator.id, outcome: "DENIED", reasonCode: "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_INPUT" });
             return { __typename: "CurriculumConflict", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." };
           }
+          await recordCurriculumAudit(transaction as Database, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType: "IdempotencyKey", targetId: administrator.id, reasonCode: "IDEMPOTENT_REPLAY_SUCCEEDED" });
           return existing.outcome as T;
         }
         const outcome = await perform(transaction as Database);

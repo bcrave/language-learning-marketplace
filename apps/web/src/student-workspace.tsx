@@ -26,6 +26,7 @@ import {
   suggestedInterfaceLocale,
 } from "./interface-locale.js";
 import { AdminCurriculum } from "./admin-curriculum.js";
+import { AdminClassSessions } from "./admin-class-sessions.js";
 import { TeacherAvailabilityPanel } from "./teacher-availability.js";
 
 const graphQLInterfaceLocales: Record<InterfaceLocale, GraphQLInterfaceLocale> = {
@@ -396,7 +397,10 @@ function WorkspaceContent({
           )}
         </section>
         {currentPlace === "ADMINISTRATION_OPERATIONS" && (
-          <AdminCurriculum locale={locale} />
+          <>
+            <AdminClassSessions locale={locale} />
+            <AdminCurriculum locale={locale} />
+          </>
         )}
         {currentPlace === "TEACHER_AVAILABILITY" && (
           <TeacherAvailabilityPanel />
