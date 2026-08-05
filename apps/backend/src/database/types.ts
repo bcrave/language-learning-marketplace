@@ -58,6 +58,7 @@ export type CurriculumLevel = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
 export type StructuredContent = Array<Record<string, unknown>>;
 
 export interface CurriculumLevelsTable { code: CurriculumLevel; sort_order: number }
+export interface StudentPlacementsTable { student_user_id: string; target_language: string; curriculum_level: CurriculumLevel; updated_at: Generated<Date> }
 export interface CoursesTable { id: Generated<string>; stable_key: string; target_language: string; curriculum_level: CurriculumLevel; title: string; summary: string; created_at: Generated<Date> }
 export interface TopicsTable { id: Generated<string>; key: string; label_en: string; label_es: string; created_at: Generated<Date> }
 export interface LessonUnitsTable { id: Generated<string>; stable_key: string; course_id: string; title: string; summary: string; objectives: JSONColumnType<string[]>; sort_order: number; state: "ACTIVE" | "RETIRED"; replacement_lesson_unit_id: string | null; retired_at: Date | null; created_at: Generated<Date> }
@@ -87,6 +88,7 @@ export interface DatabaseSchema {
   audit_entries: AuditEntriesTable;
   schema_migrations: SchemaMigrationsTable;
   curriculum_levels: CurriculumLevelsTable;
+  student_placements: StudentPlacementsTable;
   courses: CoursesTable;
   topics: TopicsTable;
   lesson_units: LessonUnitsTable;

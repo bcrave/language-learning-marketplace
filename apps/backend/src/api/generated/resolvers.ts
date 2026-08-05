@@ -157,6 +157,50 @@ export type ClassSession = {
   teacherUserId: Scalars['ID']['output'];
 };
 
+export type ClassSessionDiscoveryConnection = {
+  __typename?: 'ClassSessionDiscoveryConnection';
+  appliedFilter: ClassSessionDiscoveryFilter;
+  nodes: Array<DiscoverableClassSession>;
+  pageInfo: ClassSessionDiscoveryPageInfo;
+};
+
+export type ClassSessionDiscoveryFilter = {
+  __typename?: 'ClassSessionDiscoveryFilter';
+  curriculumLevel?: Maybe<CurriculumLevel>;
+  localDate?: Maybe<Scalars['String']['output']>;
+  targetLanguage: Scalars['String']['output'];
+  teacherUserId?: Maybe<Scalars['ID']['output']>;
+  topicKeys: Array<Scalars['String']['output']>;
+};
+
+export type ClassSessionDiscoveryInput = {
+  after?: InputMaybe<Scalars['String']['input']>;
+  curriculumLevel?: InputMaybe<CurriculumLevel>;
+  localDate?: InputMaybe<Scalars['String']['input']>;
+  targetLanguage: Scalars['String']['input'];
+  teacherUserId?: InputMaybe<Scalars['ID']['input']>;
+  topicKeys?: InputMaybe<Array<Scalars['String']['input']>>;
+};
+
+export type ClassSessionDiscoveryOptions = {
+  __typename?: 'ClassSessionDiscoveryOptions';
+  targetLanguages: Array<Scalars['String']['output']>;
+  teachers: Array<ClassSessionDiscoveryTeacherOption>;
+  topics: Array<Topic>;
+};
+
+export type ClassSessionDiscoveryPageInfo = {
+  __typename?: 'ClassSessionDiscoveryPageInfo';
+  endCursor?: Maybe<Scalars['String']['output']>;
+  hasNextPage: Scalars['Boolean']['output'];
+};
+
+export type ClassSessionDiscoveryTeacherOption = {
+  __typename?: 'ClassSessionDiscoveryTeacherOption';
+  displayName: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+};
+
 export type ClassSessionPublicationError = {
   __typename?: 'ClassSessionPublicationError';
   code: ClassSessionPublicationErrorCode;
@@ -244,6 +288,27 @@ export enum CurriculumLevel {
   C1 = 'C1',
   C2 = 'C2'
 }
+
+export type DiscoverableClassSession = {
+  __typename?: 'DiscoverableClassSession';
+  endsAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  lessonUnit: DiscoveryLessonUnit;
+  occupiedSeats: Scalars['Int']['output'];
+  schedulingTimeZone: Scalars['String']['output'];
+  seatCapacity: Scalars['Int']['output'];
+  startsAt: Scalars['String']['output'];
+  teacherProfile: PublicTeacherProfile;
+};
+
+export type DiscoveryLessonUnit = {
+  __typename?: 'DiscoveryLessonUnit';
+  id: Scalars['ID']['output'];
+  objectives: Array<Scalars['String']['output']>;
+  summary: Scalars['String']['output'];
+  title: Scalars['String']['output'];
+  topics: Array<Topic>;
+};
 
 export type EndTeacherAvailabilityRangeInput = {
   effectiveUntil: Scalars['String']['input'];
@@ -342,6 +407,7 @@ export type Mutation = {
   saveTeacherProfile: SaveTeacherProfileSuccess;
   saveUserPreferences: SaveUserPreferencesPayload;
   scheduleSubscriptionCancellation: ScheduleSubscriptionCancellationResult;
+  setStudentPlacement: StudentPlacement;
   undoSubscriptionCancellation: UndoSubscriptionCancellationResult;
 };
 
@@ -461,6 +527,11 @@ export type MutationScheduleSubscriptionCancellationArgs = {
 };
 
 
+export type MutationSetStudentPlacementArgs = {
+  input: SetStudentPlacementInput;
+};
+
+
 export type MutationUndoSubscriptionCancellationArgs = {
   input: SubscriptionLifecycleInput;
 };
@@ -517,9 +588,12 @@ export type Query = {
   administrationClassCredits?: Maybe<ClassCreditAccount>;
   administrationClassSessions: Array<ClassSession>;
   administrationCurriculum: AdministrationCurriculum;
+  classSessionDiscoveryOptions: ClassSessionDiscoveryOptions;
+  discoverClassSessions: ClassSessionDiscoveryConnection;
   publicTeacherProfile?: Maybe<PublicTeacherProfile>;
   roleWorkspace: RoleWorkspace;
   studentClassCredits: ClassCreditAccount;
+  studentPlacements: Array<StudentPlacement>;
   studentSubscription?: Maybe<Subscription>;
   studentWorkspace: StudentWorkspace;
   teacherAvailability: TeacherAvailability;
@@ -534,6 +608,11 @@ export type QueryAdministrationClassCreditsArgs = {
 
 export type QueryAdministrationCurriculumArgs = {
   locale: InterfaceLocale;
+};
+
+
+export type QueryDiscoverClassSessionsArgs = {
+  input: ClassSessionDiscoveryInput;
 };
 
 
@@ -675,11 +754,22 @@ export type ScheduleSubscriptionCancellationSuccess = {
   subscription: Subscription;
 };
 
+export type SetStudentPlacementInput = {
+  curriculumLevel: CurriculumLevel;
+  targetLanguage: Scalars['String']['input'];
+};
+
 export type StructuredTextBlockInput = {
   items?: InputMaybe<Array<Scalars['String']['input']>>;
   level?: InputMaybe<Scalars['Int']['input']>;
   text?: InputMaybe<Scalars['String']['input']>;
   type: Scalars['String']['input'];
+};
+
+export type StudentPlacement = {
+  __typename?: 'StudentPlacement';
+  curriculumLevel: CurriculumLevel;
+  targetLanguage: Scalars['String']['output'];
 };
 
 export type StudentWorkspace = {
@@ -1055,6 +1145,12 @@ export type ResolversTypes = {
   ClassCreditLedgerEntry: ResolverTypeWrapper<ClassCreditLedgerEntry>;
   ClassCreditLedgerSource: ClassCreditLedgerSource;
   ClassSession: ResolverTypeWrapper<ClassSession>;
+  ClassSessionDiscoveryConnection: ResolverTypeWrapper<ClassSessionDiscoveryConnection>;
+  ClassSessionDiscoveryFilter: ResolverTypeWrapper<ClassSessionDiscoveryFilter>;
+  ClassSessionDiscoveryInput: ClassSessionDiscoveryInput;
+  ClassSessionDiscoveryOptions: ResolverTypeWrapper<ClassSessionDiscoveryOptions>;
+  ClassSessionDiscoveryPageInfo: ResolverTypeWrapper<ClassSessionDiscoveryPageInfo>;
+  ClassSessionDiscoveryTeacherOption: ResolverTypeWrapper<ClassSessionDiscoveryTeacherOption>;
   ClassSessionPublicationError: ResolverTypeWrapper<ClassSessionPublicationError>;
   ClassSessionPublicationErrorCode: ClassSessionPublicationErrorCode;
   ClassSessionSeatCapacityError: ResolverTypeWrapper<ClassSessionSeatCapacityError>;
@@ -1068,6 +1164,8 @@ export type ResolversTypes = {
   CreateLessonUnitSuccess: ResolverTypeWrapper<CreateLessonUnitSuccess>;
   CurriculumConflict: ResolverTypeWrapper<CurriculumConflict>;
   CurriculumLevel: CurriculumLevel;
+  DiscoverableClassSession: ResolverTypeWrapper<DiscoverableClassSession>;
+  DiscoveryLessonUnit: ResolverTypeWrapper<DiscoveryLessonUnit>;
   EndTeacherAvailabilityRangeInput: EndTeacherAvailabilityRangeInput;
   EndTeacherAvailabilityRangeResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['EndTeacherAvailabilityRangeResult']>;
   EndTeacherAvailabilityRangeSuccess: ResolverTypeWrapper<EndTeacherAvailabilityRangeSuccess>;
@@ -1116,8 +1214,10 @@ export type ResolversTypes = {
   SaveUserPreferencesPayload: ResolverTypeWrapper<SaveUserPreferencesPayload>;
   ScheduleSubscriptionCancellationResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ScheduleSubscriptionCancellationResult']>;
   ScheduleSubscriptionCancellationSuccess: ResolverTypeWrapper<ScheduleSubscriptionCancellationSuccess>;
+  SetStudentPlacementInput: SetStudentPlacementInput;
   String: ResolverTypeWrapper<Scalars['String']['output']>;
   StructuredTextBlockInput: StructuredTextBlockInput;
+  StudentPlacement: ResolverTypeWrapper<StudentPlacement>;
   StudentWorkspace: ResolverTypeWrapper<StudentWorkspace>;
   Subscription: ResolverTypeWrapper<Record<PropertyKey, never>>;
   SubscriptionConflict: ResolverTypeWrapper<SubscriptionConflict>;
@@ -1172,6 +1272,12 @@ export type ResolversParentTypes = {
   ClassCreditAdjustmentError: ClassCreditAdjustmentError;
   ClassCreditLedgerEntry: ClassCreditLedgerEntry;
   ClassSession: ClassSession;
+  ClassSessionDiscoveryConnection: ClassSessionDiscoveryConnection;
+  ClassSessionDiscoveryFilter: ClassSessionDiscoveryFilter;
+  ClassSessionDiscoveryInput: ClassSessionDiscoveryInput;
+  ClassSessionDiscoveryOptions: ClassSessionDiscoveryOptions;
+  ClassSessionDiscoveryPageInfo: ClassSessionDiscoveryPageInfo;
+  ClassSessionDiscoveryTeacherOption: ClassSessionDiscoveryTeacherOption;
   ClassSessionPublicationError: ClassSessionPublicationError;
   ClassSessionSeatCapacityError: ClassSessionSeatCapacityError;
   Course: Course;
@@ -1182,6 +1288,8 @@ export type ResolversParentTypes = {
   CreateLessonUnitResult: ResolversUnionTypes<ResolversParentTypes>['CreateLessonUnitResult'];
   CreateLessonUnitSuccess: CreateLessonUnitSuccess;
   CurriculumConflict: CurriculumConflict;
+  DiscoverableClassSession: DiscoverableClassSession;
+  DiscoveryLessonUnit: DiscoveryLessonUnit;
   EndTeacherAvailabilityRangeInput: EndTeacherAvailabilityRangeInput;
   EndTeacherAvailabilityRangeResult: ResolversUnionTypes<ResolversParentTypes>['EndTeacherAvailabilityRangeResult'];
   EndTeacherAvailabilityRangeSuccess: EndTeacherAvailabilityRangeSuccess;
@@ -1226,8 +1334,10 @@ export type ResolversParentTypes = {
   SaveUserPreferencesPayload: SaveUserPreferencesPayload;
   ScheduleSubscriptionCancellationResult: ResolversUnionTypes<ResolversParentTypes>['ScheduleSubscriptionCancellationResult'];
   ScheduleSubscriptionCancellationSuccess: ScheduleSubscriptionCancellationSuccess;
+  SetStudentPlacementInput: SetStudentPlacementInput;
   String: Scalars['String']['output'];
   StructuredTextBlockInput: StructuredTextBlockInput;
+  StudentPlacement: StudentPlacement;
   StudentWorkspace: StudentWorkspace;
   Subscription: Record<PropertyKey, never>;
   SubscriptionConflict: SubscriptionConflict;
@@ -1348,6 +1458,36 @@ export type ClassSessionResolvers<ContextType = any, ParentType extends Resolver
   teacherUserId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
 };
 
+export type ClassSessionDiscoveryConnectionResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassSessionDiscoveryConnection'] = ResolversParentTypes['ClassSessionDiscoveryConnection']> = {
+  appliedFilter?: Resolver<ResolversTypes['ClassSessionDiscoveryFilter'], ParentType, ContextType>;
+  nodes?: Resolver<Array<ResolversTypes['DiscoverableClassSession']>, ParentType, ContextType>;
+  pageInfo?: Resolver<ResolversTypes['ClassSessionDiscoveryPageInfo'], ParentType, ContextType>;
+};
+
+export type ClassSessionDiscoveryFilterResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassSessionDiscoveryFilter'] = ResolversParentTypes['ClassSessionDiscoveryFilter']> = {
+  curriculumLevel?: Resolver<Maybe<ResolversTypes['CurriculumLevel']>, ParentType, ContextType>;
+  localDate?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  targetLanguage?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  teacherUserId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  topicKeys?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
+};
+
+export type ClassSessionDiscoveryOptionsResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassSessionDiscoveryOptions'] = ResolversParentTypes['ClassSessionDiscoveryOptions']> = {
+  targetLanguages?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
+  teachers?: Resolver<Array<ResolversTypes['ClassSessionDiscoveryTeacherOption']>, ParentType, ContextType>;
+  topics?: Resolver<Array<ResolversTypes['Topic']>, ParentType, ContextType>;
+};
+
+export type ClassSessionDiscoveryPageInfoResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassSessionDiscoveryPageInfo'] = ResolversParentTypes['ClassSessionDiscoveryPageInfo']> = {
+  endCursor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  hasNextPage?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+};
+
+export type ClassSessionDiscoveryTeacherOptionResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassSessionDiscoveryTeacherOption'] = ResolversParentTypes['ClassSessionDiscoveryTeacherOption']> = {
+  displayName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+};
+
 export type ClassSessionPublicationErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassSessionPublicationError'] = ResolversParentTypes['ClassSessionPublicationError']> = {
   code?: Resolver<ResolversTypes['ClassSessionPublicationErrorCode'], ParentType, ContextType>;
   message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -1392,6 +1532,25 @@ export type CurriculumConflictResolvers<ContextType = any, ParentType extends Re
   code?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type DiscoverableClassSessionResolvers<ContextType = any, ParentType extends ResolversParentTypes['DiscoverableClassSession'] = ResolversParentTypes['DiscoverableClassSession']> = {
+  endsAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  lessonUnit?: Resolver<ResolversTypes['DiscoveryLessonUnit'], ParentType, ContextType>;
+  occupiedSeats?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  schedulingTimeZone?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  seatCapacity?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  startsAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  teacherProfile?: Resolver<ResolversTypes['PublicTeacherProfile'], ParentType, ContextType>;
+};
+
+export type DiscoveryLessonUnitResolvers<ContextType = any, ParentType extends ResolversParentTypes['DiscoveryLessonUnit'] = ResolversParentTypes['DiscoveryLessonUnit']> = {
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  objectives?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
+  summary?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  topics?: Resolver<Array<ResolversTypes['Topic']>, ParentType, ContextType>;
 };
 
 export type EndTeacherAvailabilityRangeResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['EndTeacherAvailabilityRangeResult'] = ResolversParentTypes['EndTeacherAvailabilityRangeResult']> = {
@@ -1465,6 +1624,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   saveTeacherProfile?: Resolver<ResolversTypes['SaveTeacherProfileSuccess'], ParentType, ContextType, RequireFields<MutationSaveTeacherProfileArgs, 'input'>>;
   saveUserPreferences?: Resolver<ResolversTypes['SaveUserPreferencesPayload'], ParentType, ContextType, RequireFields<MutationSaveUserPreferencesArgs, 'input'>>;
   scheduleSubscriptionCancellation?: Resolver<ResolversTypes['ScheduleSubscriptionCancellationResult'], ParentType, ContextType, RequireFields<MutationScheduleSubscriptionCancellationArgs, 'input'>>;
+  setStudentPlacement?: Resolver<ResolversTypes['StudentPlacement'], ParentType, ContextType, RequireFields<MutationSetStudentPlacementArgs, 'input'>>;
   undoSubscriptionCancellation?: Resolver<ResolversTypes['UndoSubscriptionCancellationResult'], ParentType, ContextType, RequireFields<MutationUndoSubscriptionCancellationArgs, 'input'>>;
 };
 
@@ -1503,9 +1663,12 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   administrationClassCredits?: Resolver<Maybe<ResolversTypes['ClassCreditAccount']>, ParentType, ContextType, RequireFields<QueryAdministrationClassCreditsArgs, 'studentUserId'>>;
   administrationClassSessions?: Resolver<Array<ResolversTypes['ClassSession']>, ParentType, ContextType>;
   administrationCurriculum?: Resolver<ResolversTypes['AdministrationCurriculum'], ParentType, ContextType, RequireFields<QueryAdministrationCurriculumArgs, 'locale'>>;
+  classSessionDiscoveryOptions?: Resolver<ResolversTypes['ClassSessionDiscoveryOptions'], ParentType, ContextType>;
+  discoverClassSessions?: Resolver<ResolversTypes['ClassSessionDiscoveryConnection'], ParentType, ContextType, RequireFields<QueryDiscoverClassSessionsArgs, 'input'>>;
   publicTeacherProfile?: Resolver<Maybe<ResolversTypes['PublicTeacherProfile']>, ParentType, ContextType, RequireFields<QueryPublicTeacherProfileArgs, 'locale' | 'teacherUserId'>>;
   roleWorkspace?: Resolver<ResolversTypes['RoleWorkspace'], ParentType, ContextType, RequireFields<QueryRoleWorkspaceArgs, 'actingRole'>>;
   studentClassCredits?: Resolver<ResolversTypes['ClassCreditAccount'], ParentType, ContextType>;
+  studentPlacements?: Resolver<Array<ResolversTypes['StudentPlacement']>, ParentType, ContextType>;
   studentSubscription?: Resolver<Maybe<ResolversTypes['Subscription']>, ParentType, ContextType>;
   studentWorkspace?: Resolver<ResolversTypes['StudentWorkspace'], ParentType, ContextType>;
   teacherAvailability?: Resolver<ResolversTypes['TeacherAvailability'], ParentType, ContextType>;
@@ -1588,6 +1751,11 @@ export type ScheduleSubscriptionCancellationResultResolvers<ContextType = any, P
 export type ScheduleSubscriptionCancellationSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['ScheduleSubscriptionCancellationSuccess'] = ResolversParentTypes['ScheduleSubscriptionCancellationSuccess']> = {
   subscription?: Resolver<ResolversTypes['Subscription'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type StudentPlacementResolvers<ContextType = any, ParentType extends ResolversParentTypes['StudentPlacement'] = ResolversParentTypes['StudentPlacement']> = {
+  curriculumLevel?: Resolver<ResolversTypes['CurriculumLevel'], ParentType, ContextType>;
+  targetLanguage?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
 };
 
 export type StudentWorkspaceResolvers<ContextType = any, ParentType extends ResolversParentTypes['StudentWorkspace'] = ResolversParentTypes['StudentWorkspace']> = {
@@ -1716,6 +1884,11 @@ export type Resolvers<ContextType = any> = {
   ClassCreditAdjustmentError?: ClassCreditAdjustmentErrorResolvers<ContextType>;
   ClassCreditLedgerEntry?: ClassCreditLedgerEntryResolvers<ContextType>;
   ClassSession?: ClassSessionResolvers<ContextType>;
+  ClassSessionDiscoveryConnection?: ClassSessionDiscoveryConnectionResolvers<ContextType>;
+  ClassSessionDiscoveryFilter?: ClassSessionDiscoveryFilterResolvers<ContextType>;
+  ClassSessionDiscoveryOptions?: ClassSessionDiscoveryOptionsResolvers<ContextType>;
+  ClassSessionDiscoveryPageInfo?: ClassSessionDiscoveryPageInfoResolvers<ContextType>;
+  ClassSessionDiscoveryTeacherOption?: ClassSessionDiscoveryTeacherOptionResolvers<ContextType>;
   ClassSessionPublicationError?: ClassSessionPublicationErrorResolvers<ContextType>;
   ClassSessionSeatCapacityError?: ClassSessionSeatCapacityErrorResolvers<ContextType>;
   Course?: CourseResolvers<ContextType>;
@@ -1724,6 +1897,8 @@ export type Resolvers<ContextType = any> = {
   CreateLessonUnitResult?: CreateLessonUnitResultResolvers<ContextType>;
   CreateLessonUnitSuccess?: CreateLessonUnitSuccessResolvers<ContextType>;
   CurriculumConflict?: CurriculumConflictResolvers<ContextType>;
+  DiscoverableClassSession?: DiscoverableClassSessionResolvers<ContextType>;
+  DiscoveryLessonUnit?: DiscoveryLessonUnitResolvers<ContextType>;
   EndTeacherAvailabilityRangeResult?: EndTeacherAvailabilityRangeResultResolvers<ContextType>;
   EndTeacherAvailabilityRangeSuccess?: EndTeacherAvailabilityRangeSuccessResolvers<ContextType>;
   GrantTeacherQualificationResult?: GrantTeacherQualificationResultResolvers<ContextType>;
@@ -1755,6 +1930,7 @@ export type Resolvers<ContextType = any> = {
   SaveUserPreferencesPayload?: SaveUserPreferencesPayloadResolvers<ContextType>;
   ScheduleSubscriptionCancellationResult?: ScheduleSubscriptionCancellationResultResolvers<ContextType>;
   ScheduleSubscriptionCancellationSuccess?: ScheduleSubscriptionCancellationSuccessResolvers<ContextType>;
+  StudentPlacement?: StudentPlacementResolvers<ContextType>;
   StudentWorkspace?: StudentWorkspaceResolvers<ContextType>;
   Subscription?: SubscriptionResolvers<ContextType>;
   SubscriptionConflict?: SubscriptionConflictResolvers<ContextType>;

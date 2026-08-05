@@ -161,6 +161,53 @@ type StudentWorkspace {
   roles: [UserRole!]!
 }
 
+type StudentPlacement { targetLanguage: String!, curriculumLevel: CurriculumLevel! }
+input SetStudentPlacementInput { targetLanguage: String!, curriculumLevel: CurriculumLevel! }
+input ClassSessionDiscoveryInput {
+  targetLanguage: String!
+  curriculumLevel: CurriculumLevel
+  teacherUserId: ID
+  topicKeys: [String!] = []
+  localDate: String
+  after: String
+}
+type ClassSessionDiscoveryFilter {
+  targetLanguage: String!
+  curriculumLevel: CurriculumLevel
+  teacherUserId: ID
+  topicKeys: [String!]!
+  localDate: String
+}
+type DiscoveryLessonUnit {
+  id: ID!
+  title: String!
+  summary: String!
+  objectives: [String!]!
+  topics: [Topic!]!
+}
+type DiscoverableClassSession {
+  id: ID!
+  startsAt: String!
+  endsAt: String!
+  schedulingTimeZone: String!
+  seatCapacity: Int!
+  occupiedSeats: Int!
+  lessonUnit: DiscoveryLessonUnit!
+  teacherProfile: PublicTeacherProfile!
+}
+type ClassSessionDiscoveryPageInfo { endCursor: String, hasNextPage: Boolean! }
+type ClassSessionDiscoveryConnection {
+  appliedFilter: ClassSessionDiscoveryFilter!
+  nodes: [DiscoverableClassSession!]!
+  pageInfo: ClassSessionDiscoveryPageInfo!
+}
+type ClassSessionDiscoveryTeacherOption { id: ID!, displayName: String! }
+type ClassSessionDiscoveryOptions {
+  targetLanguages: [String!]!
+  topics: [Topic!]!
+  teachers: [ClassSessionDiscoveryTeacherOption!]!
+}
+
 type RolePlace {
   role: UserRole!
   place: WorkspacePlace!
@@ -175,6 +222,9 @@ type RoleWorkspace {
 
 type Query {
   studentSubscription: Subscription
+  studentPlacements: [StudentPlacement!]!
+  classSessionDiscoveryOptions: ClassSessionDiscoveryOptions!
+  discoverClassSessions(input: ClassSessionDiscoveryInput!): ClassSessionDiscoveryConnection!
   studentClassCredits: ClassCreditAccount!
   administrationClassCredits(studentUserId: ID!): ClassCreditAccount
   administrationClassSessions: [ClassSession!]!
@@ -190,6 +240,7 @@ type Mutation {
   processSubscriptionProviderEvent(input: ProcessSubscriptionProviderEventInput!): ProcessSubscriptionProviderEventResult!
   scheduleSubscriptionCancellation(input: SubscriptionLifecycleInput!): ScheduleSubscriptionCancellationResult!
   undoSubscriptionCancellation(input: SubscriptionLifecycleInput!): UndoSubscriptionCancellationResult!
+  setStudentPlacement(input: SetStudentPlacementInput!): StudentPlacement!
   adjustClassCredits(input: AdjustClassCreditsInput!): AdjustClassCreditsResult!
   publishClassSession(input: PublishClassSessionInput!): PublishClassSessionResult!
   changeClassSessionSeatCapacity(input: ChangeClassSessionSeatCapacityInput!): ChangeClassSessionSeatCapacityResult!

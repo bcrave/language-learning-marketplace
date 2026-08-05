@@ -29,6 +29,7 @@ import { AdminCurriculum } from "./admin-curriculum.js";
 import { AdminClassSessions } from "./admin-class-sessions.js";
 import { AdminClassCredits, StudentClassCredits, StudentSubscription } from "./class-credits.js";
 import { TeacherAvailabilityPanel } from "./teacher-availability.js";
+import { StudentDiscoveryPanel } from "./student-discovery.js";
 
 const graphQLInterfaceLocales: Record<InterfaceLocale, GraphQLInterfaceLocale> = {
   en: "EN",
@@ -408,6 +409,9 @@ function WorkspaceContent({
           <StudentSubscription />
           <StudentClassCredits />
         </>}
+        {currentPlace === "STUDENT_DISCOVERY" && hasSavedPreferences && (
+          <StudentDiscoveryPanel displayTimeZone={displayTimeZone} />
+        )}
         {currentPlace === "TEACHER_AVAILABILITY" && (
           <TeacherAvailabilityPanel />
         )}

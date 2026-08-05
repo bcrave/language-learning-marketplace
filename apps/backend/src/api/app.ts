@@ -53,6 +53,7 @@ import {
   teacherFor,
   type Weekday,
 } from "../teacher-availability/teacher-availability-service.js";
+import { classSessionDiscoveryOptions, discoverClassSessions, InvalidDiscoveryInput, InvalidStudentPlacement, setStudentPlacement, studentPlacements } from "../student-discovery/student-discovery-service.js";
 import {
   processSubscriptionProviderEvent,
   scheduleSubscriptionCancellation,
@@ -147,6 +148,7 @@ export function createApi(options: {
   nodeEnv: AppConfig["NODE_ENV"];
   auth0Audience?: string;
   auth0Issuer?: string;
+  now?: () => Date;
 }) {
   const authenticatorPromise = createAuthenticator({
     AUTH_MODE: options.authMode,
@@ -177,9 +179,33 @@ export function createApi(options: {
       ScheduleSubscriptionCancellationResult: { __resolveType: (value) => value.__typename! },
       UndoSubscriptionCancellationResult: { __resolveType: (value) => value.__typename! },
       Query: {
+        studentPlacements: async (_parent, _arguments, context) => {
+          const student = await authenticateStudent(context, "student-placement.read", "StudentPlacement");
+          return graphQLResult(await studentPlacements(context.db, student));
+        },
+        classSessionDiscoveryOptions: async (_parent, _arguments, context) => {
+          const student = await authenticateStudent(context, "class-session-discovery-options.read", "ClassSessionDiscovery");
+          return graphQLResult(await classSessionDiscoveryOptions(context.db, student));
+        },
         studentSubscription: async (_parent, _arguments, context) => {
           const student = await authenticateStudent(context, "subscription.read", "Subscription");
           return graphQLResult(await subscriptionForStudent(context.db, student.id));
+        },
+        discoverClassSessions: async (_parent, { input }, context) => {
+          const student = await authenticateStudent(context, "class-session-discovery.read", "ClassSessionDiscovery");
+          try {
+            return graphQLResult(await discoverClassSessions(
+              context.db,
+              student,
+              input,
+              options.now?.() ?? new Date(),
+            ));
+          } catch (error) {
+            if (error instanceof InvalidDiscoveryInput) {
+              throw createGraphQLError(error.message, { extensions: { code: "BAD_USER_INPUT" } });
+            }
+            throw error;
+          }
         },
         studentClassCredits: async (_parent, _arguments, context) => {
           const student = await authenticateStudent(context, "class-credit.read");
@@ -372,6 +398,22 @@ export function createApi(options: {
             input,
             (transaction) => undoSubscriptionCancellation(transaction, student, context.correlationId),
           ));
+        },
+        setStudentPlacement: async (_parent, { input }, context) => {
+          const student = await authenticateStudent(context, "student-placement.changed", "StudentPlacement");
+          try {
+            return graphQLResult(await setStudentPlacement(
+              context.db,
+              student,
+              input,
+              context.correlationId,
+            ));
+          } catch (error) {
+            if (error instanceof InvalidStudentPlacement) {
+              throw createGraphQLError(error.message, { extensions: { code: "BAD_USER_INPUT" } });
+            }
+            throw error;
+          }
         },
         adjustClassCredits: async (_parent, { input }, context) => {
           const administrator = await authenticateAdministrator(context, "class-credit.adjusted");
