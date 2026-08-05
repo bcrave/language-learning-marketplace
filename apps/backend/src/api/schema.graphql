@@ -34,6 +34,15 @@ enum LessonMaterialKind { STRUCTURED_TEXT HTTPS_REFERENCE }
 enum Weekday { MONDAY TUESDAY WEDNESDAY THURSDAY FRIDAY SATURDAY SUNDAY }
 enum LocalTimeDisambiguation { REJECT EARLIER LATER }
 
+enum ClassCreditLedgerSource { CREDIT_ADJUSTMENT SUBSCRIPTION_GRANT ORGANIZATION_CREDIT_GRANT BOOKING_DEDUCTION BOOKING_REFUND }
+type ClassCreditLedgerEntry { id: ID!, amount: Int!, source: ClassCreditLedgerSource!, sourceReference: String!, reason: String, createdAt: String! }
+type ClassCreditAccount { studentUserId: ID!, availableBalance: Int!, ledger: [ClassCreditLedgerEntry!]! }
+input AdjustClassCreditsInput { idempotencyKey: ID!, studentUserId: ID!, amount: Int!, reason: String! }
+type AdjustClassCreditsSuccess { account: ClassCreditAccount! }
+enum ClassCreditAdjustmentErrorCode { INVALID_ADJUSTMENT INVALID_REASON STUDENT_NOT_FOUND INSUFFICIENT_CLASS_CREDITS }
+type ClassCreditAdjustmentError { code: ClassCreditAdjustmentErrorCode!, message: String! }
+union AdjustClassCreditsResult = AdjustClassCreditsSuccess | ClassCreditAdjustmentError | CurriculumConflict
+
 type ClassSession { id: ID!, lessonUnitId: ID!, teacherUserId: ID!, startsAt: String!, endsAt: String!, schedulingTimeZone: String!, seatCapacity: Int!, occupiedSeats: Int! }
 input PublishClassSessionInput { idempotencyKey: ID!, lessonUnitId: ID!, teacherUserId: ID!, startsAtLocal: String!, schedulingTimeZone: String!, timeDisambiguation: LocalTimeDisambiguation!, seatCapacity: Int = 5 }
 type PublishClassSessionSuccess { classSession: ClassSession! }
@@ -152,6 +161,8 @@ type RoleWorkspace {
 }
 
 type Query {
+  studentClassCredits: ClassCreditAccount!
+  administrationClassCredits(studentUserId: ID!): ClassCreditAccount
   administrationClassSessions: [ClassSession!]!
   teacherAvailability: TeacherAvailability!
   teacherAvailabilityPreview(localDates: [String!]!): [TeacherAvailabilityOccurrence!]!
@@ -162,6 +173,7 @@ type Query {
 }
 
 type Mutation {
+  adjustClassCredits(input: AdjustClassCreditsInput!): AdjustClassCreditsResult!
   publishClassSession(input: PublishClassSessionInput!): PublishClassSessionResult!
   changeClassSessionSeatCapacity(input: ChangeClassSessionSeatCapacityInput!): ChangeClassSessionSeatCapacityResult!
   saveTeacherAvailabilityRange(input: SaveTeacherAvailabilityRangeInput!): SaveTeacherAvailabilityRangeResult!

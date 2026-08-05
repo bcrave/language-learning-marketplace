@@ -15,7 +15,15 @@ import {
   loadRoleWorkspace,
   rememberRoleWorkspacePlace,
 } from "../authorization/role-workspace-service.js";
+import { administratorFor } from "../authorization/administrator-policy.js";
+import { studentFor } from "../authorization/student-policy.js";
+import { recordAdministrationAudit } from "../audit/administration-audit.js";
 import { createAuthenticator } from "../auth/create-authenticator.js";
+import {
+  adjustClassCredits,
+  administrationClassCredits,
+  classCreditsForStudent,
+} from "../class-credit/class-credit-service.js";
 import { administrationClassSessions, changeClassSessionSeatCapacity, publishClassSession } from "../class-session/class-session-service.js";
 import type { AppConfig } from "../config.js";
 import type { Database } from "../database/database.js";
@@ -23,12 +31,10 @@ import type { WorkspacePlace } from "../database/types.js";
 import {
   addLessonMaterial,
   administrationCurriculum,
-  administratorFor,
   changeTeacherQualification,
   createCourse,
   createLessonUnit,
   publicTeacherProfile,
-  recordCurriculumAudit,
   reviseLessonMaterial,
   retireLessonUnit,
   placeLessonUnitInCourse,
@@ -160,7 +166,16 @@ export function createApi(options: {
       RemoveAvailabilityExceptionResult: { __resolveType: (value) => value.__typename! },
       PublishClassSessionResult: { __resolveType: (value) => value.__typename! },
       ChangeClassSessionSeatCapacityResult: { __resolveType: (value) => value.__typename! },
+      AdjustClassCreditsResult: { __resolveType: (value) => value.__typename! },
       Query: {
+        studentClassCredits: async (_parent, _arguments, context) => {
+          const student = await authenticateStudent(context, "class-credit.read");
+          return graphQLResult(await classCreditsForStudent(context.db, student.id));
+        },
+        administrationClassCredits: async (_parent, { studentUserId }, context) => {
+          await authenticateAdministrator(context, "class-credit-administration.read");
+          return graphQLResult(await administrationClassCredits(context.db, studentUserId));
+        },
         administrationClassSessions: async (_parent, _arguments, context) => {
           await authenticateAdministrator(context, "class-session-administration.read");
           return graphQLResult(await administrationClassSessions(context.db));
@@ -307,6 +322,17 @@ export function createApi(options: {
         },
       },
       Mutation: {
+        adjustClassCredits: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "class-credit.adjusted");
+          return graphQLResult(await idempotentAdministrationMutation(
+            context,
+            administrator,
+            "class-credit.adjusted",
+            input.idempotencyKey,
+            input,
+            (transaction) => adjustClassCredits(transaction, administrator, input, context.correlationId),
+          ));
+        },
         publishClassSession: async (_parent, { input }, context) => {
           const administrator = await authenticateAdministrator(context, "class-session.published");
           return idempotentAdministrationMutation(context, administrator, "class-session.published", input.idempotencyKey, input, (transaction) => publishClassSession(transaction, administrator, input, context.correlationId));
@@ -557,7 +583,7 @@ export function createApi(options: {
       throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
     }
     if (result.status === "ROLE_REQUIRED") {
-      await recordCurriculumAudit(context.db, {
+      await recordAdministrationAudit(context.db, {
         administratorId: result.userId!,
         correlationId: context.correlationId,
         operation,
@@ -584,6 +610,21 @@ export function createApi(options: {
       throw createGraphQLError("The Teacher Role Assignment is required", { extensions: { code: "FORBIDDEN" } });
     }
     return result.teacher;
+  }
+
+  async function authenticateStudent(context: ApiContext, operation: string) {
+    const identity = await context.authenticator.authenticate(context.request);
+    if (!identity) {
+      throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+    }
+    const result = await studentFor(context.db, identity, context.correlationId, operation);
+    if (result.status === "UNKNOWN_USER") {
+      throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+    }
+    if (result.status === "ROLE_REQUIRED") {
+      throw createGraphQLError("The Student Role Assignment is required", { extensions: { code: "FORBIDDEN" } });
+    }
+    return result.student;
   }
 
   async function auditedTeacherMutation<T>(
@@ -618,10 +659,15 @@ export function createApi(options: {
         const existing = await transaction.selectFrom("mutation_idempotency_records").select(["input_fingerprint", "outcome"]).where("actor_user_id", "=", administrator.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).executeTakeFirst();
         if (existing) {
           if (existing.input_fingerprint !== inputFingerprint) {
-            await recordCurriculumAudit(transaction, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType: "IdempotencyKey", targetId: administrator.id, outcome: "DENIED", reasonCode: "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_INPUT" });
+            await recordAdministrationAudit(transaction, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType: "IdempotencyKey", targetId: administrator.id, outcome: "DENIED", reasonCode: "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_INPUT" });
             return { __typename: "CurriculumConflict", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." };
           }
-          await recordCurriculumAudit(transaction as Database, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType: "IdempotencyKey", targetId: administrator.id, reasonCode: "IDEMPOTENT_REPLAY_SUCCEEDED" });
+          const replaySucceeded = typeof existing.outcome === "object"
+            && existing.outcome !== null
+            && "__typename" in existing.outcome
+            && typeof existing.outcome.__typename === "string"
+            && existing.outcome.__typename.endsWith("Success");
+          await recordAdministrationAudit(transaction as Database, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType: "IdempotencyKey", targetId: administrator.id, outcome: replaySucceeded ? "SUCCEEDED" : "DENIED", reasonCode: replaySucceeded ? "IDEMPOTENT_REPLAY_SUCCEEDED" : "IDEMPOTENT_REPLAY_DENIED" });
           return existing.outcome as T;
         }
         const outcome = await perform(transaction as Database);
@@ -629,7 +675,7 @@ export function createApi(options: {
         return outcome;
       });
     } catch (error) {
-      await recordCurriculumAudit(context.db, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType: "CurriculumAdministration", targetId: administrator.id, outcome: "FAILED", reasonCode: "UNEXPECTED_MUTATION_FAILURE" });
+      await recordAdministrationAudit(context.db, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType: "CurriculumAdministration", targetId: administrator.id, outcome: "FAILED", reasonCode: "UNEXPECTED_MUTATION_FAILURE" });
       throw error;
     }
   }
@@ -638,7 +684,7 @@ export function createApi(options: {
     try {
       return await perform();
     } catch (error) {
-      await recordCurriculumAudit(context.db, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType: "CurriculumAdministration", targetId: administrator.id, outcome: "FAILED", reasonCode: "UNEXPECTED_MUTATION_FAILURE" });
+      await recordAdministrationAudit(context.db, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType: "CurriculumAdministration", targetId: administrator.id, outcome: "FAILED", reasonCode: "UNEXPECTED_MUTATION_FAILURE" });
       throw error;
     }
   }

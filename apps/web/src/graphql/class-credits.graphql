@@ -1,0 +1,56 @@
+query StudentClassCredits {
+  studentClassCredits {
+    studentUserId
+    availableBalance
+    ledger {
+      id
+      amount
+      source
+      sourceReference
+      reason
+      createdAt
+    }
+  }
+}
+
+query AdministrationClassCredits($studentUserId: ID!) {
+  administrationClassCredits(studentUserId: $studentUserId) {
+    studentUserId
+    availableBalance
+    ledger {
+      id
+      amount
+      source
+      sourceReference
+      reason
+      createdAt
+    }
+  }
+}
+
+mutation AdjustClassCredits($input: AdjustClassCreditsInput!) {
+  adjustClassCredits(input: $input) {
+    ... on AdjustClassCreditsSuccess {
+      account {
+        studentUserId
+        availableBalance
+        ledger {
+          id
+          amount
+          source
+          sourceReference
+          reason
+          createdAt
+        }
+      }
+    }
+    ... on ClassCreditAdjustmentError {
+      code
+      message
+    }
+    ... on CurriculumConflict {
+      conflictCode: code
+      message
+    }
+  }
+}

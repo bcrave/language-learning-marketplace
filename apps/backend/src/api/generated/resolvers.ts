@@ -43,6 +43,20 @@ export type AddLessonMaterialSuccess = {
   material: LessonMaterial;
 };
 
+export type AdjustClassCreditsInput = {
+  amount: Scalars['Int']['input'];
+  idempotencyKey: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+  studentUserId: Scalars['ID']['input'];
+};
+
+export type AdjustClassCreditsResult = AdjustClassCreditsSuccess | ClassCreditAdjustmentError | CurriculumConflict;
+
+export type AdjustClassCreditsSuccess = {
+  __typename?: 'AdjustClassCreditsSuccess';
+  account: ClassCreditAccount;
+};
+
 export type AdministrationCurriculum = {
   __typename?: 'AdministrationCurriculum';
   courses: Array<Course>;
@@ -92,6 +106,44 @@ export type ChangeTeacherQualificationSuccess = {
   __typename?: 'ChangeTeacherQualificationSuccess';
   teacherProfile: PublicTeacherProfile;
 };
+
+export type ClassCreditAccount = {
+  __typename?: 'ClassCreditAccount';
+  availableBalance: Scalars['Int']['output'];
+  ledger: Array<ClassCreditLedgerEntry>;
+  studentUserId: Scalars['ID']['output'];
+};
+
+export type ClassCreditAdjustmentError = {
+  __typename?: 'ClassCreditAdjustmentError';
+  code: ClassCreditAdjustmentErrorCode;
+  message: Scalars['String']['output'];
+};
+
+export enum ClassCreditAdjustmentErrorCode {
+  InsufficientClassCredits = 'INSUFFICIENT_CLASS_CREDITS',
+  InvalidAdjustment = 'INVALID_ADJUSTMENT',
+  InvalidReason = 'INVALID_REASON',
+  StudentNotFound = 'STUDENT_NOT_FOUND'
+}
+
+export type ClassCreditLedgerEntry = {
+  __typename?: 'ClassCreditLedgerEntry';
+  amount: Scalars['Int']['output'];
+  createdAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  reason?: Maybe<Scalars['String']['output']>;
+  source: ClassCreditLedgerSource;
+  sourceReference: Scalars['String']['output'];
+};
+
+export enum ClassCreditLedgerSource {
+  BookingDeduction = 'BOOKING_DEDUCTION',
+  BookingRefund = 'BOOKING_REFUND',
+  CreditAdjustment = 'CREDIT_ADJUSTMENT',
+  OrganizationCreditGrant = 'ORGANIZATION_CREDIT_GRANT',
+  SubscriptionGrant = 'SUBSCRIPTION_GRANT'
+}
 
 export type ClassSession = {
   __typename?: 'ClassSession';
@@ -269,6 +321,7 @@ export type Mutation = {
   __typename?: 'Mutation';
   addAvailabilityException: AddAvailabilityExceptionResult;
   addLessonMaterial: AddLessonMaterialResult;
+  adjustClassCredits: AdjustClassCreditsResult;
   changeClassSessionSeatCapacity: ChangeClassSessionSeatCapacityResult;
   createCourse: CreateCourseResult;
   createLessonUnit: CreateLessonUnitResult;
@@ -297,6 +350,11 @@ export type MutationAddAvailabilityExceptionArgs = {
 
 export type MutationAddLessonMaterialArgs = {
   input: AddLessonMaterialInput;
+};
+
+
+export type MutationAdjustClassCreditsArgs = {
+  input: AdjustClassCreditsInput;
 };
 
 
@@ -421,13 +479,20 @@ export type PublishClassSessionSuccess = {
 
 export type Query = {
   __typename?: 'Query';
+  administrationClassCredits?: Maybe<ClassCreditAccount>;
   administrationClassSessions: Array<ClassSession>;
   administrationCurriculum: AdministrationCurriculum;
   publicTeacherProfile?: Maybe<PublicTeacherProfile>;
   roleWorkspace: RoleWorkspace;
+  studentClassCredits: ClassCreditAccount;
   studentWorkspace: StudentWorkspace;
   teacherAvailability: TeacherAvailability;
   teacherAvailabilityPreview: Array<TeacherAvailabilityOccurrence>;
+};
+
+
+export type QueryAdministrationClassCreditsArgs = {
+  studentUserId: Scalars['ID']['input'];
 };
 
 
@@ -798,6 +863,11 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( CurriculumConflict )
     | ( InvalidLessonMaterial )
   ;
+  AdjustClassCreditsResult:
+    | ( AdjustClassCreditsSuccess )
+    | ( ClassCreditAdjustmentError )
+    | ( CurriculumConflict )
+  ;
   ChangeClassSessionSeatCapacityResult:
     | ( ChangeClassSessionSeatCapacitySuccess )
     | ( ClassSessionSeatCapacityError )
@@ -870,6 +940,9 @@ export type ResolversTypes = {
   AddLessonMaterialInput: AddLessonMaterialInput;
   AddLessonMaterialResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['AddLessonMaterialResult']>;
   AddLessonMaterialSuccess: ResolverTypeWrapper<AddLessonMaterialSuccess>;
+  AdjustClassCreditsInput: AdjustClassCreditsInput;
+  AdjustClassCreditsResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['AdjustClassCreditsResult']>;
+  AdjustClassCreditsSuccess: ResolverTypeWrapper<AdjustClassCreditsSuccess>;
   AdministrationCurriculum: ResolverTypeWrapper<AdministrationCurriculum>;
   AvailabilityException: ResolverTypeWrapper<AvailabilityException>;
   AvailabilityExceptionSessionConflict: ResolverTypeWrapper<AvailabilityExceptionSessionConflict>;
@@ -879,6 +952,11 @@ export type ResolversTypes = {
   ChangeClassSessionSeatCapacitySuccess: ResolverTypeWrapper<ChangeClassSessionSeatCapacitySuccess>;
   ChangeTeacherQualificationInput: ChangeTeacherQualificationInput;
   ChangeTeacherQualificationSuccess: ResolverTypeWrapper<ChangeTeacherQualificationSuccess>;
+  ClassCreditAccount: ResolverTypeWrapper<ClassCreditAccount>;
+  ClassCreditAdjustmentError: ResolverTypeWrapper<ClassCreditAdjustmentError>;
+  ClassCreditAdjustmentErrorCode: ClassCreditAdjustmentErrorCode;
+  ClassCreditLedgerEntry: ResolverTypeWrapper<ClassCreditLedgerEntry>;
+  ClassCreditLedgerSource: ClassCreditLedgerSource;
   ClassSession: ResolverTypeWrapper<ClassSession>;
   ClassSessionPublicationError: ResolverTypeWrapper<ClassSessionPublicationError>;
   ClassSessionPublicationErrorCode: ClassSessionPublicationErrorCode;
@@ -969,6 +1047,9 @@ export type ResolversParentTypes = {
   AddLessonMaterialInput: AddLessonMaterialInput;
   AddLessonMaterialResult: ResolversUnionTypes<ResolversParentTypes>['AddLessonMaterialResult'];
   AddLessonMaterialSuccess: AddLessonMaterialSuccess;
+  AdjustClassCreditsInput: AdjustClassCreditsInput;
+  AdjustClassCreditsResult: ResolversUnionTypes<ResolversParentTypes>['AdjustClassCreditsResult'];
+  AdjustClassCreditsSuccess: AdjustClassCreditsSuccess;
   AdministrationCurriculum: AdministrationCurriculum;
   AvailabilityException: AvailabilityException;
   AvailabilityExceptionSessionConflict: AvailabilityExceptionSessionConflict;
@@ -978,6 +1059,9 @@ export type ResolversParentTypes = {
   ChangeClassSessionSeatCapacitySuccess: ChangeClassSessionSeatCapacitySuccess;
   ChangeTeacherQualificationInput: ChangeTeacherQualificationInput;
   ChangeTeacherQualificationSuccess: ChangeTeacherQualificationSuccess;
+  ClassCreditAccount: ClassCreditAccount;
+  ClassCreditAdjustmentError: ClassCreditAdjustmentError;
+  ClassCreditLedgerEntry: ClassCreditLedgerEntry;
   ClassSession: ClassSession;
   ClassSessionPublicationError: ClassSessionPublicationError;
   ClassSessionSeatCapacityError: ClassSessionSeatCapacityError;
@@ -1067,6 +1151,15 @@ export type AddLessonMaterialSuccessResolvers<ContextType = any, ParentType exte
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
+export type AdjustClassCreditsResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['AdjustClassCreditsResult'] = ResolversParentTypes['AdjustClassCreditsResult']> = {
+  __resolveType: TypeResolveFn<'AdjustClassCreditsSuccess' | 'ClassCreditAdjustmentError' | 'CurriculumConflict', ParentType, ContextType>;
+};
+
+export type AdjustClassCreditsSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['AdjustClassCreditsSuccess'] = ResolversParentTypes['AdjustClassCreditsSuccess']> = {
+  account?: Resolver<ResolversTypes['ClassCreditAccount'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
 export type AdministrationCurriculumResolvers<ContextType = any, ParentType extends ResolversParentTypes['AdministrationCurriculum'] = ResolversParentTypes['AdministrationCurriculum']> = {
   courses?: Resolver<Array<ResolversTypes['Course']>, ParentType, ContextType>;
   teachers?: Resolver<Array<ResolversTypes['PublicTeacherProfile']>, ParentType, ContextType>;
@@ -1102,6 +1195,27 @@ export type ChangeClassSessionSeatCapacitySuccessResolvers<ContextType = any, Pa
 export type ChangeTeacherQualificationSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['ChangeTeacherQualificationSuccess'] = ResolversParentTypes['ChangeTeacherQualificationSuccess']> = {
   teacherProfile?: Resolver<ResolversTypes['PublicTeacherProfile'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type ClassCreditAccountResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassCreditAccount'] = ResolversParentTypes['ClassCreditAccount']> = {
+  availableBalance?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  ledger?: Resolver<Array<ResolversTypes['ClassCreditLedgerEntry']>, ParentType, ContextType>;
+  studentUserId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+};
+
+export type ClassCreditAdjustmentErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassCreditAdjustmentError'] = ResolversParentTypes['ClassCreditAdjustmentError']> = {
+  code?: Resolver<ResolversTypes['ClassCreditAdjustmentErrorCode'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type ClassCreditLedgerEntryResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassCreditLedgerEntry'] = ResolversParentTypes['ClassCreditLedgerEntry']> = {
+  amount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  reason?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  source?: Resolver<ResolversTypes['ClassCreditLedgerSource'], ParentType, ContextType>;
+  sourceReference?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
 };
 
 export type ClassSessionResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassSession'] = ResolversParentTypes['ClassSession']> = {
@@ -1211,6 +1325,7 @@ export type LessonUnitResolvers<ContextType = any, ParentType extends ResolversP
 export type MutationResolvers<ContextType = any, ParentType extends ResolversParentTypes['Mutation'] = ResolversParentTypes['Mutation']> = {
   addAvailabilityException?: Resolver<ResolversTypes['AddAvailabilityExceptionResult'], ParentType, ContextType, RequireFields<MutationAddAvailabilityExceptionArgs, 'input'>>;
   addLessonMaterial?: Resolver<ResolversTypes['AddLessonMaterialResult'], ParentType, ContextType, RequireFields<MutationAddLessonMaterialArgs, 'input'>>;
+  adjustClassCredits?: Resolver<ResolversTypes['AdjustClassCreditsResult'], ParentType, ContextType, RequireFields<MutationAdjustClassCreditsArgs, 'input'>>;
   changeClassSessionSeatCapacity?: Resolver<ResolversTypes['ChangeClassSessionSeatCapacityResult'], ParentType, ContextType, RequireFields<MutationChangeClassSessionSeatCapacityArgs, 'input'>>;
   createCourse?: Resolver<ResolversTypes['CreateCourseResult'], ParentType, ContextType, RequireFields<MutationCreateCourseArgs, 'input'>>;
   createLessonUnit?: Resolver<ResolversTypes['CreateLessonUnitResult'], ParentType, ContextType, RequireFields<MutationCreateLessonUnitArgs, 'input'>>;
@@ -1253,10 +1368,12 @@ export type PublishClassSessionSuccessResolvers<ContextType = any, ParentType ex
 };
 
 export type QueryResolvers<ContextType = any, ParentType extends ResolversParentTypes['Query'] = ResolversParentTypes['Query']> = {
+  administrationClassCredits?: Resolver<Maybe<ResolversTypes['ClassCreditAccount']>, ParentType, ContextType, RequireFields<QueryAdministrationClassCreditsArgs, 'studentUserId'>>;
   administrationClassSessions?: Resolver<Array<ResolversTypes['ClassSession']>, ParentType, ContextType>;
   administrationCurriculum?: Resolver<ResolversTypes['AdministrationCurriculum'], ParentType, ContextType, RequireFields<QueryAdministrationCurriculumArgs, 'locale'>>;
   publicTeacherProfile?: Resolver<Maybe<ResolversTypes['PublicTeacherProfile']>, ParentType, ContextType, RequireFields<QueryPublicTeacherProfileArgs, 'locale' | 'teacherUserId'>>;
   roleWorkspace?: Resolver<ResolversTypes['RoleWorkspace'], ParentType, ContextType, RequireFields<QueryRoleWorkspaceArgs, 'actingRole'>>;
+  studentClassCredits?: Resolver<ResolversTypes['ClassCreditAccount'], ParentType, ContextType>;
   studentWorkspace?: Resolver<ResolversTypes['StudentWorkspace'], ParentType, ContextType>;
   teacherAvailability?: Resolver<ResolversTypes['TeacherAvailability'], ParentType, ContextType>;
   teacherAvailabilityPreview?: Resolver<Array<ResolversTypes['TeacherAvailabilityOccurrence']>, ParentType, ContextType, RequireFields<QueryTeacherAvailabilityPreviewArgs, 'localDates'>>;
@@ -1419,12 +1536,17 @@ export type Resolvers<ContextType = any> = {
   AddAvailabilityExceptionSuccess?: AddAvailabilityExceptionSuccessResolvers<ContextType>;
   AddLessonMaterialResult?: AddLessonMaterialResultResolvers<ContextType>;
   AddLessonMaterialSuccess?: AddLessonMaterialSuccessResolvers<ContextType>;
+  AdjustClassCreditsResult?: AdjustClassCreditsResultResolvers<ContextType>;
+  AdjustClassCreditsSuccess?: AdjustClassCreditsSuccessResolvers<ContextType>;
   AdministrationCurriculum?: AdministrationCurriculumResolvers<ContextType>;
   AvailabilityException?: AvailabilityExceptionResolvers<ContextType>;
   AvailabilityExceptionSessionConflict?: AvailabilityExceptionSessionConflictResolvers<ContextType>;
   ChangeClassSessionSeatCapacityResult?: ChangeClassSessionSeatCapacityResultResolvers<ContextType>;
   ChangeClassSessionSeatCapacitySuccess?: ChangeClassSessionSeatCapacitySuccessResolvers<ContextType>;
   ChangeTeacherQualificationSuccess?: ChangeTeacherQualificationSuccessResolvers<ContextType>;
+  ClassCreditAccount?: ClassCreditAccountResolvers<ContextType>;
+  ClassCreditAdjustmentError?: ClassCreditAdjustmentErrorResolvers<ContextType>;
+  ClassCreditLedgerEntry?: ClassCreditLedgerEntryResolvers<ContextType>;
   ClassSession?: ClassSessionResolvers<ContextType>;
   ClassSessionPublicationError?: ClassSessionPublicationErrorResolvers<ContextType>;
   ClassSessionSeatCapacityError?: ClassSessionSeatCapacityErrorResolvers<ContextType>;

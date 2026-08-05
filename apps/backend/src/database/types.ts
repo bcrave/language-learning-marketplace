@@ -38,6 +38,7 @@ export interface RoleWorkspacePlacesTable {
 export interface AuditEntriesTable {
   id: Generated<string>;
   actor_user_id: string | null;
+  system_identity: "CLASS_SESSION_REMINDER_WORKER" | null;
   acting_role: UserRole | null;
   operation: string;
   target_type: string;
@@ -71,6 +72,8 @@ export interface ClassSessionRemindersTable { id: Generated<string>; class_sessi
 export interface InAppNotificationsTable { id: Generated<string>; recipient_user_id: string; message_id: string; variables: JSONColumnType<Record<string, unknown>>; created_at: Generated<Date> }
 export interface EmailNotificationIntentsTable { id: Generated<string>; recipient_user_id: string; message_id: string; locale: "en" | "es"; variables: JSONColumnType<Record<string, unknown>>; rendered_content: string; created_at: Generated<Date> }
 export interface MutationIdempotencyRecordsTable { actor_user_id: string; operation: string; idempotency_key: string; input_fingerprint: string; outcome: JSONColumnType<Record<string, unknown>>; created_at: Generated<Date> }
+export interface ClassCreditAccountsTable { student_user_id: string; available_balance: Generated<number>; updated_at: Generated<Date> }
+export interface ClassCreditLedgerEntriesTable { id: Generated<string>; student_user_id: string; amount: number; source: "CREDIT_ADJUSTMENT" | "SUBSCRIPTION_GRANT" | "ORGANIZATION_CREDIT_GRANT" | "BOOKING_DEDUCTION" | "BOOKING_REFUND"; source_reference: string; reason: string | null; created_at: Generated<Date> }
 export interface TeacherAvailabilitySettingsTable { teacher_user_id: string; time_zone: string; updated_at: Generated<Date> }
 export interface TeacherAvailabilityRangesTable { id: Generated<string>; teacher_user_id: string; weekday: number; start_local_time: string; end_local_time: string; effective_from: string; effective_until: string | null; time_zone: string; created_at: Generated<Date> }
 export interface AvailabilityExceptionsTable { id: Generated<string>; teacher_user_id: string; starts_at_local: string; ends_at_local: string; starts_at: Date; ends_at: Date; time_zone: string; removed_at: Date | null; created_at: Generated<Date> }
@@ -96,6 +99,8 @@ export interface DatabaseSchema {
   in_app_notifications: InAppNotificationsTable;
   email_notification_intents: EmailNotificationIntentsTable;
   mutation_idempotency_records: MutationIdempotencyRecordsTable;
+  class_credit_accounts: ClassCreditAccountsTable;
+  class_credit_ledger_entries: ClassCreditLedgerEntriesTable;
   teacher_availability_settings: TeacherAvailabilitySettingsTable;
   teacher_availability_ranges: TeacherAvailabilityRangesTable;
   availability_exceptions: AvailabilityExceptionsTable;

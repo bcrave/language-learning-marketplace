@@ -172,6 +172,17 @@ h1 {
   font-size: 0.9rem;
 }
 
+.credit-balance {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.credit-ledger {
+  display: grid;
+  gap: 0.65rem;
+  padding-left: 1.4rem;
+}
+
 .mobile-context,
 .mobile-bottom-nav {
   display: none;

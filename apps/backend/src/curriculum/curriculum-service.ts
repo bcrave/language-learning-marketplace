@@ -1,8 +1,10 @@
-import { interfaceMessages, type UserIdentity } from "@marketplace/core";
+import { interfaceMessages } from "@marketplace/core";
 import IntlMessageFormat from "intl-messageformat";
 import { sql } from "kysely";
 import { z } from "zod";
 
+import { recordAdministrationAudit as recordCurriculumAudit } from "../audit/administration-audit.js";
+import type { Administrator } from "../authorization/administrator-policy.js";
 import type { Database } from "../database/database.js";
 import type { CurriculumLevel, StructuredContent } from "../database/types.js";
 
@@ -14,49 +16,10 @@ const structuredBlock = z.discriminatedUnion("type", [
   z.object({ type: z.literal("list"), items: z.array(shortText.max(500)).min(1).max(12), level: z.null().optional(), text: z.null().optional() }).strict(),
 ]);
 
-export type Administrator = { id: string; locale: "en" | "es" };
+export { administratorFor } from "../authorization/administrator-policy.js";
+export type { Administrator } from "../authorization/administrator-policy.js";
 
-export async function administratorFor(
-  db: Database,
-  identity: UserIdentity,
-): Promise<{ status: "OK"; administrator: Administrator } | { status: "UNKNOWN_USER" } | { status: "ROLE_REQUIRED"; userId: string }> {
-  const user = await db.selectFrom("users")
-    .select(["id", "interface_locale"])
-    .where("identity_issuer", "=", identity.issuer)
-    .where("identity_subject", "=", identity.subject)
-    .executeTakeFirst();
-  if (!user) return { status: "UNKNOWN_USER" };
-  const role = await db.selectFrom("role_assignments").select("role")
-    .where("user_id", "=", user.id)
-    .where("role", "=", "PLATFORM_ADMINISTRATOR")
-    .executeTakeFirst();
-  if (!role) return { status: "ROLE_REQUIRED", userId: user.id };
-  return { status: "OK", administrator: { id: user.id, locale: user.interface_locale ?? "en" } };
-}
-
-export async function recordCurriculumAudit(db: Database, values: {
-  administratorId: string;
-  correlationId: string;
-  operation: string;
-  targetType: string;
-  targetId: string;
-  outcome?: "SUCCEEDED" | "DENIED" | "FAILED";
-  reasonCode: string;
-}) {
-  const targetId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(values.targetId)
-    ? values.targetId
-    : values.administratorId;
-  await db.insertInto("audit_entries").values({
-    actor_user_id: values.administratorId,
-    acting_role: "PLATFORM_ADMINISTRATOR",
-    operation: values.operation,
-    target_type: values.targetType,
-    target_id: targetId,
-    outcome: values.outcome ?? "SUCCEEDED",
-    reason_code: values.reasonCode,
-    correlation_id: values.correlationId,
-  }).execute();
-}
+export { recordAdministrationAudit as recordCurriculumAudit } from "../audit/administration-audit.js";
 
 async function topicsFor(db: Database, locale: "en" | "es") {
   const topics = await db.selectFrom("topics").selectAll().orderBy("key").execute();
