@@ -85,7 +85,7 @@ describe("Curriculum administration GraphQL API", () => {
     const concurrentGrants = await Promise.all([randomUUID(), randomUUID()].map((idempotencyKey) => graphql(grantMutation, { input: { idempotencyKey, teacherUserId: teacherId, targetLanguage: "en", curriculumLevel: "B1" } })));
     expect(concurrentGrants.filter((result) => JSON.stringify(result).includes("CURRICULUM_CONFLICT"))).toHaveLength(1);
     expect(concurrentGrants.filter((result) => JSON.stringify(result).includes(teacherId))).toHaveLength(1);
-    await db.insertInto("class_sessions").values({ id: sessionId, lesson_unit_id: unit.id, teacher_user_id: teacherId, starts_at: new Date(Date.now() + 86_400_000), state: "PUBLISHED" }).execute();
+    await db.insertInto("class_sessions").values({ id: sessionId, lesson_unit_id: unit.id, teacher_user_id: teacherId, starts_at: new Date(Date.now() + 86_400_000), scheduling_time_zone: "America/Denver", state: "PUBLISHED" }).execute();
     const removalCorrelationId = `remove-qualification-${randomUUID()}`;
     const removal = await graphql(`mutation Remove($input: ChangeTeacherQualificationInput!) { removeTeacherQualification(input: $input) { ... on ChangeTeacherQualificationSuccess { teacherProfile { id } } ... on TeacherQualificationRemovalBlocked { code classSessionIds } ... on CurriculumConflict { code } } }`, { input: { idempotencyKey: randomUUID(), teacherUserId: teacherId, targetLanguage: "en", curriculumLevel: "B1" } }, removalCorrelationId);
     const profile = await graphql(`query PublicProfile($teacherId: ID!) { publicTeacherProfile(teacherUserId: $teacherId, locale: ES) { id displayName pronouns profileImageUrl professionalBiography taughtLanguages qualifiedCurriculumLevels teachingTopics { key label } completedSessionCount } }`, { teacherId });
@@ -154,6 +154,7 @@ describe("Curriculum administration GraphQL API", () => {
       lesson_unit_id: lessonUnit.id,
       teacher_user_id: teacherId,
       starts_at: new Date(Date.now() + 2 * 86_400_000),
+      scheduling_time_zone: "America/Denver",
       state: "PUBLISHED",
     }).execute();
 

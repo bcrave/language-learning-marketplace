@@ -122,7 +122,7 @@ describe("Teacher Availability GraphQL API", () => {
     });
     await db.insertInto("teacher_qualifications").values({ teacher_user_id: teacherId, target_language: "fr", curriculum_level: "A1", granted_by_user_id: teacherId }).execute();
     const sessionId = randomUUID();
-    await db.insertInto("class_sessions").values({ id: sessionId, lesson_unit_id: unit.id, teacher_user_id: teacherId, starts_at: new Date("2026-08-18T15:30:00Z"), state: "PUBLISHED" }).execute();
+    await db.insertInto("class_sessions").values({ id: sessionId, lesson_unit_id: unit.id, teacher_user_id: teacherId, starts_at: new Date("2026-08-18T15:30:00Z"), scheduling_time_zone: "America/Denver", state: "PUBLISHED" }).execute();
     const correlationId = `exception-conflict-${randomUUID()}`;
     const result = await graphql(`
       mutation Add($input: AddAvailabilityExceptionInput!) {
@@ -161,14 +161,14 @@ describe("Teacher Availability GraphQL API", () => {
       startDisambiguation: "REJECT", endDisambiguation: "REJECT",
     } });
     expect(accepted).toMatchObject({ data: { addAvailabilityException: { exception: { id: expect.any(String) } } } });
-    await expect(db.insertInto("class_sessions").values({ id: randomUUID(), lesson_unit_id: unit.id, teacher_user_id: teacherId, starts_at: new Date("2026-08-19T15:30:00Z"), state: "PUBLISHED" }).execute()).rejects.toMatchObject({ code: "23P01" });
+    await expect(db.insertInto("class_sessions").values({ id: randomUUID(), lesson_unit_id: unit.id, teacher_user_id: teacherId, starts_at: new Date("2026-08-19T15:30:00Z"), scheduling_time_zone: "America/Denver", state: "PUBLISHED" }).execute()).rejects.toMatchObject({ code: "23P01" });
 
     const racedSessionId = randomUUID();
     const [exceptionRace, sessionRace] = await Promise.allSettled([
       graphql(`mutation Add($input: AddAvailabilityExceptionInput!) { addAvailabilityException(input: $input) { ... on AddAvailabilityExceptionSuccess { exception { id } } ... on AvailabilityExceptionSessionConflict { code } ... on TeacherAvailabilityValidationError { code } } }`, { input: {
         idempotencyKey: randomUUID(), startsAtLocal: "2026-08-20T09:00", endsAtLocal: "2026-08-20T11:00", startDisambiguation: "REJECT", endDisambiguation: "REJECT",
       } }),
-      db.insertInto("class_sessions").values({ id: racedSessionId, lesson_unit_id: unit.id, teacher_user_id: teacherId, starts_at: new Date("2026-08-20T15:30:00Z"), state: "PUBLISHED" }).execute(),
+      db.insertInto("class_sessions").values({ id: racedSessionId, lesson_unit_id: unit.id, teacher_user_id: teacherId, starts_at: new Date("2026-08-20T15:30:00Z"), scheduling_time_zone: "America/Denver", state: "PUBLISHED" }).execute(),
     ]);
     const exceptionWon = exceptionRace.status === "fulfilled" && JSON.stringify(exceptionRace.value).includes('"exception"');
     const sessionWon = sessionRace.status === "fulfilled";

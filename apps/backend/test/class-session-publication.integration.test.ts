@@ -8,6 +8,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createApi } from "../src/api/app.js";
+import { deliverDueClassSessionReminders } from "../src/class-session/class-session-reminder-worker.js";
 import { createDatabase, type Database } from "../src/database/database.js";
 import { migrateDatabase } from "../src/database/migrate.js";
 
@@ -21,6 +22,7 @@ describe("Class Session publication GraphQL API", () => {
   const studentId = randomUUID();
   const studentSubject = randomUUID();
   const secondStudentId = randomUUID();
+  let futureClassSessionId: string;
 
   beforeAll(async () => {
     postgres = await startPostgreSqlTemplate();
@@ -118,6 +120,35 @@ describe("Class Session publication GraphQL API", () => {
     expect(await db.selectFrom("audit_entries").select(["outcome", "reason_code"]).where("correlation_id", "=", "publication-replay").executeTakeFirstOrThrow()).toEqual({ outcome: "SUCCEEDED", reason_code: "IDEMPOTENT_REPLAY_SUCCEEDED" });
   });
 
+  it("schedules one durable Teacher reminder exactly 24 hours before a future Class Session", async () => {
+    const lessonUnitId = await insertLessonUnit("it", "A1", true);
+    await db.insertInto("teacher_availability_ranges").values({ teacher_user_id: teacherId, weekday: 1, start_local_time: "09:00", end_local_time: "12:00", effective_from: "2099-08-10", effective_until: "2099-08-10", time_zone: "America/Denver" }).execute();
+
+    const publication = await publish({ lessonUnitId, startsAtLocal: "2099-08-10T10:00" });
+
+    const classSessionId = (publication.data?.publishClassSession as { classSession: { id: string } }).classSession.id;
+    futureClassSessionId = classSessionId;
+    expect(await db.selectFrom("class_session_reminders").select(["class_session_id", "recipient_user_id", "commitment_role", "due_at", "terminal_outcome"]).where("class_session_id", "=", classSessionId).execute()).toEqual([{
+      class_session_id: classSessionId,
+      recipient_user_id: teacherId,
+      commitment_role: "TEACHER",
+      due_at: new Date("2099-08-09T16:00:00.000Z"),
+      terminal_outcome: null,
+    }]);
+  });
+
+  it("delivers a due Teacher reminder once and records a privacy-safe background Audit Entry", async () => {
+    await deliverDueClassSessionReminders(db, new Date("2099-08-09T16:00:00.000Z"), "class-session-reminder-test");
+    await deliverDueClassSessionReminders(db, new Date("2099-08-09T16:00:00.000Z"), "class-session-reminder-replay");
+
+    const inAppReminders = await db.selectFrom("in_app_notifications").select("variables").where("recipient_user_id", "=", teacherId).where("message_id", "=", "class-session.reminder.teacher").execute();
+    expect(inAppReminders.filter(({ variables }) => variables.classSessionId === futureClassSessionId)).toHaveLength(1);
+    const emailReminders = await db.selectFrom("email_notification_intents").select(["locale", "variables", "rendered_content"]).where("recipient_user_id", "=", teacherId).where("message_id", "=", "class-session.reminder.teacher").execute();
+    expect(emailReminders.filter(({ variables }) => variables.classSessionId === futureClassSessionId)).toEqual([{ locale: "es", variables: expect.any(Object), rendered_content: expect.stringMatching(/10:00.*2099|2099.*10:00/) }]);
+    expect(await db.selectFrom("class_session_reminders").select(["terminal_outcome", "completed_at"]).where("class_session_id", "=", futureClassSessionId).executeTakeFirstOrThrow()).toEqual({ terminal_outcome: "DELIVERED", completed_at: new Date("2099-08-09T16:00:00.000Z") });
+    expect(await db.selectFrom("audit_entries").select(["actor_user_id", "acting_role", "outcome", "reason_code"]).where("correlation_id", "=", "class-session-reminder-test").executeTakeFirstOrThrow()).toEqual({ actor_user_id: null, acting_role: null, outcome: "SUCCEEDED", reason_code: "CLASS_SESSION_REMINDER_DELIVERED" });
+  });
+
   it("returns typed availability and schedule conflicts without creating a second Class Session", async () => {
     const unavailableUnitId = await insertLessonUnit("en", "A2", true);
     const unavailable = await publish({ lessonUnitId: unavailableUnitId, startsAtLocal: "2026-08-10T12:00" });
@@ -139,6 +170,27 @@ describe("Class Session publication GraphQL API", () => {
 
     const result = await publish({ lessonUnitId, startsAtLocal: "2026-08-24T10:30" });
     expect(result).toMatchObject({ data: { publishClassSession: { code: "TEACHER_SCHEDULE_CONFLICT" } } });
+  });
+
+  it("does not describe a past Teacher assignment as imminent", async () => {
+    const lessonUnitId = await insertLessonUnit("de", "A1", true);
+    await db.insertInto("teacher_availability_ranges").values({ teacher_user_id: teacherId, weekday: 1, start_local_time: "09:00", end_local_time: "12:00", effective_from: "2026-08-03", effective_until: "2026-08-03", time_zone: "America/Denver" }).execute();
+
+    const result = await publish({ lessonUnitId, startsAtLocal: "2026-08-03T10:00" });
+
+    expect(result).toMatchObject({ data: { publishClassSession: { classSession: { id: expect.any(String) } } } });
+    const notification = await db.selectFrom("email_notification_intents").select(["variables", "rendered_content"]).where("recipient_user_id", "=", teacherId).orderBy("created_at", "desc").executeTakeFirstOrThrow();
+    expect(notification.variables).toMatchObject({ imminent: false });
+    expect(notification.rendered_content).not.toContain("Asignación inminente");
+  });
+
+  it("rejects a fold occurrence that cannot fit within the declared wall-time availability", async () => {
+    const lessonUnitId = await insertLessonUnit("es", "A2", true);
+    await db.insertInto("teacher_availability_ranges").values({ teacher_user_id: teacherId, weekday: 7, start_local_time: "01:30", end_local_time: "01:31", effective_from: "2026-11-01", effective_until: "2026-11-01", time_zone: "America/New_York" }).execute();
+
+    const result = await publish({ lessonUnitId, startsAtLocal: "2026-11-01T01:30", schedulingTimeZone: "America/New_York", timeDisambiguation: "EARLIER" });
+
+    expect(result).toMatchObject({ data: { publishClassSession: { code: "TEACHER_AVAILABILITY_REQUIRED" } } });
   });
 
   it("publishes adjacent 60-minute occurrences from both sides of a daylight-saving fold", async () => {
@@ -229,7 +281,7 @@ describe("Class Session publication GraphQL API", () => {
     return lessonUnit.id;
   }
 
-  async function publish(overrides: { lessonUnitId: string; startsAtLocal: string; seatCapacity?: number }, correlationId?: string, idempotencyKey = randomUUID()) {
+  async function publish(overrides: { lessonUnitId: string; startsAtLocal: string; schedulingTimeZone?: string; timeDisambiguation?: "REJECT" | "EARLIER" | "LATER"; seatCapacity?: number }, correlationId?: string, idempotencyKey = randomUUID()) {
     return graphql(`
       mutation Publish($input: PublishClassSessionInput!) {
         publishClassSession(input: $input) {

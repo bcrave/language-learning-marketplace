@@ -1,21 +1,34 @@
+import { randomUUID } from "node:crypto";
+
 import { run } from "graphile-worker";
 
+import { deliverDueClassSessionReminders } from "../class-session/class-session-reminder-worker.js";
 import { parseAppConfig } from "../config.js";
+import { createDatabase } from "../database/database.js";
+import { migrateDatabase } from "../database/migrate.js";
 
 const config = parseAppConfig(process.env);
+const db = createDatabase(config.DATABASE_URL);
+await migrateDatabase(db);
 
 const runner = await run({
   connectionString: config.DATABASE_URL,
   concurrency: 1,
   noHandleSignals: true,
   pollInterval: 10_000,
-  taskList: {},
+  crontab: "* * * * * deliver_class_session_reminders",
+  taskList: {
+    deliver_class_session_reminders: async () => {
+      await deliverDueClassSessionReminders(db, new Date(), `class-session-reminder-${randomUUID()}`);
+    },
+  },
 });
 
 console.log(JSON.stringify({ event: "worker.started" }));
 
 async function shutdown() {
   await runner.stop();
+  await db.destroy();
 }
 
 process.once("SIGINT", shutdown);

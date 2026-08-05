@@ -309,11 +309,11 @@ export function createApi(options: {
       Mutation: {
         publishClassSession: async (_parent, { input }, context) => {
           const administrator = await authenticateAdministrator(context, "class-session.published");
-          return graphQLResult(await idempotentAdministrationMutation(context, administrator, "class-session.published", input.idempotencyKey, input, (transaction) => publishClassSession(transaction, administrator, input, context.correlationId)));
+          return idempotentAdministrationMutation(context, administrator, "class-session.published", input.idempotencyKey, input, (transaction) => publishClassSession(transaction, administrator, input, context.correlationId));
         },
         changeClassSessionSeatCapacity: async (_parent, { input }, context) => {
           const administrator = await authenticateAdministrator(context, "class-session.seat-capacity-changed");
-          return graphQLResult(await idempotentAdministrationMutation(context, administrator, "class-session.seat-capacity-changed", input.idempotencyKey, input, (transaction) => changeClassSessionSeatCapacity(transaction, administrator, input, context.correlationId)));
+          return idempotentAdministrationMutation(context, administrator, "class-session.seat-capacity-changed", input.idempotencyKey, input, (transaction) => changeClassSessionSeatCapacity(transaction, administrator, input, context.correlationId));
         },
         saveTeacherAvailabilityRange: async (_parent, { input }, context) => {
           const teacher = await authenticateTeacher(context, "teacher-availability.changed");

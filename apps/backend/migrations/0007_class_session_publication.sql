@@ -4,15 +4,15 @@ alter table class_sessions
   add column seat_capacity smallint not null default 5,
   add column occupied_seats smallint not null default 0;
 
-update class_sessions
-set scheduling_time_zone = coalesce(
-  (select time_zone from teacher_availability_settings where teacher_user_id = class_sessions.teacher_user_id),
-  (select display_time_zone from users where id = class_sessions.teacher_user_id),
-  'America/Denver'
-);
+do $$
+begin
+  if exists (select 1 from class_sessions) then
+    raise exception 'existing Class Sessions require an explicit scheduling time zone before publication migration';
+  end if;
+end;
+$$;
 
 alter table class_sessions
-  alter column scheduling_time_zone set default 'America/Denver',
   alter column scheduling_time_zone set not null,
   add constraint class_sessions_scheduling_time_zone_named check (scheduling_time_zone ~ '^[A-Za-z_]+/[A-Za-z0-9_+/-]+$'),
   add constraint class_sessions_seat_capacity_valid check (seat_capacity between 2 and 8),
