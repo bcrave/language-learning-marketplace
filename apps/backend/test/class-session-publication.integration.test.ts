@@ -6,15 +6,17 @@ import {
   type StartedPostgreSqlContainer,
 } from "@marketplace/test-support";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { makeWorkerUtils, runOnce } from "graphile-worker";
 
 import { createApi } from "../src/api/app.js";
-import { deliverDueClassSessionReminders } from "../src/class-session/class-session-reminder-worker.js";
+import { classSessionReminderTasks } from "../src/class-session/class-session-reminder-worker.js";
 import { createDatabase, type Database } from "../src/database/database.js";
 import { migrateDatabase } from "../src/database/migrate.js";
 
 describe("Class Session publication GraphQL API", () => {
   let api: ReturnType<typeof createApi>;
   let db: Database;
+  let databaseUrl: string;
   let postgres: StartedPostgreSqlContainer;
   const administratorId = randomUUID();
   const administratorSubject = randomUUID();
@@ -29,7 +31,7 @@ describe("Class Session publication GraphQL API", () => {
     const templateDb = createDatabase(postgres.getConnectionUri());
     await migrateDatabase(templateDb);
     await templateDb.destroy();
-    const databaseUrl = await clonePostgreSqlTemplate(
+    databaseUrl = await clonePostgreSqlTemplate(
       postgres,
       `class_session_${randomUUID().replaceAll("-", "")}`,
     );
@@ -138,15 +140,33 @@ describe("Class Session publication GraphQL API", () => {
   });
 
   it("delivers a due Teacher reminder once and records a privacy-safe background Audit Entry", async () => {
-    await deliverDueClassSessionReminders(db, new Date("2099-08-09T16:00:00.000Z"), "class-session-reminder-test");
-    await deliverDueClassSessionReminders(db, new Date("2099-08-09T16:00:00.000Z"), "class-session-reminder-replay");
+    await runReminderWorker(new Date("2099-08-09T16:00:00.000Z"), "class-session-reminder-test");
+    await runReminderWorker(new Date("2099-08-09T16:00:00.000Z"), "class-session-reminder-replay");
 
     const inAppReminders = await db.selectFrom("in_app_notifications").select("variables").where("recipient_user_id", "=", teacherId).where("message_id", "=", "class-session.reminder.teacher").execute();
     expect(inAppReminders.filter(({ variables }) => variables.classSessionId === futureClassSessionId)).toHaveLength(1);
     const emailReminders = await db.selectFrom("email_notification_intents").select(["locale", "variables", "rendered_content"]).where("recipient_user_id", "=", teacherId).where("message_id", "=", "class-session.reminder.teacher").execute();
     expect(emailReminders.filter(({ variables }) => variables.classSessionId === futureClassSessionId)).toEqual([{ locale: "es", variables: expect.any(Object), rendered_content: expect.stringMatching(/10:00.*2099|2099.*10:00/) }]);
     expect(await db.selectFrom("class_session_reminders").select(["terminal_outcome", "completed_at"]).where("class_session_id", "=", futureClassSessionId).executeTakeFirstOrThrow()).toEqual({ terminal_outcome: "DELIVERED", completed_at: new Date("2099-08-09T16:00:00.000Z") });
-    expect(await db.selectFrom("audit_entries").select(["actor_user_id", "acting_role", "outcome", "reason_code"]).where("correlation_id", "=", "class-session-reminder-test").executeTakeFirstOrThrow()).toEqual({ actor_user_id: null, acting_role: null, outcome: "SUCCEEDED", reason_code: "CLASS_SESSION_REMINDER_DELIVERED" });
+    expect(await db.selectFrom("audit_entries").select(["actor_user_id", "system_identity", "acting_role", "outcome", "reason_code"]).where("correlation_id", "=", "class-session-reminder-test").where("target_id", "=", futureClassSessionId).executeTakeFirstOrThrow()).toEqual({ actor_user_id: null, system_identity: "CLASS_SESSION_REMINDER_WORKER", acting_role: null, outcome: "SUCCEEDED", reason_code: "CLASS_SESSION_REMINDER_DELIVERED" });
+  });
+
+  it("audits a failed reminder attempt and leaves it durable for retry", async () => {
+    await db.updateTable("class_session_reminders").set({ terminal_outcome: null, completed_at: null }).where("class_session_id", "=", futureClassSessionId).execute();
+    await db.updateTable("users").set({ display_time_zone: "Not/AZone" }).where("id", "=", teacherId).execute();
+
+    await runReminderWorker(new Date("2099-08-09T16:00:00.000Z"), "class-session-reminder-failure-test");
+
+    expect(await db.selectFrom("class_session_reminders").select(["terminal_outcome", "completed_at"]).where("class_session_id", "=", futureClassSessionId).executeTakeFirstOrThrow()).toEqual({ terminal_outcome: null, completed_at: null });
+    expect(await db.selectFrom("audit_entries").select(["system_identity", "outcome", "reason_code"]).where("correlation_id", "=", "class-session-reminder-failure-test").where("target_id", "=", futureClassSessionId).executeTakeFirstOrThrow()).toEqual({ system_identity: "CLASS_SESSION_REMINDER_WORKER", outcome: "FAILED", reason_code: "CLASS_SESSION_REMINDER_FAILED" });
+    await db.updateTable("users").set({ display_time_zone: "America/Denver" }).where("id", "=", teacherId).execute();
+  });
+
+  it("suppresses a stale reminder after the Class Session has started", async () => {
+    await runReminderWorker(new Date("2099-08-10T16:00:00.000Z"), "class-session-reminder-stale-test");
+
+    expect(await db.selectFrom("class_session_reminders").select("terminal_outcome").where("class_session_id", "=", futureClassSessionId).executeTakeFirstOrThrow()).toEqual({ terminal_outcome: "SUPPRESSED" });
+    expect(await db.selectFrom("audit_entries").select(["outcome", "reason_code"]).where("correlation_id", "=", "class-session-reminder-stale-test").where("target_id", "=", futureClassSessionId).executeTakeFirstOrThrow()).toEqual({ outcome: "SUCCEEDED", reason_code: "CLASS_SESSION_REMINDER_SUPPRESSED" });
   });
 
   it("returns typed availability and schedule conflicts without creating a second Class Session", async () => {
@@ -326,6 +346,21 @@ describe("Class Session publication GraphQL API", () => {
         }
       }
     `, { input: { idempotencyKey: randomUUID(), classSessionId, seatCapacity } });
+  }
+
+  async function runReminderWorker(now: Date, correlationId: string) {
+    const workerUtils = await makeWorkerUtils({ connectionString: databaseUrl });
+    try {
+      await workerUtils.migrate();
+      await workerUtils.addJob("deliver_class_session_reminders", {});
+      await runOnce({
+        connectionString: databaseUrl,
+        concurrency: 1,
+        taskList: classSessionReminderTasks(db, { now: () => now, correlationId: () => correlationId }),
+      });
+    } finally {
+      await workerUtils.release();
+    }
   }
 
   async function graphql(query: string, variables?: Record<string, unknown>, correlationId?: string, subject = administratorSubject) {

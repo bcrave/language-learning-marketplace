@@ -1,6 +1,5 @@
-import { interfaceMessages, namedRegionalTimeZones } from "@marketplace/core";
+import { namedRegionalTimeZones } from "@marketplace/core";
 import { Temporal } from "@js-temporal/polyfill";
-import IntlMessageFormat from "intl-messageformat";
 import { sql } from "kysely";
 
 import type { Administrator } from "../curriculum/curriculum-service.js";
@@ -11,6 +10,7 @@ import {
   ClassSessionPublicationErrorCode,
   ClassSessionSeatCapacityErrorCode,
 } from "../api/generated/resolvers.js";
+import { notifyClassSessionTeacher } from "./class-session-notifications.js";
 
 type PublishClassSessionInput = {
   lessonUnitId: string;
@@ -75,21 +75,11 @@ async function denyPublication(
 }
 
 async function notifyAssignedTeacher(transaction: Database, classSessionId: string, teacherUserId: string, startsAt: Date) {
-  const teacher = await transaction.selectFrom("users").select(["interface_locale", "display_time_zone"]).where("id", "=", teacherUserId).executeTakeFirstOrThrow();
-  const locale = teacher.interface_locale ?? "en";
-  const timeZone = teacher.display_time_zone ?? "UTC";
-  const messageId = "class-session.teacher-assigned.teacher" as const;
   const startsAtInstant = Temporal.Instant.fromEpochMilliseconds(startsAt.getTime());
   const now = Temporal.Now.instant();
   const imminent = Temporal.Instant.compare(startsAtInstant, now) >= 0
     && startsAtInstant.since(now).total({ unit: "hours" }) <= 24;
-  const variables = { classSessionId, startsAt: startsAt.toISOString(), timeZone, imminent };
-  const renderedContent = String(new IntlMessageFormat(interfaceMessages[locale][messageId], locale, {
-    date: { long: { ...IntlMessageFormat.formats.date.long, timeZone } },
-    time: { short: { ...IntlMessageFormat.formats.time.short, timeZone } },
-  }).format({ ...variables, startsAt }));
-  await transaction.insertInto("in_app_notifications").values({ recipient_user_id: teacherUserId, message_id: messageId, variables: JSON.stringify(variables) }).execute();
-  await transaction.insertInto("email_notification_intents").values({ recipient_user_id: teacherUserId, message_id: messageId, locale, variables: JSON.stringify(variables), rendered_content: renderedContent }).execute();
+  await notifyClassSessionTeacher(transaction, teacherUserId, "class-session.teacher-assigned.teacher", classSessionId, startsAt, { imminent });
 }
 
 export async function publishClassSession(
