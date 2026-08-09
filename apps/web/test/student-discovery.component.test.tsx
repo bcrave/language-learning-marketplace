@@ -1,4 +1,5 @@
 import { MockedProvider } from "@apollo/client/testing/react";
+import type { MockedResponse } from "@apollo/client/testing";
 import { interfaceMessages } from "@marketplace/core";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -7,16 +8,23 @@ import { afterEach, describe, expect, it } from "vitest";
 import { IntlProvider } from "react-intl";
 
 import {
+  BookClassSessionDocument,
+  CancelBookingDocument,
   ClassSessionDiscoveryOptionsDocument,
   DiscoverClassSessionsDocument,
   SetStudentPlacementDocument,
+  StudentBookingsDocument,
   StudentPlacementsDocument,
 } from "../src/generated/graphql.js";
 import { StudentDiscoveryPanel } from "../src/student-discovery.js";
 
 afterEach(cleanup);
 
-const mocks = [
+const mocks: MockedResponse[] = [
+  {
+    request: { query: StudentBookingsDocument },
+    result: { data: { studentBookings: [] } },
+  },
   {
     request: { query: StudentPlacementsDocument },
     result: { data: { studentPlacements: [{ targetLanguage: "es", curriculumLevel: "B1" }] } },
@@ -45,7 +53,7 @@ const mocks = [
         endsAt: "2026-08-06T17:00:00Z",
         schedulingTimeZone: "America/Denver",
         seatCapacity: 5,
-        occupiedSeats: 5,
+        occupiedSeats: 4,
         lessonUnit: {
           id: "00000000-0000-4000-8000-000000000020",
           title: "Conversación práctica",
@@ -92,11 +100,14 @@ const mocks = [
   },
 ];
 
-function renderPanel(locale: "en" | "es" = "en") {
+function renderPanel(locale: "en" | "es" = "en", providedMocks: MockedResponse[] = mocks, idempotencyKeyFactory?: () => string) {
   return render(
-    <MockedProvider mocks={mocks}>
+    <MockedProvider mocks={providedMocks}>
       <IntlProvider locale={locale} messages={interfaceMessages[locale]}>
-        <StudentDiscoveryPanel displayTimeZone="America/Denver" />
+        <StudentDiscoveryPanel
+          displayTimeZone="America/Denver"
+          {...(idempotencyKeyFactory ? { idempotencyKeyFactory } : {})}
+        />
       </IntlProvider>
     </MockedProvider>,
   );
@@ -114,7 +125,8 @@ describe("Student Class Session Discovery", () => {
     expect(screen.getByLabelText("Local date")).toHaveValue("");
 
     expect(await screen.findByRole("heading", { name: "Conversación práctica" })).toBeVisible();
-    expect(screen.getByText("5 of 5 seats occupied; Waitlist open")).toBeVisible();
+    expect(screen.getByText("4 of 5 seats occupied; seats available")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Book Class Session" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Taylor Teacher" })).toBeVisible();
     expect(screen.getByText("Conversation-focused teacher.")).toBeVisible();
     expect(screen.getByText("Taught languages: es")).toBeVisible();
@@ -142,11 +154,80 @@ describe("Student Class Session Discovery", () => {
     expect(await screen.findByText("No actionable Class Sessions match these filters.")).toBeVisible();
   });
 
+  it("lets the Student book and cancel an available Class Session with accessible status feedback", async () => {
+    const user = userEvent.setup();
+    const bookingId = "00000000-0000-4000-8000-000000000099";
+    const sessionId = "00000000-0000-4000-8000-000000000010";
+    const activeBooking = {
+      __typename: "Booking",
+      id: bookingId,
+      state: "ACTIVE",
+      terminalReason: null,
+      classCreditRefunded: false,
+      bookedAt: "2026-08-05T12:00:00Z",
+      endedAt: null,
+      classSession: {
+        __typename: "ClassSession",
+        id: sessionId,
+        startsAt: "2026-08-06T16:00:00Z",
+        endsAt: "2026-08-06T17:00:00Z",
+        occupiedSeats: 5,
+        seatCapacity: 5,
+      },
+    };
+    const bookingMocks = [
+      ...mocks,
+      {
+        request: { query: BookClassSessionDocument, variables: { input: { idempotencyKey: "book-key", classSessionId: sessionId } } },
+        result: { data: { bookClassSession: {
+          __typename: "BookClassSessionSuccess",
+          booking: activeBooking,
+          account: { availableBalance: 1 },
+        } } },
+      },
+      {
+        request: { query: StudentBookingsDocument },
+        result: { data: { studentBookings: [activeBooking] } },
+      },
+      {
+        request: { query: CancelBookingDocument, variables: { input: { idempotencyKey: "cancel-key", bookingId } } },
+        result: { data: { cancelBooking: {
+          __typename: "CancelBookingSuccess",
+          booking: {
+            ...activeBooking,
+            state: "ENDED",
+            terminalReason: "STUDENT_CANCELLATION",
+            classCreditRefunded: true,
+            endedAt: "2026-08-05T12:05:00Z",
+            classSession: { ...activeBooking.classSession, occupiedSeats: 4 },
+          },
+          account: { availableBalance: 2 },
+        } } },
+      },
+      {
+        request: { query: StudentBookingsDocument },
+        result: { data: { studentBookings: [] } },
+      },
+    ];
+    const keys = ["book-key", "cancel-key"];
+    renderPanel("en", bookingMocks, () => keys.shift()!);
+    await screen.findByRole("heading", { name: "Conversación práctica" });
+
+    await user.click(screen.getByRole("button", { name: "Book Class Session" }));
+    expect(await screen.findByText("Booking confirmed. One Class Credit was exchanged.")).toHaveAttribute("role", "status");
+    expect(screen.getByRole("button", { name: /Cancel Booking for/ })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: /Cancel Booking for/ }));
+    expect(await screen.findByText("Booking cancelled. One Class Credit was returned.")).toHaveAttribute("role", "status");
+    expect(screen.getByRole("button", { name: "Book Class Session" })).toBeVisible();
+  });
+
   it("localizes discovery chrome in Spanish", async () => {
     renderPanel("es");
     expect(await screen.findByRole("heading", { name: "Descubrir sesiones de clase" })).toBeVisible();
     expect(screen.getByRole("combobox", { name: "Idioma objetivo" })).toHaveValue("es");
     expect(screen.getByRole("button", { name: "Buscar sesiones de clase" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Reservar sesión de clase" })).toBeVisible();
   });
 
   it("shows a localized error when discovery options fail", async () => {

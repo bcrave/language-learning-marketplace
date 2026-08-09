@@ -4,7 +4,7 @@ import { Temporal } from "@js-temporal/polyfill";
 import type { TaskList } from "graphile-worker";
 
 import type { Database } from "../database/database.js";
-import { notifyClassSessionTeacher } from "./class-session-notifications.js";
+import { notifyClassSessionUser } from "./class-session-notifications.js";
 
 export function classSessionReminderTasks(
   db: Database,
@@ -68,9 +68,11 @@ export async function deliverDueClassSessionReminders(
           return true;
         }
 
-        await notifyClassSessionTeacher(transaction as Database, {
-          teacherUserId: reminder.recipient_user_id,
-          messageId: "class-session.reminder.teacher",
+        await notifyClassSessionUser(transaction as Database, {
+          recipientUserId: reminder.recipient_user_id,
+          messageId: reminder.commitment_role === "STUDENT"
+            ? "class-session.reminder.student"
+            : "class-session.reminder.teacher",
           classSessionId: reminder.class_session_id,
           startsAt: commitment.starts_at,
         });

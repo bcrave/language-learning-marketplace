@@ -14,7 +14,7 @@ type AdjustmentInput = {
   studentUserId: string;
 };
 
-async function projectClassCreditAccount(
+export async function projectClassCreditAccount(
   db: Database,
   studentUserId: string,
   availableBalance?: number,

@@ -19,6 +19,7 @@ import { administratorFor } from "../authorization/administrator-policy.js";
 import { studentFor } from "../authorization/student-policy.js";
 import { recordAdministrationAudit } from "../audit/administration-audit.js";
 import { createAuthenticator } from "../auth/create-authenticator.js";
+import { bookClassSession, bookingsForStudent, cancelBooking } from "../booking/booking-service.js";
 import {
   adjustClassCredits,
   administrationClassCredits,
@@ -178,6 +179,8 @@ export function createApi(options: {
       ProcessSubscriptionProviderEventResult: { __resolveType: (value) => value.__typename! },
       ScheduleSubscriptionCancellationResult: { __resolveType: (value) => value.__typename! },
       UndoSubscriptionCancellationResult: { __resolveType: (value) => value.__typename! },
+      BookClassSessionResult: { __resolveType: (value) => value.__typename! },
+      CancelBookingResult: { __resolveType: (value) => value.__typename! },
       Query: {
         studentPlacements: async (_parent, _arguments, context) => {
           const student = await authenticateStudent(context, "student-placement.read", "StudentPlacement");
@@ -210,6 +213,10 @@ export function createApi(options: {
         studentClassCredits: async (_parent, _arguments, context) => {
           const student = await authenticateStudent(context, "class-credit.read");
           return graphQLResult(await classCreditsForStudent(context.db, student.id));
+        },
+        studentBookings: async (_parent, _arguments, context) => {
+          const student = await authenticateStudent(context, "booking-history.read", "Booking");
+          return graphQLResult(await bookingsForStudent(context.db, student.id));
         },
         administrationClassCredits: async (_parent, { studentUserId }, context) => {
           await authenticateAdministrator(context, "class-credit-administration.read");
@@ -424,6 +431,32 @@ export function createApi(options: {
             input.idempotencyKey,
             input,
             (transaction) => adjustClassCredits(transaction, administrator, input, context.correlationId),
+          ));
+        },
+        bookClassSession: async (_parent, { input }, context) => {
+          const student = await authenticateStudent(context, "booking.created", "Booking");
+          return graphQLResult(await idempotentStudentMutation(
+            context,
+            student,
+            "booking.created",
+            input.idempotencyKey,
+            input,
+            (transaction) => bookClassSession(transaction, student, input, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "BookingError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "Booking",
+          ));
+        },
+        cancelBooking: async (_parent, { input }, context) => {
+          const student = await authenticateStudent(context, "booking.cancelled", "Booking");
+          return graphQLResult(await idempotentStudentMutation(
+            context,
+            student,
+            "booking.cancelled",
+            input.idempotencyKey,
+            input,
+            (transaction) => cancelBooking(transaction, student, input, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "BookingError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "Booking",
           ));
         },
         publishClassSession: async (_parent, { input }, context) => {
@@ -775,14 +808,16 @@ export function createApi(options: {
     }
   }
 
-  async function idempotentStudentMutation<T>(
+  async function idempotentStudentMutation<T, C extends { __typename: string; code: string; message: string } = { __typename: "SubscriptionConflict"; code: string; message: string }>(
     context: ApiContext,
     student: { id: string },
     operation: string,
     idempotencyKey: string,
     input: object,
     perform: (transaction: Database) => Promise<T>,
-  ): Promise<T | { __typename: "SubscriptionConflict"; code: string; message: string }> {
+    idempotencyConflict?: C,
+    targetType = "Subscription",
+  ): Promise<T | C | { __typename: "SubscriptionConflict"; code: string; message: string }> {
     const inputFingerprint = JSON.stringify(input);
     try {
       return await context.db.transaction().execute(async (transaction) => {
@@ -791,15 +826,15 @@ export function createApi(options: {
         const existing = await transaction.selectFrom("mutation_idempotency_records").select(["input_fingerprint", "outcome"]).where("actor_user_id", "=", student.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).executeTakeFirst();
         if (existing) {
           if (existing.input_fingerprint !== inputFingerprint) {
-            await recordStudentSubscriptionAudit(transaction as Database, student.id, operation, context.correlationId, "DENIED", "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_INPUT");
-            return { __typename: "SubscriptionConflict", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." };
+            await recordStudentMutationAudit(transaction as Database, student.id, operation, targetType, context.correlationId, "DENIED", "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_INPUT");
+            return idempotencyConflict ?? { __typename: "SubscriptionConflict", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." };
           }
           const replaySucceeded = typeof existing.outcome === "object"
             && existing.outcome !== null
             && "__typename" in existing.outcome
             && typeof existing.outcome.__typename === "string"
             && existing.outcome.__typename.endsWith("Success");
-          await recordStudentSubscriptionAudit(transaction as Database, student.id, operation, context.correlationId, replaySucceeded ? "SUCCEEDED" : "DENIED", replaySucceeded ? "IDEMPOTENT_REPLAY_SUCCEEDED" : "IDEMPOTENT_REPLAY_DENIED");
+          await recordStudentMutationAudit(transaction as Database, student.id, operation, targetType, context.correlationId, replaySucceeded ? "SUCCEEDED" : "DENIED", replaySucceeded ? "IDEMPOTENT_REPLAY_SUCCEEDED" : "IDEMPOTENT_REPLAY_DENIED");
           return existing.outcome as T;
         }
         const outcome = await perform(transaction as Database);
@@ -807,13 +842,13 @@ export function createApi(options: {
         return outcome;
       });
     } catch (error) {
-      await recordStudentSubscriptionAudit(context.db, student.id, operation, context.correlationId, "FAILED", "UNEXPECTED_MUTATION_FAILURE");
+      await recordStudentMutationAudit(context.db, student.id, operation, targetType, context.correlationId, "FAILED", "UNEXPECTED_MUTATION_FAILURE");
       throw error;
     }
   }
 
-  async function recordStudentSubscriptionAudit(db: Database, studentId: string, operation: string, correlationId: string, outcome: "SUCCEEDED" | "DENIED" | "FAILED", reasonCode: string) {
-    await db.insertInto("audit_entries").values({ actor_user_id: studentId, acting_role: "STUDENT", operation, target_type: "Subscription", target_id: studentId, outcome, reason_code: reasonCode, correlation_id: correlationId }).execute();
+  async function recordStudentMutationAudit(db: Database, studentId: string, operation: string, targetType: string, correlationId: string, outcome: "SUCCEEDED" | "DENIED" | "FAILED", reasonCode: string) {
+    await db.insertInto("audit_entries").values({ actor_user_id: studentId, acting_role: "STUDENT", operation, target_type: targetType, target_id: studentId, outcome, reason_code: reasonCode, correlation_id: correlationId }).execute();
   }
 
   async function auditedAdministrationMutation<T>(context: ApiContext, administrator: { id: string }, operation: string, perform: () => Promise<T>): Promise<T> {

@@ -82,6 +82,71 @@ export type AvailabilityExceptionSessionConflict = {
   message: Scalars['String']['output'];
 };
 
+export type BookClassSessionInput = {
+  classSessionId: Scalars['ID']['input'];
+  idempotencyKey: Scalars['ID']['input'];
+};
+
+export type BookClassSessionResult = BookClassSessionSuccess | BookingError;
+
+export type BookClassSessionSuccess = {
+  __typename?: 'BookClassSessionSuccess';
+  account: ClassCreditAccount;
+  booking: Booking;
+};
+
+export type Booking = {
+  __typename?: 'Booking';
+  bookedAt: Scalars['String']['output'];
+  classCreditRefunded: Scalars['Boolean']['output'];
+  classSession: ClassSession;
+  endedAt?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  state: BookingState;
+  terminalReason?: Maybe<BookingTerminalReason>;
+};
+
+export type BookingError = {
+  __typename?: 'BookingError';
+  code: BookingErrorCode;
+  message: Scalars['String']['output'];
+};
+
+export enum BookingErrorCode {
+  AlreadyBooked = 'ALREADY_BOOKED',
+  BookingNotActive = 'BOOKING_NOT_ACTIVE',
+  BookingNotFound = 'BOOKING_NOT_FOUND',
+  BookingWindowClosed = 'BOOKING_WINDOW_CLOSED',
+  CancellationWindowClosed = 'CANCELLATION_WINDOW_CLOSED',
+  ClassSessionNotFound = 'CLASS_SESSION_NOT_FOUND',
+  IdempotencyKeyReused = 'IDEMPOTENCY_KEY_REUSED',
+  InsufficientClassCredits = 'INSUFFICIENT_CLASS_CREDITS',
+  ScheduleConflict = 'SCHEDULE_CONFLICT',
+  SessionFull = 'SESSION_FULL'
+}
+
+export enum BookingState {
+  Active = 'ACTIVE',
+  Ended = 'ENDED'
+}
+
+export enum BookingTerminalReason {
+  StudentCancellation = 'STUDENT_CANCELLATION'
+}
+
+export type CancelBookingInput = {
+  bookingId: Scalars['ID']['input'];
+  idempotencyKey: Scalars['ID']['input'];
+};
+
+export type CancelBookingResult = BookingError | CancelBookingSuccess;
+
+export type CancelBookingSuccess = {
+  __typename?: 'CancelBookingSuccess';
+  account: ClassCreditAccount;
+  booking: Booking;
+};
+
 export type ChangeClassSessionSeatCapacityInput = {
   classSessionId: Scalars['ID']['input'];
   idempotencyKey: Scalars['ID']['input'];
@@ -387,6 +452,8 @@ export type Mutation = {
   addAvailabilityException: AddAvailabilityExceptionResult;
   addLessonMaterial: AddLessonMaterialResult;
   adjustClassCredits: AdjustClassCreditsResult;
+  bookClassSession: BookClassSessionResult;
+  cancelBooking: CancelBookingResult;
   changeClassSessionSeatCapacity: ChangeClassSessionSeatCapacityResult;
   createCourse: CreateCourseResult;
   createLessonUnit: CreateLessonUnitResult;
@@ -424,6 +491,16 @@ export type MutationAddLessonMaterialArgs = {
 
 export type MutationAdjustClassCreditsArgs = {
   input: AdjustClassCreditsInput;
+};
+
+
+export type MutationBookClassSessionArgs = {
+  input: BookClassSessionInput;
+};
+
+
+export type MutationCancelBookingArgs = {
+  input: CancelBookingInput;
 };
 
 
@@ -592,6 +669,7 @@ export type Query = {
   discoverClassSessions: ClassSessionDiscoveryConnection;
   publicTeacherProfile?: Maybe<PublicTeacherProfile>;
   roleWorkspace: RoleWorkspace;
+  studentBookings: Array<Booking>;
   studentClassCredits: ClassCreditAccount;
   studentPlacements: Array<StudentPlacement>;
   studentSubscription?: Maybe<Subscription>;
@@ -1043,6 +1121,14 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( ClassCreditAdjustmentError )
     | ( CurriculumConflict )
   ;
+  BookClassSessionResult:
+    | ( BookClassSessionSuccess )
+    | ( BookingError )
+  ;
+  CancelBookingResult:
+    | ( BookingError )
+    | ( CancelBookingSuccess )
+  ;
   ChangeClassSessionSeatCapacityResult:
     | ( ChangeClassSessionSeatCapacitySuccess )
     | ( ClassSessionSeatCapacityError )
@@ -1133,7 +1219,18 @@ export type ResolversTypes = {
   AdministrationCurriculum: ResolverTypeWrapper<AdministrationCurriculum>;
   AvailabilityException: ResolverTypeWrapper<AvailabilityException>;
   AvailabilityExceptionSessionConflict: ResolverTypeWrapper<AvailabilityExceptionSessionConflict>;
+  BookClassSessionInput: BookClassSessionInput;
+  BookClassSessionResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['BookClassSessionResult']>;
+  BookClassSessionSuccess: ResolverTypeWrapper<BookClassSessionSuccess>;
+  Booking: ResolverTypeWrapper<Booking>;
+  BookingError: ResolverTypeWrapper<BookingError>;
+  BookingErrorCode: BookingErrorCode;
+  BookingState: BookingState;
+  BookingTerminalReason: BookingTerminalReason;
   Boolean: ResolverTypeWrapper<Scalars['Boolean']['output']>;
+  CancelBookingInput: CancelBookingInput;
+  CancelBookingResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['CancelBookingResult']>;
+  CancelBookingSuccess: ResolverTypeWrapper<CancelBookingSuccess>;
   ChangeClassSessionSeatCapacityInput: ChangeClassSessionSeatCapacityInput;
   ChangeClassSessionSeatCapacityResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ChangeClassSessionSeatCapacityResult']>;
   ChangeClassSessionSeatCapacitySuccess: ResolverTypeWrapper<ChangeClassSessionSeatCapacitySuccess>;
@@ -1262,7 +1359,15 @@ export type ResolversParentTypes = {
   AdministrationCurriculum: AdministrationCurriculum;
   AvailabilityException: AvailabilityException;
   AvailabilityExceptionSessionConflict: AvailabilityExceptionSessionConflict;
+  BookClassSessionInput: BookClassSessionInput;
+  BookClassSessionResult: ResolversUnionTypes<ResolversParentTypes>['BookClassSessionResult'];
+  BookClassSessionSuccess: BookClassSessionSuccess;
+  Booking: Booking;
+  BookingError: BookingError;
   Boolean: Scalars['Boolean']['output'];
+  CancelBookingInput: CancelBookingInput;
+  CancelBookingResult: ResolversUnionTypes<ResolversParentTypes>['CancelBookingResult'];
+  CancelBookingSuccess: CancelBookingSuccess;
   ChangeClassSessionSeatCapacityInput: ChangeClassSessionSeatCapacityInput;
   ChangeClassSessionSeatCapacityResult: ResolversUnionTypes<ResolversParentTypes>['ChangeClassSessionSeatCapacityResult'];
   ChangeClassSessionSeatCapacitySuccess: ChangeClassSessionSeatCapacitySuccess;
@@ -1409,6 +1514,42 @@ export type AvailabilityExceptionSessionConflictResolvers<ContextType = any, Par
   classSessionIds?: Resolver<Array<ResolversTypes['ID']>, ParentType, ContextType>;
   code?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type BookClassSessionResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['BookClassSessionResult'] = ResolversParentTypes['BookClassSessionResult']> = {
+  __resolveType: TypeResolveFn<'BookClassSessionSuccess' | 'BookingError', ParentType, ContextType>;
+};
+
+export type BookClassSessionSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['BookClassSessionSuccess'] = ResolversParentTypes['BookClassSessionSuccess']> = {
+  account?: Resolver<ResolversTypes['ClassCreditAccount'], ParentType, ContextType>;
+  booking?: Resolver<ResolversTypes['Booking'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type BookingResolvers<ContextType = any, ParentType extends ResolversParentTypes['Booking'] = ResolversParentTypes['Booking']> = {
+  bookedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  classCreditRefunded?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  classSession?: Resolver<ResolversTypes['ClassSession'], ParentType, ContextType>;
+  endedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  state?: Resolver<ResolversTypes['BookingState'], ParentType, ContextType>;
+  terminalReason?: Resolver<Maybe<ResolversTypes['BookingTerminalReason']>, ParentType, ContextType>;
+};
+
+export type BookingErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['BookingError'] = ResolversParentTypes['BookingError']> = {
+  code?: Resolver<ResolversTypes['BookingErrorCode'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type CancelBookingResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['CancelBookingResult'] = ResolversParentTypes['CancelBookingResult']> = {
+  __resolveType: TypeResolveFn<'BookingError' | 'CancelBookingSuccess', ParentType, ContextType>;
+};
+
+export type CancelBookingSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['CancelBookingSuccess'] = ResolversParentTypes['CancelBookingSuccess']> = {
+  account?: Resolver<ResolversTypes['ClassCreditAccount'], ParentType, ContextType>;
+  booking?: Resolver<ResolversTypes['Booking'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
@@ -1604,6 +1745,8 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   addAvailabilityException?: Resolver<ResolversTypes['AddAvailabilityExceptionResult'], ParentType, ContextType, RequireFields<MutationAddAvailabilityExceptionArgs, 'input'>>;
   addLessonMaterial?: Resolver<ResolversTypes['AddLessonMaterialResult'], ParentType, ContextType, RequireFields<MutationAddLessonMaterialArgs, 'input'>>;
   adjustClassCredits?: Resolver<ResolversTypes['AdjustClassCreditsResult'], ParentType, ContextType, RequireFields<MutationAdjustClassCreditsArgs, 'input'>>;
+  bookClassSession?: Resolver<ResolversTypes['BookClassSessionResult'], ParentType, ContextType, RequireFields<MutationBookClassSessionArgs, 'input'>>;
+  cancelBooking?: Resolver<ResolversTypes['CancelBookingResult'], ParentType, ContextType, RequireFields<MutationCancelBookingArgs, 'input'>>;
   changeClassSessionSeatCapacity?: Resolver<ResolversTypes['ChangeClassSessionSeatCapacityResult'], ParentType, ContextType, RequireFields<MutationChangeClassSessionSeatCapacityArgs, 'input'>>;
   createCourse?: Resolver<ResolversTypes['CreateCourseResult'], ParentType, ContextType, RequireFields<MutationCreateCourseArgs, 'input'>>;
   createLessonUnit?: Resolver<ResolversTypes['CreateLessonUnitResult'], ParentType, ContextType, RequireFields<MutationCreateLessonUnitArgs, 'input'>>;
@@ -1667,6 +1810,7 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   discoverClassSessions?: Resolver<ResolversTypes['ClassSessionDiscoveryConnection'], ParentType, ContextType, RequireFields<QueryDiscoverClassSessionsArgs, 'input'>>;
   publicTeacherProfile?: Resolver<Maybe<ResolversTypes['PublicTeacherProfile']>, ParentType, ContextType, RequireFields<QueryPublicTeacherProfileArgs, 'locale' | 'teacherUserId'>>;
   roleWorkspace?: Resolver<ResolversTypes['RoleWorkspace'], ParentType, ContextType, RequireFields<QueryRoleWorkspaceArgs, 'actingRole'>>;
+  studentBookings?: Resolver<Array<ResolversTypes['Booking']>, ParentType, ContextType>;
   studentClassCredits?: Resolver<ResolversTypes['ClassCreditAccount'], ParentType, ContextType>;
   studentPlacements?: Resolver<Array<ResolversTypes['StudentPlacement']>, ParentType, ContextType>;
   studentSubscription?: Resolver<Maybe<ResolversTypes['Subscription']>, ParentType, ContextType>;
@@ -1877,6 +2021,12 @@ export type Resolvers<ContextType = any> = {
   AdministrationCurriculum?: AdministrationCurriculumResolvers<ContextType>;
   AvailabilityException?: AvailabilityExceptionResolvers<ContextType>;
   AvailabilityExceptionSessionConflict?: AvailabilityExceptionSessionConflictResolvers<ContextType>;
+  BookClassSessionResult?: BookClassSessionResultResolvers<ContextType>;
+  BookClassSessionSuccess?: BookClassSessionSuccessResolvers<ContextType>;
+  Booking?: BookingResolvers<ContextType>;
+  BookingError?: BookingErrorResolvers<ContextType>;
+  CancelBookingResult?: CancelBookingResultResolvers<ContextType>;
+  CancelBookingSuccess?: CancelBookingSuccessResolvers<ContextType>;
   ChangeClassSessionSeatCapacityResult?: ChangeClassSessionSeatCapacityResultResolvers<ContextType>;
   ChangeClassSessionSeatCapacitySuccess?: ChangeClassSessionSeatCapacitySuccessResolvers<ContextType>;
   ChangeTeacherQualificationSuccess?: ChangeTeacherQualificationSuccessResolvers<ContextType>;

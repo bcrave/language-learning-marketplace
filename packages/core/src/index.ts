@@ -7,6 +7,21 @@ export const USER_ROLES = [
 
 export type UserRole = (typeof USER_ROLES)[number];
 
+const BOOKING_DEADLINE_MILLISECONDS = 30 * 60_000;
+const REFUND_DEADLINE_MILLISECONDS = 24 * 60 * 60_000;
+
+export function bookingWindowIsOpen(now: Date, startsAt: Date) {
+  return startsAt.getTime() - now.getTime() >= BOOKING_DEADLINE_MILLISECONDS;
+}
+
+export function studentCancellationCreditOutcome(now: Date, startsAt: Date) {
+  const timeUntilStart = startsAt.getTime() - now.getTime();
+  if (timeUntilStart <= 0) return "CLOSED" as const;
+  return timeUntilStart >= REFUND_DEADLINE_MILLISECONDS
+    ? "REFUND" as const
+    : "FORFEIT" as const;
+}
+
 export const INTERFACE_LOCALES = ["en", "es"] as const;
 export type InterfaceLocale = (typeof INTERFACE_LOCALES)[number];
 
@@ -213,6 +228,9 @@ export const interfaceMessages = {
     "teacher-qualification.removed.teacher": "Teacher Qualification removed for {targetLanguage} {curriculumLevel} on {effectiveTime, date, long} at {effectiveTime, time, short}.",
     "class-session.teacher-assigned.teacher": "{imminent, select, true {Imminent assignment: } other {}}You are assigned to Class Session {classSessionId} on {startsAt, date, long} at {startsAt, time, short}.",
     "class-session.reminder.teacher": "Reminder: Class Session {classSessionId} starts on {startsAt, date, long} at {startsAt, time, short}.",
+    "class-session.reminder.student": "Reminder: Class Session {classSessionId} starts on {startsAt, date, long} at {startsAt, time, short}.",
+    "booking.created.student": "Booking confirmed for Class Session {classSessionId} on {startsAt, date, long} at {startsAt, time, short}. One Class Credit was exchanged; {availableBalance, plural, one {# remains} other {# remain}}.",
+    "booking.cancelled.student": "Booking cancelled for Class Session {classSessionId}. {classCreditRefunded, select, true {One Class Credit was returned.} other {The Class Credit was forfeited under the late-cancellation rule.}} Available balance: {availableBalance, number}.",
     "classSession.loading": "Loading Class Session administration…",
     "classSession.loadError": "We couldn't load Class Session administration. Try again.",
     "classSession.title": "Class Session administration",
@@ -316,6 +334,27 @@ export const interfaceMessages = {
     "discovery.teachingTopics": "Teaching Topics: {topics}",
     "discovery.objectives": "Objectives",
     "discovery.loadMore": "Load more Class Sessions",
+    "booking.bookAction": "Book Class Session",
+    "booking.cancelAction": "Cancel Booking",
+    "booking.activeTitle": "My active Bookings",
+    "booking.active": "Booking active",
+    "booking.cancelFor": "Cancel Booking for {startsAt, date, long} at {startsAt, time, short}",
+    "booking.booking": "Booking Class Session…",
+    "booking.cancelling": "Cancelling Booking…",
+    "booking.created": "Booking confirmed. One Class Credit was exchanged.",
+    "booking.cancelled.refunded": "Booking cancelled. One Class Credit was returned.",
+    "booking.cancelled.forfeited": "Booking cancelled. The Class Credit was forfeited under the late-cancellation rule.",
+    "booking.error": "We couldn't complete the Booking change. Review the details and try again.",
+    "booking.error.CLASS_SESSION_NOT_FOUND": "This Class Session is no longer available.",
+    "booking.error.BOOKING_WINDOW_CLOSED": "Booking closes 30 minutes before the Class Session starts.",
+    "booking.error.SESSION_FULL": "This Class Session is full.",
+    "booking.error.INSUFFICIENT_CLASS_CREDITS": "One available Class Credit is required to book.",
+    "booking.error.SCHEDULE_CONFLICT": "This Class Session overlaps another active Student or Teacher commitment.",
+    "booking.error.ALREADY_BOOKED": "You already have an active Booking for this Class Session.",
+    "booking.error.BOOKING_NOT_FOUND": "This Booking is no longer available.",
+    "booking.error.BOOKING_NOT_ACTIVE": "Only an active Booking can be cancelled.",
+    "booking.error.CANCELLATION_WINDOW_CLOSED": "A Booking cannot be cancelled after its Class Session starts.",
+    "booking.error.IDEMPOTENCY_KEY_REUSED": "That request identifier was already used for a different Booking change.",
   },
   es: {
     "workspace.eyebrow": "Espacio de estudiante",
@@ -504,6 +543,9 @@ export const interfaceMessages = {
     "teacher-qualification.removed.teacher": "Cualificación docente retirada para {targetLanguage} {curriculumLevel} el {effectiveTime, date, long} a las {effectiveTime, time, short}.",
     "class-session.teacher-assigned.teacher": "{imminent, select, true {Asignación inminente: } other {}}Tienes asignada la sesión de clase {classSessionId} el {startsAt, date, long} a las {startsAt, time, short}.",
     "class-session.reminder.teacher": "Recordatorio: la sesión de clase {classSessionId} comienza el {startsAt, date, long} a las {startsAt, time, short}.",
+    "class-session.reminder.student": "Recordatorio: la sesión de clase {classSessionId} comienza el {startsAt, date, long} a las {startsAt, time, short}.",
+    "booking.created.student": "Reserva confirmada para la sesión de clase {classSessionId} el {startsAt, date, long} a las {startsAt, time, short}. Se canjeó un crédito de clase; quedan {availableBalance, number}.",
+    "booking.cancelled.student": "Reserva cancelada para la sesión de clase {classSessionId}. {classCreditRefunded, select, true {Se devolvió un crédito de clase.} other {El crédito de clase se perdió según la regla de cancelación tardía.}} Saldo disponible: {availableBalance, number}.",
     "classSession.loading": "Cargando la administración de sesiones de clase…",
     "classSession.loadError": "No pudimos cargar la administración de sesiones de clase. Inténtalo de nuevo.",
     "classSession.title": "Administración de sesiones de clase",
@@ -607,5 +649,26 @@ export const interfaceMessages = {
     "discovery.teachingTopics": "Temas de enseñanza: {topics}",
     "discovery.objectives": "Objetivos",
     "discovery.loadMore": "Cargar más sesiones de clase",
+    "booking.bookAction": "Reservar sesión de clase",
+    "booking.cancelAction": "Cancelar reserva",
+    "booking.activeTitle": "Mis reservas activas",
+    "booking.active": "Reserva activa",
+    "booking.cancelFor": "Cancelar reserva del {startsAt, date, long} a las {startsAt, time, short}",
+    "booking.booking": "Reservando sesión de clase…",
+    "booking.cancelling": "Cancelando reserva…",
+    "booking.created": "Reserva confirmada. Se canjeó un crédito de clase.",
+    "booking.cancelled.refunded": "Reserva cancelada. Se devolvió un crédito de clase.",
+    "booking.cancelled.forfeited": "Reserva cancelada. El crédito de clase se perdió según la regla de cancelación tardía.",
+    "booking.error": "No pudimos completar el cambio de reserva. Revisa los detalles e inténtalo de nuevo.",
+    "booking.error.CLASS_SESSION_NOT_FOUND": "Esta sesión de clase ya no está disponible.",
+    "booking.error.BOOKING_WINDOW_CLOSED": "Las reservas cierran 30 minutos antes del inicio de la sesión de clase.",
+    "booking.error.SESSION_FULL": "Esta sesión de clase está llena.",
+    "booking.error.INSUFFICIENT_CLASS_CREDITS": "Se necesita un crédito de clase disponible para reservar.",
+    "booking.error.SCHEDULE_CONFLICT": "Esta sesión de clase coincide con otro compromiso activo como estudiante o docente.",
+    "booking.error.ALREADY_BOOKED": "Ya tienes una reserva activa para esta sesión de clase.",
+    "booking.error.BOOKING_NOT_FOUND": "Esta reserva ya no está disponible.",
+    "booking.error.BOOKING_NOT_ACTIVE": "Solo se puede cancelar una reserva activa.",
+    "booking.error.CANCELLATION_WINDOW_CLOSED": "No se puede cancelar una reserva después del inicio de su sesión de clase.",
+    "booking.error.IDEMPOTENCY_KEY_REUSED": "Ese identificador de solicitud ya se usó para otro cambio de reserva.",
   },
 } as const;

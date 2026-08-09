@@ -32,7 +32,7 @@ export async function administrationClassSessions(db: Database) {
   return sessions.map(classSessionProjection);
 }
 
-function classSessionProjection(session: {
+export function classSessionProjection(session: {
   id: string;
   lesson_unit_id: string;
   teacher_user_id: string;

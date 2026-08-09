@@ -76,3 +76,41 @@ query DiscoverClassSessions($input: ClassSessionDiscoveryInput!) {
 mutation SetStudentPlacement($input: SetStudentPlacementInput!) {
   setStudentPlacement(input: $input) { targetLanguage curriculumLevel }
 }
+
+fragment BookingFields on Booking {
+  id
+  state
+  terminalReason
+  classCreditRefunded
+  bookedAt
+  endedAt
+  classSession { id startsAt endsAt occupiedSeats seatCapacity }
+}
+
+query StudentBookings {
+  studentBookings {
+    ...BookingFields
+  }
+}
+
+mutation BookClassSession($input: BookClassSessionInput!) {
+  bookClassSession(input: $input) {
+    __typename
+    ... on BookClassSessionSuccess {
+      booking { ...BookingFields }
+      account { availableBalance }
+    }
+    ... on BookingError { code message }
+  }
+}
+
+mutation CancelBooking($input: CancelBookingInput!) {
+  cancelBooking(input: $input) {
+    __typename
+    ... on CancelBookingSuccess {
+      booking { ...BookingFields }
+      account { availableBalance }
+    }
+    ... on BookingError { code message }
+  }
+}

@@ -3,23 +3,48 @@ import { useEffect, useState } from "react";
 import { FormattedDate, FormattedMessage, FormattedTime, useIntl } from "react-intl";
 
 import {
+  BookClassSessionDocument,
+  BookingFieldsFragmentDoc,
+  CancelBookingDocument,
   ClassSessionDiscoveryOptionsDocument,
   DiscoverClassSessionsDocument,
   SetStudentPlacementDocument,
+  StudentBookingsDocument,
   StudentPlacementsDocument,
   type ClassSessionDiscoveryInput,
   type CurriculumLevel,
   type DiscoverClassSessionsQuery,
 } from "./generated/graphql.js";
+import { useFragment as readFragment } from "./generated/fragment-masking.js";
 
 const curriculumLevels: CurriculumLevel[] = ["A1", "A2", "B1", "B2", "C1", "C2"];
 
+const bookingErrorMessages: Record<string, string> = {
+  ALREADY_BOOKED: "booking.error.ALREADY_BOOKED",
+  BOOKING_NOT_ACTIVE: "booking.error.BOOKING_NOT_ACTIVE",
+  BOOKING_NOT_FOUND: "booking.error.BOOKING_NOT_FOUND",
+  BOOKING_WINDOW_CLOSED: "booking.error.BOOKING_WINDOW_CLOSED",
+  CANCELLATION_WINDOW_CLOSED: "booking.error.CANCELLATION_WINDOW_CLOSED",
+  CLASS_SESSION_NOT_FOUND: "booking.error.CLASS_SESSION_NOT_FOUND",
+  IDEMPOTENCY_KEY_REUSED: "booking.error.IDEMPOTENCY_KEY_REUSED",
+  INSUFFICIENT_CLASS_CREDITS: "booking.error.INSUFFICIENT_CLASS_CREDITS",
+  SCHEDULE_CONFLICT: "booking.error.SCHEDULE_CONFLICT",
+  SESSION_FULL: "booking.error.SESSION_FULL",
+};
+
 type DiscoveryConnection = DiscoverClassSessionsQuery["discoverClassSessions"];
 
-export function StudentDiscoveryPanel({ displayTimeZone }: { displayTimeZone: string }) {
+export function StudentDiscoveryPanel({
+  displayTimeZone,
+  idempotencyKeyFactory = () => crypto.randomUUID(),
+}: {
+  displayTimeZone: string;
+  idempotencyKeyFactory?: () => string;
+}) {
   const intl = useIntl();
   const placements = useQuery(StudentPlacementsDocument);
   const options = useQuery(ClassSessionDiscoveryOptionsDocument);
+  const bookings = useQuery(StudentBookingsDocument);
   const [initialized, setInitialized] = useState(false);
   const [targetLanguage, setTargetLanguage] = useState("");
   const [curriculumLevel, setCurriculumLevel] = useState<CurriculumLevel | "">("");
@@ -29,6 +54,12 @@ export function StudentDiscoveryPanel({ displayTimeZone }: { displayTimeZone: st
   const [appliedFilter, setAppliedFilter] = useState<ClassSessionDiscoveryInput | null>(null);
   const [placementSaved, setPlacementSaved] = useState(false);
   const [setStudentPlacement, placementMutation] = useMutation(SetStudentPlacementDocument);
+  const [bookClassSession, bookingMutation] = useMutation(BookClassSessionDocument);
+  const [cancelBooking, cancellationMutation] = useMutation(CancelBookingDocument);
+  const [bookingStatus, setBookingStatus] = useState<"created" | "refunded" | "forfeited" | null>(null);
+  const [bookingErrorCode, setBookingErrorCode] = useState<string | null>(null);
+  const [occupiedSeats, setOccupiedSeats] = useState<Record<string, number>>({});
+  const [pendingAttempt, setPendingAttempt] = useState<{ action: "book" | "cancel"; targetId: string; key: string } | null>(null);
 
   useEffect(() => {
     if (initialized || !placements.data || !options.data) return;
@@ -59,6 +90,63 @@ export function StudentDiscoveryPanel({ displayTimeZone }: { displayTimeZone: st
   const discoveryOptions = options.data.classSessionDiscoveryOptions;
   const connection = discovery.data?.discoverClassSessions as DiscoveryConnection | undefined;
   const nodes = connection?.nodes ?? [];
+  const activeBookingList = readFragment(BookingFieldsFragmentDoc, bookings.data?.studentBookings ?? [])
+    .filter((booking) => booking.state === "ACTIVE");
+  const activeBookings = new Map(activeBookingList
+    .map((booking) => [booking.classSession.id, booking]));
+  const bookingBusy = bookingMutation.loading || cancellationMutation.loading;
+
+  async function book(sessionId: string) {
+    setBookingStatus(null);
+    setBookingErrorCode(null);
+    const attempt = pendingAttempt?.action === "book" && pendingAttempt.targetId === sessionId
+      ? pendingAttempt
+      : { action: "book" as const, targetId: sessionId, key: idempotencyKeyFactory() };
+    setPendingAttempt(attempt);
+    try {
+      const result = (await bookClassSession({
+        variables: { input: { idempotencyKey: attempt.key, classSessionId: sessionId } },
+        refetchQueries: [StudentBookingsDocument],
+        awaitRefetchQueries: true,
+      })).data?.bookClassSession;
+      if (result?.__typename === "BookClassSessionSuccess") {
+        const booking = readFragment(BookingFieldsFragmentDoc, result.booking);
+        setOccupiedSeats((current) => ({ ...current, [sessionId]: booking.classSession.occupiedSeats }));
+        setBookingStatus("created");
+      } else if (result?.__typename === "BookingError") {
+        setBookingErrorCode(result.code);
+      }
+      setPendingAttempt(null);
+    } catch {
+      setBookingErrorCode("UNEXPECTED");
+    }
+  }
+
+  async function cancel(bookingId: string, sessionId: string) {
+    setBookingStatus(null);
+    setBookingErrorCode(null);
+    const attempt = pendingAttempt?.action === "cancel" && pendingAttempt.targetId === bookingId
+      ? pendingAttempt
+      : { action: "cancel" as const, targetId: bookingId, key: idempotencyKeyFactory() };
+    setPendingAttempt(attempt);
+    try {
+      const result = (await cancelBooking({
+        variables: { input: { idempotencyKey: attempt.key, bookingId } },
+        refetchQueries: [StudentBookingsDocument],
+        awaitRefetchQueries: true,
+      })).data?.cancelBooking;
+      if (result?.__typename === "CancelBookingSuccess") {
+        const booking = readFragment(BookingFieldsFragmentDoc, result.booking);
+        setOccupiedSeats((current) => ({ ...current, [sessionId]: booking.classSession.occupiedSeats }));
+        setBookingStatus(booking.classCreditRefunded ? "refunded" : "forfeited");
+      } else if (result?.__typename === "BookingError") {
+        setBookingErrorCode(result.code);
+      }
+      setPendingAttempt(null);
+    } catch {
+      setBookingErrorCode("UNEXPECTED");
+    }
+  }
 
   function search(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -153,12 +241,39 @@ export function StudentDiscoveryPanel({ displayTimeZone }: { displayTimeZone: st
 
       {discovery.loading && <p role="status"><FormattedMessage id="discovery.loading" /></p>}
       {discovery.error && <p role="alert"><FormattedMessage id="discovery.error" /></p>}
+      {bookingStatus && <p role="status"><FormattedMessage id={bookingStatus === "created" ? "booking.created" : bookingStatus === "refunded" ? "booking.cancelled.refunded" : "booking.cancelled.forfeited"} /></p>}
+      {bookingErrorCode && <p role="alert"><FormattedMessage id={bookingErrorMessages[bookingErrorCode] ?? "booking.error"} /></p>}
+      {activeBookingList.length > 0 && (
+        <section aria-labelledby="student-active-bookings">
+          <h3 id="student-active-bookings"><FormattedMessage id="booking.activeTitle" /></h3>
+          <ul>{activeBookingList.map((booking) => (
+            <li key={booking.id}>
+              <FormattedDate value={booking.classSession.startsAt} timeZone={displayTimeZone} dateStyle="long" />{" "}
+              <FormattedTime value={booking.classSession.startsAt} timeZone={displayTimeZone} />
+              <button
+                type="button"
+                disabled={bookingBusy}
+                aria-label={intl.formatMessage(
+                  { id: "booking.cancelFor" },
+                  { startsAt: new Date(booking.classSession.startsAt) },
+                )}
+                onClick={() => void cancel(booking.id, booking.classSession.id)}
+              >
+                <FormattedMessage id={cancellationMutation.loading ? "booking.cancelling" : "booking.cancelAction"} />
+              </button>
+            </li>
+          ))}</ul>
+        </section>
+      )}
       {!discovery.loading && !discovery.error && nodes.length === 0 && <p><FormattedMessage id="discovery.none" /></p>}
       {nodes.length > 0 && (
         <section aria-labelledby="student-discovery-results">
           <h3 id="student-discovery-results"><FormattedMessage id="discovery.results" /></h3>
           <ul>
-            {nodes.map((session) => (
+            {nodes.map((session) => {
+              const activeBooking = activeBookings.get(session.id);
+              const displayedOccupiedSeats = occupiedSeats[session.id] ?? session.occupiedSeats;
+              return (
               <li key={session.id} className="discovery-card">
                 <article>
                   <h4>{session.lessonUnit.title}</h4>
@@ -169,8 +284,8 @@ export function StudentDiscoveryPanel({ displayTimeZone }: { displayTimeZone: st
                   <p>{session.lessonUnit.summary}</p>
                   <p>
                     <FormattedMessage
-                      id={session.occupiedSeats === session.seatCapacity ? "discovery.waitlistOpen" : "discovery.seatsAvailable"}
-                      values={{ occupied: session.occupiedSeats, total: session.seatCapacity }}
+                      id={displayedOccupiedSeats === session.seatCapacity ? "discovery.waitlistOpen" : "discovery.seatsAvailable"}
+                      values={{ occupied: displayedOccupiedSeats, total: session.seatCapacity }}
                     />
                   </p>
                   <p>{session.lessonUnit.topics.map(({ label }) => label).join(", ")}</p>
@@ -186,9 +301,17 @@ export function StudentDiscoveryPanel({ displayTimeZone }: { displayTimeZone: st
                     <p><FormattedMessage id="discovery.teachingTopics" values={{ topics: session.teacherProfile.teachingTopics.map(({ label }) => label).join(", ") }} /></p>
                     <p><FormattedMessage id="discovery.completedSessions" values={{ count: session.teacherProfile.completedSessionCount }} /></p>
                   </section>
+                  {activeBooking ? (
+                    <p><FormattedMessage id="booking.active" /></p>
+                  ) : displayedOccupiedSeats < session.seatCapacity ? (
+                    <button type="button" disabled={bookingBusy || bookings.loading || Boolean(bookings.error)} onClick={() => void book(session.id)}>
+                      <FormattedMessage id={bookingMutation.loading ? "booking.booking" : "booking.bookAction"} />
+                    </button>
+                  ) : null}
                 </article>
               </li>
-            ))}
+              );
+            })}
           </ul>
           {connection?.pageInfo.hasNextPage && (
             <button type="button" onClick={() => void discovery.fetchMore({

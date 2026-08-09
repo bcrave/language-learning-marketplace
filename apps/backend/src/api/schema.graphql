@@ -57,6 +57,17 @@ union ScheduleSubscriptionCancellationResult = ScheduleSubscriptionCancellationS
 union UndoSubscriptionCancellationResult = UndoSubscriptionCancellationSuccess | SubscriptionConflict
 
 type ClassSession { id: ID!, lessonUnitId: ID!, teacherUserId: ID!, startsAt: String!, endsAt: String!, schedulingTimeZone: String!, seatCapacity: Int!, occupiedSeats: Int! }
+enum BookingState { ACTIVE ENDED }
+enum BookingTerminalReason { STUDENT_CANCELLATION }
+type Booking { id: ID!, state: BookingState!, terminalReason: BookingTerminalReason, classCreditRefunded: Boolean!, bookedAt: String!, endedAt: String, classSession: ClassSession! }
+input BookClassSessionInput { idempotencyKey: ID!, classSessionId: ID! }
+input CancelBookingInput { idempotencyKey: ID!, bookingId: ID! }
+type BookClassSessionSuccess { booking: Booking!, account: ClassCreditAccount! }
+type CancelBookingSuccess { booking: Booking!, account: ClassCreditAccount! }
+enum BookingErrorCode { CLASS_SESSION_NOT_FOUND BOOKING_WINDOW_CLOSED SESSION_FULL INSUFFICIENT_CLASS_CREDITS SCHEDULE_CONFLICT ALREADY_BOOKED BOOKING_NOT_FOUND BOOKING_NOT_ACTIVE CANCELLATION_WINDOW_CLOSED IDEMPOTENCY_KEY_REUSED }
+type BookingError { code: BookingErrorCode!, message: String! }
+union BookClassSessionResult = BookClassSessionSuccess | BookingError
+union CancelBookingResult = CancelBookingSuccess | BookingError
 input PublishClassSessionInput { idempotencyKey: ID!, lessonUnitId: ID!, teacherUserId: ID!, startsAtLocal: String!, schedulingTimeZone: String!, timeDisambiguation: LocalTimeDisambiguation!, seatCapacity: Int = 5 }
 type PublishClassSessionSuccess { classSession: ClassSession! }
 enum ClassSessionPublicationErrorCode { INVALID_SEAT_CAPACITY INVALID_SCHEDULING_TIME_ZONE LOCAL_TIME_FOLD LOCAL_TIME_GAP INVALID_LOCAL_DATE_TIME INVALID_LESSON_UNIT TEACHER_QUALIFICATION_REQUIRED TEACHER_AVAILABILITY_REQUIRED AVAILABILITY_EXCEPTION_CONFLICT TEACHER_SCHEDULE_CONFLICT }
@@ -226,6 +237,7 @@ type Query {
   classSessionDiscoveryOptions: ClassSessionDiscoveryOptions!
   discoverClassSessions(input: ClassSessionDiscoveryInput!): ClassSessionDiscoveryConnection!
   studentClassCredits: ClassCreditAccount!
+  studentBookings: [Booking!]!
   administrationClassCredits(studentUserId: ID!): ClassCreditAccount
   administrationClassSessions: [ClassSession!]!
   teacherAvailability: TeacherAvailability!
@@ -242,6 +254,8 @@ type Mutation {
   undoSubscriptionCancellation(input: SubscriptionLifecycleInput!): UndoSubscriptionCancellationResult!
   setStudentPlacement(input: SetStudentPlacementInput!): StudentPlacement!
   adjustClassCredits(input: AdjustClassCreditsInput!): AdjustClassCreditsResult!
+  bookClassSession(input: BookClassSessionInput!): BookClassSessionResult!
+  cancelBooking(input: CancelBookingInput!): CancelBookingResult!
   publishClassSession(input: PublishClassSessionInput!): PublishClassSessionResult!
   changeClassSessionSeatCapacity(input: ChangeClassSessionSeatCapacityInput!): ChangeClassSessionSeatCapacityResult!
   saveTeacherAvailabilityRange(input: SaveTeacherAvailabilityRangeInput!): SaveTeacherAvailabilityRangeResult!
