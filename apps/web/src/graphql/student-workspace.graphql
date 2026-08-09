@@ -84,7 +84,7 @@ fragment BookingFields on Booking {
   classCreditRefunded
   bookedAt
   endedAt
-  classSession { id startsAt endsAt occupiedSeats seatCapacity }
+  classSession { id lessonUnitId startsAt endsAt occupiedSeats seatCapacity }
 }
 
 query StudentBookings {
@@ -109,6 +109,18 @@ mutation CancelBooking($input: CancelBookingInput!) {
     __typename
     ... on CancelBookingSuccess {
       booking { ...BookingFields }
+      account { availableBalance }
+    }
+    ... on BookingError { code message }
+  }
+}
+
+mutation RescheduleBooking($input: RescheduleBookingInput!) {
+  rescheduleBooking(input: $input) {
+    __typename
+    ... on RescheduleBookingSuccess {
+      originalBooking { ...BookingFields }
+      replacementBooking { ...BookingFields }
       account { availableBalance }
     }
     ... on BookingError { code message }

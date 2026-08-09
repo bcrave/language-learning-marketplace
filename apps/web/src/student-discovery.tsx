@@ -8,6 +8,7 @@ import {
   CancelBookingDocument,
   ClassSessionDiscoveryOptionsDocument,
   DiscoverClassSessionsDocument,
+  RescheduleBookingDocument,
   SetStudentPlacementDocument,
   StudentBookingsDocument,
   StudentPlacementsDocument,
@@ -28,6 +29,7 @@ const bookingErrorMessages: Record<string, string> = {
   CLASS_SESSION_NOT_FOUND: "booking.error.CLASS_SESSION_NOT_FOUND",
   IDEMPOTENCY_KEY_REUSED: "booking.error.IDEMPOTENCY_KEY_REUSED",
   INSUFFICIENT_CLASS_CREDITS: "booking.error.INSUFFICIENT_CLASS_CREDITS",
+  LESSON_UNIT_MISMATCH: "booking.error.LESSON_UNIT_MISMATCH",
   SCHEDULE_CONFLICT: "booking.error.SCHEDULE_CONFLICT",
   SESSION_FULL: "booking.error.SESSION_FULL",
 };
@@ -56,10 +58,11 @@ export function StudentDiscoveryPanel({
   const [setStudentPlacement, placementMutation] = useMutation(SetStudentPlacementDocument);
   const [bookClassSession, bookingMutation] = useMutation(BookClassSessionDocument);
   const [cancelBooking, cancellationMutation] = useMutation(CancelBookingDocument);
-  const [bookingStatus, setBookingStatus] = useState<"created" | "refunded" | "forfeited" | null>(null);
+  const [rescheduleBooking, rescheduleMutation] = useMutation(RescheduleBookingDocument);
+  const [bookingStatus, setBookingStatus] = useState<"created" | "refunded" | "forfeited" | "rescheduled" | null>(null);
   const [bookingErrorCode, setBookingErrorCode] = useState<string | null>(null);
   const [occupiedSeats, setOccupiedSeats] = useState<Record<string, number>>({});
-  const [pendingAttempt, setPendingAttempt] = useState<{ action: "book" | "cancel"; targetId: string; key: string } | null>(null);
+  const [pendingAttempt, setPendingAttempt] = useState<{ action: "book" | "cancel" | "reschedule"; targetId: string; key: string } | null>(null);
 
   useEffect(() => {
     if (initialized || !placements.data || !options.data) return;
@@ -94,7 +97,7 @@ export function StudentDiscoveryPanel({
     .filter((booking) => booking.state === "ACTIVE");
   const activeBookings = new Map(activeBookingList
     .map((booking) => [booking.classSession.id, booking]));
-  const bookingBusy = bookingMutation.loading || cancellationMutation.loading;
+  const bookingBusy = bookingMutation.loading || cancellationMutation.loading || rescheduleMutation.loading;
 
   async function book(sessionId: string) {
     setBookingStatus(null);
@@ -139,6 +142,38 @@ export function StudentDiscoveryPanel({
         const booking = readFragment(BookingFieldsFragmentDoc, result.booking);
         setOccupiedSeats((current) => ({ ...current, [sessionId]: booking.classSession.occupiedSeats }));
         setBookingStatus(booking.classCreditRefunded ? "refunded" : "forfeited");
+      } else if (result?.__typename === "BookingError") {
+        setBookingErrorCode(result.code);
+      }
+      setPendingAttempt(null);
+    } catch {
+      setBookingErrorCode("UNEXPECTED");
+    }
+  }
+
+  async function reschedule(bookingId: string, replacementClassSessionId: string) {
+    setBookingStatus(null);
+    setBookingErrorCode(null);
+    const attemptTarget = `${bookingId}:${replacementClassSessionId}`;
+    const attempt = pendingAttempt?.action === "reschedule" && pendingAttempt.targetId === attemptTarget
+      ? pendingAttempt
+      : { action: "reschedule" as const, targetId: attemptTarget, key: idempotencyKeyFactory() };
+    setPendingAttempt(attempt);
+    try {
+      const result = (await rescheduleBooking({
+        variables: { input: { idempotencyKey: attempt.key, bookingId, replacementClassSessionId } },
+        refetchQueries: [StudentBookingsDocument],
+        awaitRefetchQueries: true,
+      })).data?.rescheduleBooking;
+      if (result?.__typename === "RescheduleBookingSuccess") {
+        const original = readFragment(BookingFieldsFragmentDoc, result.originalBooking);
+        const replacement = readFragment(BookingFieldsFragmentDoc, result.replacementBooking);
+        setOccupiedSeats((current) => ({
+          ...current,
+          [original.classSession.id]: original.classSession.occupiedSeats,
+          [replacement.classSession.id]: replacement.classSession.occupiedSeats,
+        }));
+        setBookingStatus("rescheduled");
       } else if (result?.__typename === "BookingError") {
         setBookingErrorCode(result.code);
       }
@@ -241,7 +276,7 @@ export function StudentDiscoveryPanel({
 
       {discovery.loading && <p role="status"><FormattedMessage id="discovery.loading" /></p>}
       {discovery.error && <p role="alert"><FormattedMessage id="discovery.error" /></p>}
-      {bookingStatus && <p role="status"><FormattedMessage id={bookingStatus === "created" ? "booking.created" : bookingStatus === "refunded" ? "booking.cancelled.refunded" : "booking.cancelled.forfeited"} /></p>}
+      {bookingStatus && <p role="status"><FormattedMessage id={bookingStatus === "created" ? "booking.created" : bookingStatus === "refunded" ? "booking.cancelled.refunded" : bookingStatus === "forfeited" ? "booking.cancelled.forfeited" : "booking.rescheduled"} /></p>}
       {bookingErrorCode && <p role="alert"><FormattedMessage id={bookingErrorMessages[bookingErrorCode] ?? "booking.error"} /></p>}
       {activeBookingList.length > 0 && (
         <section aria-labelledby="student-active-bookings">
@@ -272,6 +307,9 @@ export function StudentDiscoveryPanel({
           <ul>
             {nodes.map((session) => {
               const activeBooking = activeBookings.get(session.id);
+              const reschedulableBookings = activeBookingList.filter((booking) =>
+                booking.classSession.lessonUnitId === session.lessonUnit.id
+                && booking.classSession.id !== session.id);
               const displayedOccupiedSeats = occupiedSeats[session.id] ?? session.occupiedSeats;
               return (
               <li key={session.id} className="discovery-card">
@@ -303,6 +341,24 @@ export function StudentDiscoveryPanel({
                   </section>
                   {activeBooking ? (
                     <p><FormattedMessage id="booking.active" /></p>
+                  ) : reschedulableBookings.length > 0 && displayedOccupiedSeats < session.seatCapacity ? (
+                    <div>{reschedulableBookings.map((booking) => (
+                      <button
+                        key={booking.id}
+                        type="button"
+                        disabled={bookingBusy || bookings.loading || Boolean(bookings.error)}
+                        aria-label={intl.formatMessage(
+                          { id: "booking.rescheduleFromTo" },
+                          {
+                            originalStartsAt: new Date(booking.classSession.startsAt),
+                            replacementStartsAt: new Date(session.startsAt),
+                          },
+                        )}
+                        onClick={() => void reschedule(booking.id, session.id)}
+                      >
+                        <FormattedMessage id={rescheduleMutation.loading ? "booking.rescheduling" : "booking.rescheduleAction"} />
+                      </button>
+                    ))}</div>
                   ) : displayedOccupiedSeats < session.seatCapacity ? (
                     <button type="button" disabled={bookingBusy || bookings.loading || Boolean(bookings.error)} onClick={() => void book(session.id)}>
                       <FormattedMessage id={bookingMutation.loading ? "booking.booking" : "booking.bookAction"} />

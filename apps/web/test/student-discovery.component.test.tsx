@@ -12,6 +12,7 @@ import {
   CancelBookingDocument,
   ClassSessionDiscoveryOptionsDocument,
   DiscoverClassSessionsDocument,
+  RescheduleBookingDocument,
   SetStudentPlacementDocument,
   StudentBookingsDocument,
   StudentPlacementsDocument,
@@ -169,6 +170,7 @@ describe("Student Class Session Discovery", () => {
       classSession: {
         __typename: "ClassSession",
         id: sessionId,
+        lessonUnitId: "00000000-0000-4000-8000-000000000020",
         startsAt: "2026-08-06T16:00:00Z",
         endsAt: "2026-08-06T17:00:00Z",
         occupiedSeats: 5,
@@ -222,12 +224,119 @@ describe("Student Class Session Discovery", () => {
     expect(screen.getByRole("button", { name: "Book Class Session" })).toBeVisible();
   });
 
+  it("lets the Student reschedule an active Booking to a discovered Class Session for the same Lesson Unit", async () => {
+    const user = userEvent.setup();
+    const bookingId = "00000000-0000-4000-8000-000000000098";
+    const originalSessionId = "00000000-0000-4000-8000-000000000009";
+    const replacementSessionId = "00000000-0000-4000-8000-000000000010";
+    const lessonUnitId = "00000000-0000-4000-8000-000000000020";
+    const originalBooking = {
+      __typename: "Booking",
+      id: bookingId,
+      state: "ACTIVE",
+      terminalReason: null,
+      classCreditRefunded: false,
+      bookedAt: "2026-08-05T12:00:00Z",
+      endedAt: null,
+      classSession: {
+        __typename: "ClassSession",
+        id: originalSessionId,
+        lessonUnitId,
+        startsAt: "2026-08-05T16:00:00Z",
+        endsAt: "2026-08-05T17:00:00Z",
+        occupiedSeats: 1,
+        seatCapacity: 5,
+      },
+    };
+    const replacementBooking = {
+      ...originalBooking,
+      id: "00000000-0000-4000-8000-000000000097",
+      bookedAt: "2026-08-05T12:05:00Z",
+      classSession: {
+        ...originalBooking.classSession,
+        id: replacementSessionId,
+        startsAt: "2026-08-06T16:00:00Z",
+        endsAt: "2026-08-06T17:00:00Z",
+        occupiedSeats: 5,
+      },
+    };
+    const otherOriginalBooking = {
+      ...originalBooking,
+      id: "00000000-0000-4000-8000-000000000096",
+      classSession: {
+        ...originalBooking.classSession,
+        id: "00000000-0000-4000-8000-000000000008",
+        startsAt: "2026-08-04T16:00:00Z",
+        endsAt: "2026-08-04T17:00:00Z",
+      },
+    };
+    const rescheduleMocks = [
+      { request: { query: StudentBookingsDocument }, result: { data: { studentBookings: [originalBooking, otherOriginalBooking] } } },
+      ...mocks.slice(1),
+      {
+        request: {
+          query: RescheduleBookingDocument,
+          variables: { input: { idempotencyKey: "reschedule-key", bookingId, replacementClassSessionId: replacementSessionId } },
+        },
+        result: { data: { rescheduleBooking: {
+          __typename: "RescheduleBookingSuccess",
+          originalBooking: { ...originalBooking, state: "ENDED", terminalReason: "RESCHEDULED", endedAt: "2026-08-05T12:05:00Z" },
+          replacementBooking,
+          account: { availableBalance: 1 },
+        } } },
+      },
+      { request: { query: StudentBookingsDocument }, result: { data: { studentBookings: [replacementBooking, otherOriginalBooking] } } },
+    ];
+    const { container } = renderPanel("en", rescheduleMocks, () => "reschedule-key");
+    await screen.findByRole("heading", { name: "Conversación práctica" });
+
+    expect(screen.getAllByRole("button", { name: /Reschedule Booking from .* to/ })).toHaveLength(2);
+    await user.click(screen.getByRole("button", {
+      name: /Reschedule Booking from August 5, 2026.*to August 6, 2026/,
+    }));
+
+    expect(await screen.findByText("Booking rescheduled. The same Class Credit was retained."))
+      .toHaveAttribute("role", "status");
+    expect(screen.getByText("Booking active")).toBeVisible();
+    const accessibility = await axe.run(container);
+    expect(accessibility.violations.filter(({ impact }) => impact === "serious" || impact === "critical"))
+      .toEqual([]);
+  });
+
   it("localizes discovery chrome in Spanish", async () => {
     renderPanel("es");
     expect(await screen.findByRole("heading", { name: "Descubrir sesiones de clase" })).toBeVisible();
     expect(screen.getByRole("combobox", { name: "Idioma objetivo" })).toHaveValue("es");
     expect(screen.getByRole("button", { name: "Buscar sesiones de clase" })).toBeVisible();
     expect(await screen.findByRole("button", { name: "Reservar sesión de clase" })).toBeVisible();
+  });
+
+  it("localizes the reschedule action in Spanish", async () => {
+    const activeBooking = {
+      __typename: "Booking",
+      id: "00000000-0000-4000-8000-000000000095",
+      state: "ACTIVE",
+      terminalReason: null,
+      classCreditRefunded: false,
+      bookedAt: "2026-08-05T12:00:00Z",
+      endedAt: null,
+      classSession: {
+        __typename: "ClassSession",
+        id: "00000000-0000-4000-8000-000000000009",
+        lessonUnitId: "00000000-0000-4000-8000-000000000020",
+        startsAt: "2026-08-05T16:00:00Z",
+        endsAt: "2026-08-05T17:00:00Z",
+        occupiedSeats: 1,
+        seatCapacity: 5,
+      },
+    };
+    renderPanel("es", [
+      { request: { query: StudentBookingsDocument }, result: { data: { studentBookings: [activeBooking] } } },
+      ...mocks.slice(1),
+    ]);
+
+    expect(await screen.findByRole("button", { name: /Reprogramar reserva del .* para el/ }))
+      .toBeVisible();
   });
 
   it("shows a localized error when discovery options fail", async () => {

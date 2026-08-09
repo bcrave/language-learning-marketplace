@@ -5,6 +5,7 @@ import {
   startPostgreSqlTemplate,
   type StartedPostgreSqlContainer,
 } from "@marketplace/test-support";
+import fc from "fast-check";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createApi } from "../src/api/app.js";
@@ -243,6 +244,278 @@ describe("Student Booking GraphQL API", () => {
     });
   });
 
+  it("reschedules an active Booking to another Class Session for the same Lesson Unit without exchanging another Class Credit", async () => {
+    const reschedulingStudent = await createStudentWithCredits(1);
+    const originalTeacher = await createTeacher();
+    const originalSessionId = await insertClassSession(
+      "2026-08-12T14:00:00.000Z",
+      originalTeacher.id,
+    );
+    const replacementTeacher = await createTeacher();
+    const replacementSessionId = await insertClassSession(
+      "2026-08-13T14:00:00.000Z",
+      replacementTeacher.id,
+    );
+    const booked = await bookAs(reschedulingStudent.subject, originalSessionId) as BookingMutationResponse;
+    const originalBookingId = booked.data.bookClassSession.booking.id;
+
+    const correlationId = `booking-rescheduled-${randomUUID()}`;
+    const result = await rescheduleAs(
+      reschedulingStudent.subject,
+      originalBookingId,
+      replacementSessionId,
+      randomUUID(),
+      correlationId,
+    );
+
+    expect(result).toEqual({ data: { rescheduleBooking: {
+      originalBooking: {
+        id: originalBookingId,
+        state: "ENDED",
+        terminalReason: "RESCHEDULED",
+        classSession: { id: originalSessionId, occupiedSeats: 0 },
+      },
+      replacementBooking: {
+        id: expect.any(String),
+        state: "ACTIVE",
+        terminalReason: null,
+        classSession: { id: replacementSessionId, occupiedSeats: 1 },
+      },
+      account: { availableBalance: 0 },
+    } } });
+    expect(await db.selectFrom("class_credit_ledger_entries").select(["amount", "source"])
+      .where("student_user_id", "=", reschedulingStudent.id)
+      .orderBy("created_at").execute()).toEqual([
+      { amount: 1, source: "CREDIT_ADJUSTMENT" },
+      { amount: -1, source: "BOOKING_DEDUCTION" },
+    ]);
+    expect(await db.selectFrom("schedule_commitments").select(["class_session_id", "active"])
+      .where("user_id", "=", reschedulingStudent.id).orderBy("class_session_id").execute())
+      .toEqual(expect.arrayContaining([
+        { class_session_id: originalSessionId, active: false },
+        { class_session_id: replacementSessionId, active: true },
+      ]));
+    expect(await db.selectFrom("bookings").select("rescheduled_from_booking_id")
+      .where("student_user_id", "=", reschedulingStudent.id)
+      .where("state", "=", "ACTIVE").executeTakeFirstOrThrow())
+      .toEqual({ rescheduled_from_booking_id: originalBookingId });
+    expect(await db.selectFrom("audit_entries").select(["operation", "outcome", "reason_code"])
+      .where("correlation_id", "=", correlationId).executeTakeFirstOrThrow()).toEqual({
+      operation: "booking.rescheduled",
+      outcome: "SUCCEEDED",
+      reason_code: "BOOKING_RESCHEDULED",
+    });
+    expect(await db.selectFrom("in_app_notifications").select("message_id")
+      .where("source_reference", "=", `booking.rescheduled:${originalBookingId}`)
+      .executeTakeFirstOrThrow()).toEqual({ message_id: "booking.rescheduled.student" });
+    expect(await db.selectFrom("class_session_reminders").select(["class_session_id", "terminal_outcome"])
+      .where("recipient_user_id", "=", reschedulingStudent.id).orderBy("class_session_id").execute())
+      .toEqual(expect.arrayContaining([
+        { class_session_id: originalSessionId, terminal_outcome: "SUPPRESSED" },
+        { class_session_id: replacementSessionId, terminal_outcome: null },
+      ]));
+    await deliverDueClassSessionReminders(
+      db,
+      new Date("2026-08-12T14:00:00.000Z"),
+      `rescheduled-reminder-${randomUUID()}`,
+    );
+    expect(await db.selectFrom("in_app_notifications").select(["message_id", "variables"])
+      .where("recipient_user_id", "=", reschedulingStudent.id)
+      .where("message_id", "=", "class-session.reminder.student").executeTakeFirstOrThrow())
+      .toEqual({
+        message_id: "class-session.reminder.student",
+        variables: expect.objectContaining({ classSessionId: replacementSessionId }),
+      });
+  });
+
+  it("leaves the original Booking and Class Credit unchanged when a replacement is ineligible", async () => {
+    const reschedulingStudent = await createStudentWithCredits(1);
+    const originalTeacher = await createTeacher();
+    const replacementTeacher = await createTeacher();
+    const originalSessionId = await insertClassSession("2026-08-20T14:00:00.000Z", originalTeacher.id);
+    const fullReplacementId = await insertClassSession("2026-08-22T14:00:00.000Z", replacementTeacher.id);
+    const firstFiller = await createStudentWithCredits(1);
+    const secondFiller = await createStudentWithCredits(1);
+    await bookAs(firstFiller.subject, fullReplacementId);
+    await bookAs(secondFiller.subject, fullReplacementId);
+    const booked = await bookAs(reschedulingStudent.subject, originalSessionId) as BookingMutationResponse;
+
+    expect(await rescheduleAs(
+      reschedulingStudent.subject,
+      booked.data.bookClassSession.booking.id,
+      fullReplacementId,
+    )).toEqual({ data: { rescheduleBooking: { code: "SESSION_FULL" } } });
+    expect(await db.selectFrom("bookings").select(["state", "terminal_reason"])
+      .where("id", "=", booked.data.bookClassSession.booking.id).executeTakeFirstOrThrow())
+      .toEqual({ state: "ACTIVE", terminal_reason: null });
+    expect(await db.selectFrom("class_credit_accounts").select("available_balance")
+      .where("student_user_id", "=", reschedulingStudent.id).executeTakeFirstOrThrow())
+      .toEqual({ available_balance: 0 });
+    expect(await db.selectFrom("class_sessions").select(["id", "occupied_seats"])
+      .where("id", "in", [originalSessionId, fullReplacementId]).orderBy("id").execute())
+      .toEqual(expect.arrayContaining([
+        { id: originalSessionId, occupied_seats: 1 },
+        { id: fullReplacementId, occupied_seats: 2 },
+      ]));
+  });
+
+  it("replays one durable replacement Booking for the same reschedule Idempotency Key", async () => {
+    const reschedulingStudent = await createStudentWithCredits(1);
+    const originalTeacher = await createTeacher();
+    const replacementTeacher = await createTeacher();
+    const originalSessionId = await insertClassSession("2026-08-23T14:00:00.000Z", originalTeacher.id);
+    const replacementSessionId = await insertClassSession("2026-08-24T14:00:00.000Z", replacementTeacher.id);
+    const booked = await bookAs(reschedulingStudent.subject, originalSessionId) as BookingMutationResponse;
+    const idempotencyKey = randomUUID();
+
+    const first = await rescheduleAs(reschedulingStudent.subject, booked.data.bookClassSession.booking.id, replacementSessionId, idempotencyKey);
+    const replay = await rescheduleAs(reschedulingStudent.subject, booked.data.bookClassSession.booking.id, replacementSessionId, idempotencyKey);
+
+    expect(replay).toEqual(first);
+    expect(await db.selectFrom("bookings").select("id")
+      .where("student_user_id", "=", reschedulingStudent.id).execute()).toHaveLength(2);
+    expect(await db.selectFrom("in_app_notifications").select("id")
+      .where("recipient_user_id", "=", reschedulingStudent.id)
+      .where("message_id", "=", "booking.rescheduled.student").execute()).toHaveLength(1);
+  });
+
+  it("preserves atomic reschedule and replay invariants across generated replacement capacity states", async () => {
+    await fc.assert(fc.asyncProperty(
+      fc.boolean(),
+      fc.integer({ min: 1, max: 4 }),
+      async (replacementIsFull, replayCount) => {
+        const reschedulingStudent = await createStudentWithCredits(1);
+        const originalTeacher = await createTeacher();
+        const replacementTeacher = await createTeacher();
+        const originalSessionId = await insertClassSession("2026-08-25T18:00:00.000Z", originalTeacher.id);
+        const replacementSessionId = await insertClassSession("2026-08-26T18:00:00.000Z", replacementTeacher.id);
+        if (replacementIsFull) {
+          const firstFiller = await createStudentWithCredits(1);
+          const secondFiller = await createStudentWithCredits(1);
+          await bookAs(firstFiller.subject, replacementSessionId);
+          await bookAs(secondFiller.subject, replacementSessionId);
+        }
+        const booked = await bookAs(reschedulingStudent.subject, originalSessionId) as BookingMutationResponse;
+        const originalBookingId = booked.data.bookClassSession.booking.id;
+        const idempotencyKey = randomUUID();
+
+        const outcomes: unknown[] = [];
+        for (let replay = 0; replay < replayCount; replay += 1) {
+          outcomes.push(await rescheduleAs(
+            reschedulingStudent.subject,
+            originalBookingId,
+            replacementSessionId,
+            idempotencyKey,
+          ));
+        }
+
+        expect(outcomes.every((outcome) => JSON.stringify(outcome) === JSON.stringify(outcomes[0])))
+          .toBe(true);
+        const studentBookings = await db.selectFrom("bookings").select(["state", "rescheduled_from_booking_id"])
+          .where("student_user_id", "=", reschedulingStudent.id).orderBy("booked_at").execute();
+        expect(studentBookings).toEqual(replacementIsFull
+          ? [{ state: "ACTIVE", rescheduled_from_booking_id: null }]
+          : [
+              { state: "ENDED", rescheduled_from_booking_id: null },
+              { state: "ACTIVE", rescheduled_from_booking_id: originalBookingId },
+            ]);
+        expect(await db.selectFrom("class_credit_accounts").select("available_balance")
+          .where("student_user_id", "=", reschedulingStudent.id).executeTakeFirstOrThrow())
+          .toEqual({ available_balance: 0 });
+      },
+    ), { numRuns: 6 });
+  }, 30_000);
+
+  it("applies replacement timing, Lesson Unit, publication, and dual-role Schedule Conflict rules", async () => {
+    const reschedulingStudent = await createStudentWithCredits(1, true);
+    const originalTeacher = await createTeacher();
+    const originalSessionId = await insertClassSession("2026-08-25T18:00:00.000Z", originalTeacher.id);
+    const booked = await bookAs(reschedulingStudent.subject, originalSessionId) as BookingMutationResponse;
+    const originalBookingId = booked.data.bookClassSession.booking.id;
+
+    const closedTeacher = await createTeacher();
+    const closedSessionId = await insertClassSession("2026-08-10T12:29:59.999Z", closedTeacher.id);
+    expect(await rescheduleAs(reschedulingStudent.subject, originalBookingId, closedSessionId))
+      .toEqual({ data: { rescheduleBooking: { code: "BOOKING_WINDOW_CLOSED" } } });
+
+    const originalLesson = await db.selectFrom("lesson_units").select("course_id")
+      .where("id", "=", lessonUnitId).executeTakeFirstOrThrow();
+    const otherLessonUnit = await db.transaction().execute(async (transaction) => {
+      const lessonUnit = await transaction.insertInto("lesson_units").values({
+        stable_key: "es-b1-98",
+        course_id: originalLesson.course_id,
+        title: "Different Lesson Unit",
+        summary: "Different content",
+        objectives: JSON.stringify(["Practice something different"]),
+        sort_order: 2,
+        state: "ACTIVE",
+        replacement_lesson_unit_id: null,
+        retired_at: null,
+      }).returning("id").executeTakeFirstOrThrow();
+      await transaction.insertInto("lesson_unit_topics").values({
+        lesson_unit_id: lessonUnit.id,
+        topic_key: "BK",
+      }).execute();
+      return lessonUnit;
+    });
+    const mismatchTeacher = await createTeacher();
+    const mismatchSessionId = await insertClassSession(
+      "2026-08-27T18:00:00.000Z",
+      mismatchTeacher.id,
+      { lessonUnitId: otherLessonUnit.id },
+    );
+    expect(await rescheduleAs(reschedulingStudent.subject, originalBookingId, mismatchSessionId))
+      .toEqual({ data: { rescheduleBooking: { code: "LESSON_UNIT_MISMATCH" } } });
+
+    const cancelledTeacher = await createTeacher();
+    const cancelledSessionId = await insertClassSession(
+      "2026-08-28T18:00:00.000Z",
+      cancelledTeacher.id,
+      { state: "CANCELLED" },
+    );
+    expect(await rescheduleAs(reschedulingStudent.subject, originalBookingId, cancelledSessionId))
+      .toEqual({ data: { rescheduleBooking: { code: "CLASS_SESSION_NOT_FOUND" } } });
+
+    await insertClassSession("2026-08-29T18:00:00.000Z", reschedulingStudent.id);
+    const conflictTeacher = await createTeacher();
+    const conflictSessionId = await insertClassSession("2026-08-29T18:30:00.000Z", conflictTeacher.id);
+    expect(await rescheduleAs(reschedulingStudent.subject, originalBookingId, conflictSessionId))
+      .toEqual({ data: { rescheduleBooking: { code: "SCHEDULE_CONFLICT" } } });
+    expect(await db.selectFrom("bookings").select(["state", "terminal_reason"])
+      .where("id", "=", originalBookingId).executeTakeFirstOrThrow())
+      .toEqual({ state: "ACTIVE", terminal_reason: null });
+  });
+
+  it("serializes concurrent reschedules for the final replacement seat", async () => {
+    const targetTeacher = await createTeacher();
+    const replacementSessionId = await insertClassSession("2026-08-30T18:00:00.000Z", targetTeacher.id);
+    const filler = await createStudentWithCredits(1);
+    await bookAs(filler.subject, replacementSessionId);
+    const contenders = await Promise.all([createStudentWithCredits(1), createStudentWithCredits(1)]);
+    const originalBookings = await Promise.all(contenders.map(async (contender, index) => {
+      const teacher = await createTeacher();
+      const sessionId = await insertClassSession(
+        `2026-08-${31 - index}T20:00:00.000Z`,
+        teacher.id,
+      );
+      const booked = await bookAs(contender.subject, sessionId) as BookingMutationResponse;
+      return booked.data.bookClassSession.booking.id;
+    }));
+
+    const outcomes = await Promise.all(contenders.map((contender, index) =>
+      rescheduleAs(contender.subject, originalBookings[index]!, replacementSessionId))) as Array<{
+      data: { rescheduleBooking: { replacementBooking?: { id: string }; code?: string } };
+    }>;
+
+    expect(outcomes.filter(({ data }) => data.rescheduleBooking.replacementBooking)).toHaveLength(1);
+    expect(outcomes.filter(({ data }) => data.rescheduleBooking.code === "SESSION_FULL")).toHaveLength(1);
+    expect(await db.selectFrom("class_sessions").select("occupied_seats")
+      .where("id", "=", replacementSessionId).executeTakeFirstOrThrow()).toEqual({ occupied_seats: 2 });
+    expect(await db.selectFrom("class_credit_accounts").select("available_balance")
+      .where("student_user_id", "in", contenders.map(({ id }) => id)).execute())
+      .toEqual(expect.arrayContaining([{ available_balance: 0 }, { available_balance: 0 }]));
+  });
+
   it("forfeits the Class Credit for a late Student Cancellation before the Class Session starts", async () => {
     const lateStudent = await createStudentWithCredits(1);
     const lateSessionId = await insertClassSession("2026-08-11T11:00:00.000Z");
@@ -408,6 +681,64 @@ describe("Student Booking GraphQL API", () => {
     });
   });
 
+  it("denies rescheduling without a Student Role Assignment and audits the authenticated attempt", async () => {
+    const teacher = await createTeacher();
+    const correlationId = `booking-reschedule-role-denied-${randomUUID()}`;
+
+    const result = await graphqlAs(teacher.subject, `
+      mutation Reschedule($input: RescheduleBookingInput!) {
+        rescheduleBooking(input: $input) {
+          ... on RescheduleBookingSuccess { replacementBooking { id } }
+          ... on BookingError { code }
+        }
+      }
+    `, { input: {
+      idempotencyKey: randomUUID(),
+      bookingId: randomUUID(),
+      replacementClassSessionId: randomUUID(),
+    } }, correlationId) as {
+      data: null;
+      errors: Array<{ extensions: { code: string } }>;
+    };
+
+    expect(result.data).toBeNull();
+    expect(result.errors[0]?.extensions.code).toBe("FORBIDDEN");
+    expect(await db.selectFrom("audit_entries").select(["operation", "target_type", "outcome", "reason_code"])
+      .where("correlation_id", "=", correlationId).executeTakeFirstOrThrow()).toEqual({
+      operation: "booking.rescheduled",
+      target_type: "Booking",
+      outcome: "DENIED",
+      reason_code: "STUDENT_ROLE_REQUIRED",
+    });
+  });
+
+  it("rejects malformed reschedule identifiers at the GraphQL boundary and audits the denial", async () => {
+    const correlationId = `booking-reschedule-input-denied-${randomUUID()}`;
+    const result = await graphql(`
+      mutation Reschedule($input: RescheduleBookingInput!) {
+        rescheduleBooking(input: $input) {
+          ... on RescheduleBookingSuccess { replacementBooking { id } }
+          ... on BookingError { code }
+        }
+      }
+    `, { input: {
+      idempotencyKey: randomUUID(),
+      bookingId: "not-a-booking-id",
+      replacementClassSessionId: "not-a-class-session-id",
+    } }, correlationId) as {
+      data: null;
+      errors: Array<{ extensions: { code: string } }>;
+    };
+
+    expect(result.data).toBeNull();
+    expect(result.errors[0]?.extensions.code).toBe("BAD_USER_INPUT");
+    expect(await db.selectFrom("audit_entries").select(["outcome", "reason_code"])
+      .where("correlation_id", "=", correlationId).executeTakeFirstOrThrow()).toEqual({
+      outcome: "DENIED",
+      reason_code: "INVALID_RESCHEDULE_BOOKING_INPUT",
+    });
+  });
+
   it("delivers the durable Student reminder through the background worker exactly once", async () => {
     const remindedStudent = await createStudentWithCredits(1);
     const sessionId = await insertClassSession("2026-08-18T14:00:00.000Z");
@@ -490,15 +821,23 @@ describe("Student Booking GraphQL API", () => {
     })).rejects.toThrow("occupied seats must equal active Booking history");
   });
 
-  async function insertClassSession(startsAt: string, assignedTeacherId = teacherId) {
+  async function insertClassSession(
+    startsAt: string,
+    assignedTeacherId = teacherId,
+    options: {
+      lessonUnitId?: string;
+      seatCapacity?: number;
+      state?: "PUBLISHED" | "CANCELLED";
+    } = {},
+  ) {
     return (await db.insertInto("class_sessions").values({
-      lesson_unit_id: lessonUnitId,
+      lesson_unit_id: options.lessonUnitId ?? lessonUnitId,
       teacher_user_id: assignedTeacherId,
       starts_at: new Date(startsAt),
       scheduling_time_zone: "America/Denver",
-      seat_capacity: 2,
+      seat_capacity: options.seatCapacity ?? 2,
       occupied_seats: 0,
-      state: "PUBLISHED",
+      state: options.state ?? "PUBLISHED",
     }).returning("id").executeTakeFirstOrThrow()).id;
   }
 
@@ -529,6 +868,27 @@ describe("Student Booking GraphQL API", () => {
         }
       }
     `, { input: { idempotencyKey, bookingId } });
+  }
+
+  async function rescheduleAs(
+    subject: string,
+    bookingId: string,
+    replacementClassSessionId: string,
+    idempotencyKey: string = randomUUID(),
+    correlationId: string = randomUUID(),
+  ) {
+    return graphqlAs(subject, `
+      mutation Reschedule($input: RescheduleBookingInput!) {
+        rescheduleBooking(input: $input) {
+          ... on RescheduleBookingSuccess {
+            originalBooking { id state terminalReason classSession { id occupiedSeats } }
+            replacementBooking { id state terminalReason classSession { id occupiedSeats } }
+            account { availableBalance }
+          }
+          ... on BookingError { code }
+        }
+      }
+    `, { input: { idempotencyKey, bookingId, replacementClassSessionId } }, correlationId);
   }
 
   async function createStudentWithCredits(availableBalance: number, teacherRole = false) {

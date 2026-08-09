@@ -10,6 +10,7 @@ import {
 import { makeExecutableSchema } from "@graphql-tools/schema";
 import { createGraphQLError, createYoga } from "graphql-yoga";
 import { sql } from "kysely";
+import { z } from "zod";
 
 import {
   loadRoleWorkspace,
@@ -19,7 +20,7 @@ import { administratorFor } from "../authorization/administrator-policy.js";
 import { studentFor } from "../authorization/student-policy.js";
 import { recordAdministrationAudit } from "../audit/administration-audit.js";
 import { createAuthenticator } from "../auth/create-authenticator.js";
-import { bookClassSession, bookingsForStudent, cancelBooking } from "../booking/booking-service.js";
+import { bookClassSession, bookingsForStudent, cancelBooking, rescheduleBooking } from "../booking/booking-service.js";
 import {
   adjustClassCredits,
   administrationClassCredits,
@@ -126,6 +127,11 @@ const relationshipScopesByRole: Record<UserRole, WorkspaceRelationshipScope> = {
 };
 
 const validDisplayTimeZones = new Set(namedRegionalTimeZones());
+const rescheduleBookingInputSchema = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  bookingId: z.uuid(),
+  replacementClassSessionId: z.uuid(),
+});
 
 function graphQLInterfaceLocale(locale: "en" | "es" | null) {
   if (locale === null) return null;
@@ -181,6 +187,7 @@ export function createApi(options: {
       UndoSubscriptionCancellationResult: { __resolveType: (value) => value.__typename! },
       BookClassSessionResult: { __resolveType: (value) => value.__typename! },
       CancelBookingResult: { __resolveType: (value) => value.__typename! },
+      RescheduleBookingResult: { __resolveType: (value) => value.__typename! },
       Query: {
         studentPlacements: async (_parent, _arguments, context) => {
           const student = await authenticateStudent(context, "student-placement.read", "StudentPlacement");
@@ -455,6 +462,26 @@ export function createApi(options: {
             input.idempotencyKey,
             input,
             (transaction) => cancelBooking(transaction, student, input, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "BookingError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "Booking",
+          ));
+        },
+        rescheduleBooking: async (_parent, { input }, context) => {
+          const student = await authenticateStudent(context, "booking.rescheduled", "Booking");
+          const validatedInput = rescheduleBookingInputSchema.safeParse(input);
+          if (!validatedInput.success) {
+            await recordStudentMutationAudit(context.db, student.id, "booking.rescheduled", "Booking", context.correlationId, "DENIED", "INVALID_RESCHEDULE_BOOKING_INPUT");
+            throw createGraphQLError("Provide valid Booking and replacement Class Session identifiers", {
+              extensions: { code: "BAD_USER_INPUT" },
+            });
+          }
+          return graphQLResult(await idempotentStudentMutation(
+            context,
+            student,
+            "booking.rescheduled",
+            validatedInput.data.idempotencyKey,
+            validatedInput.data,
+            (transaction) => rescheduleBooking(transaction, student, validatedInput.data, context.correlationId, options.now?.() ?? new Date()),
             { __typename: "BookingError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
             "Booking",
           ));

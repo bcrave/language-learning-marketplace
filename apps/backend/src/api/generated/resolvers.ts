@@ -121,6 +121,7 @@ export enum BookingErrorCode {
   ClassSessionNotFound = 'CLASS_SESSION_NOT_FOUND',
   IdempotencyKeyReused = 'IDEMPOTENCY_KEY_REUSED',
   InsufficientClassCredits = 'INSUFFICIENT_CLASS_CREDITS',
+  LessonUnitMismatch = 'LESSON_UNIT_MISMATCH',
   ScheduleConflict = 'SCHEDULE_CONFLICT',
   SessionFull = 'SESSION_FULL'
 }
@@ -131,6 +132,7 @@ export enum BookingState {
 }
 
 export enum BookingTerminalReason {
+  Rescheduled = 'RESCHEDULED',
   StudentCancellation = 'STUDENT_CANCELLATION'
 }
 
@@ -465,6 +467,7 @@ export type Mutation = {
   rememberRoleWorkspacePlace: RolePlace;
   removeAvailabilityException: RemoveAvailabilityExceptionResult;
   removeTeacherQualification: RemoveTeacherQualificationResult;
+  rescheduleBooking: RescheduleBookingResult;
   retireLessonUnit: RetireLessonUnitResult;
   reviseCourseDetails: UpdateCourseResult;
   reviseLessonMaterial: ReviseLessonMaterialResult;
@@ -556,6 +559,11 @@ export type MutationRemoveAvailabilityExceptionArgs = {
 
 export type MutationRemoveTeacherQualificationArgs = {
   input: ChangeTeacherQualificationInput;
+};
+
+
+export type MutationRescheduleBookingArgs = {
+  input: RescheduleBookingInput;
 };
 
 
@@ -738,6 +746,21 @@ export type ReorderLessonUnitResult = CurriculumConflict | ReorderLessonUnitSucc
 export type ReorderLessonUnitSuccess = {
   __typename?: 'ReorderLessonUnitSuccess';
   lessonUnit: LessonUnit;
+};
+
+export type RescheduleBookingInput = {
+  bookingId: Scalars['ID']['input'];
+  idempotencyKey: Scalars['ID']['input'];
+  replacementClassSessionId: Scalars['ID']['input'];
+};
+
+export type RescheduleBookingResult = BookingError | RescheduleBookingSuccess;
+
+export type RescheduleBookingSuccess = {
+  __typename?: 'RescheduleBookingSuccess';
+  account: ClassCreditAccount;
+  originalBooking: Booking;
+  replacementBooking: Booking;
 };
 
 export type RetireLessonUnitInput = {
@@ -1172,6 +1195,10 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( CurriculumConflict )
     | ( ReorderLessonUnitSuccess )
   ;
+  RescheduleBookingResult:
+    | ( BookingError )
+    | ( RescheduleBookingSuccess )
+  ;
   RetireLessonUnitResult:
     | ( CurriculumConflict )
     | ( RetireLessonUnitSuccess )
@@ -1294,6 +1321,9 @@ export type ResolversTypes = {
   ReorderLessonUnitInput: ReorderLessonUnitInput;
   ReorderLessonUnitResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ReorderLessonUnitResult']>;
   ReorderLessonUnitSuccess: ResolverTypeWrapper<ReorderLessonUnitSuccess>;
+  RescheduleBookingInput: RescheduleBookingInput;
+  RescheduleBookingResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RescheduleBookingResult']>;
+  RescheduleBookingSuccess: ResolverTypeWrapper<RescheduleBookingSuccess>;
   RetireLessonUnitInput: RetireLessonUnitInput;
   RetireLessonUnitResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RetireLessonUnitResult']>;
   RetireLessonUnitSuccess: ResolverTypeWrapper<RetireLessonUnitSuccess>;
@@ -1422,6 +1452,9 @@ export type ResolversParentTypes = {
   ReorderLessonUnitInput: ReorderLessonUnitInput;
   ReorderLessonUnitResult: ResolversUnionTypes<ResolversParentTypes>['ReorderLessonUnitResult'];
   ReorderLessonUnitSuccess: ReorderLessonUnitSuccess;
+  RescheduleBookingInput: RescheduleBookingInput;
+  RescheduleBookingResult: ResolversUnionTypes<ResolversParentTypes>['RescheduleBookingResult'];
+  RescheduleBookingSuccess: RescheduleBookingSuccess;
   RetireLessonUnitInput: RetireLessonUnitInput;
   RetireLessonUnitResult: ResolversUnionTypes<ResolversParentTypes>['RetireLessonUnitResult'];
   RetireLessonUnitSuccess: RetireLessonUnitSuccess;
@@ -1758,6 +1791,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   rememberRoleWorkspacePlace?: Resolver<ResolversTypes['RolePlace'], ParentType, ContextType, RequireFields<MutationRememberRoleWorkspacePlaceArgs, 'input'>>;
   removeAvailabilityException?: Resolver<ResolversTypes['RemoveAvailabilityExceptionResult'], ParentType, ContextType, RequireFields<MutationRemoveAvailabilityExceptionArgs, 'input'>>;
   removeTeacherQualification?: Resolver<ResolversTypes['RemoveTeacherQualificationResult'], ParentType, ContextType, RequireFields<MutationRemoveTeacherQualificationArgs, 'input'>>;
+  rescheduleBooking?: Resolver<ResolversTypes['RescheduleBookingResult'], ParentType, ContextType, RequireFields<MutationRescheduleBookingArgs, 'input'>>;
   retireLessonUnit?: Resolver<ResolversTypes['RetireLessonUnitResult'], ParentType, ContextType, RequireFields<MutationRetireLessonUnitArgs, 'input'>>;
   reviseCourseDetails?: Resolver<ResolversTypes['UpdateCourseResult'], ParentType, ContextType, RequireFields<MutationReviseCourseDetailsArgs, 'input'>>;
   reviseLessonMaterial?: Resolver<ResolversTypes['ReviseLessonMaterialResult'], ParentType, ContextType, RequireFields<MutationReviseLessonMaterialArgs, 'input'>>;
@@ -1838,6 +1872,17 @@ export type ReorderLessonUnitResultResolvers<ContextType = any, ParentType exten
 
 export type ReorderLessonUnitSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['ReorderLessonUnitSuccess'] = ResolversParentTypes['ReorderLessonUnitSuccess']> = {
   lessonUnit?: Resolver<ResolversTypes['LessonUnit'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type RescheduleBookingResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['RescheduleBookingResult'] = ResolversParentTypes['RescheduleBookingResult']> = {
+  __resolveType: TypeResolveFn<'BookingError' | 'RescheduleBookingSuccess', ParentType, ContextType>;
+};
+
+export type RescheduleBookingSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['RescheduleBookingSuccess'] = ResolversParentTypes['RescheduleBookingSuccess']> = {
+  account?: Resolver<ResolversTypes['ClassCreditAccount'], ParentType, ContextType>;
+  originalBooking?: Resolver<ResolversTypes['Booking'], ParentType, ContextType>;
+  replacementBooking?: Resolver<ResolversTypes['Booking'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
@@ -2068,6 +2113,8 @@ export type Resolvers<ContextType = any> = {
   RemoveTeacherQualificationResult?: RemoveTeacherQualificationResultResolvers<ContextType>;
   ReorderLessonUnitResult?: ReorderLessonUnitResultResolvers<ContextType>;
   ReorderLessonUnitSuccess?: ReorderLessonUnitSuccessResolvers<ContextType>;
+  RescheduleBookingResult?: RescheduleBookingResultResolvers<ContextType>;
+  RescheduleBookingSuccess?: RescheduleBookingSuccessResolvers<ContextType>;
   RetireLessonUnitResult?: RetireLessonUnitResultResolvers<ContextType>;
   RetireLessonUnitSuccess?: RetireLessonUnitSuccessResolvers<ContextType>;
   ReviseLessonMaterialResult?: ReviseLessonMaterialResultResolvers<ContextType>;
