@@ -61,3 +61,14 @@ $$;
 create trigger waitlist_entries_immutable_identity
 before update on waitlist_entries
 for each row execute function preserve_waitlist_entry_identity();
+
+create table waitlist_promotion_requests (
+  class_session_id uuid primary key references class_sessions(id),
+  requested_at timestamptz not null default now(),
+  request_version integer not null default 1,
+  processed_at timestamptz
+);
+
+create index waitlist_promotion_requests_pending_idx
+  on waitlist_promotion_requests (requested_at, class_session_id)
+  where processed_at is null;

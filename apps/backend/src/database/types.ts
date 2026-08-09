@@ -72,6 +72,7 @@ export interface ScheduleCommitmentsTable { id: Generated<string>; user_id: stri
 export interface BookingsTable { id: Generated<string>; student_user_id: string; class_session_id: string; teacher_user_id_at_booking: string; state: Generated<"ACTIVE" | "ENDED">; terminal_reason: "STUDENT_CANCELLATION" | "RESCHEDULED" | null; class_credit_refunded: Generated<boolean>; late_cancellation_refund_until: Date | null; rescheduled_from_booking_id: Generated<string | null>; booked_at: Generated<Date>; ended_at: Date | null }
 export type WaitlistTerminalReason = "WITHDRAWN" | "PROMOTED" | "EXPIRED" | "CLASS_SESSION_UNAVAILABLE" | "INSUFFICIENT_CLASS_CREDITS" | "SCHEDULE_CONFLICT" | "ALREADY_BOOKED";
 export interface WaitlistEntriesTable { id: Generated<string>; student_user_id: string; class_session_id: string; state: "ACTIVE" | "WITHDRAWN" | "PROMOTED" | "EXPIRED" | "INELIGIBLE"; terminal_reason: WaitlistTerminalReason | null; joined_at: Date; expires_at: Date; completed_at: Date | null; promoted_booking_id: string | null }
+export interface WaitlistPromotionRequestsTable { class_session_id: string; requested_at: Generated<Date>; request_version: Generated<number>; processed_at: Date | null }
 export interface ClassSessionRemindersTable { id: Generated<string>; class_session_id: string; recipient_user_id: string; commitment_role: "STUDENT" | "TEACHER"; due_at: Date; terminal_outcome: "DELIVERED" | "SUPPRESSED" | null; completed_at: Date | null }
 export interface InAppNotificationsTable { id: Generated<string>; recipient_user_id: string; message_id: string; variables: JSONColumnType<Record<string, unknown>>; source_reference: Generated<string | null>; created_at: Generated<Date> }
 export interface EmailNotificationIntentsTable { id: Generated<string>; recipient_user_id: string; message_id: string; locale: "en" | "es"; variables: JSONColumnType<Record<string, unknown>>; rendered_content: string; source_reference: Generated<string | null>; created_at: Generated<Date> }
@@ -104,6 +105,7 @@ export interface DatabaseSchema {
   schedule_commitments: ScheduleCommitmentsTable;
   bookings: BookingsTable;
   waitlist_entries: WaitlistEntriesTable;
+  waitlist_promotion_requests: WaitlistPromotionRequestsTable;
   class_session_reminders: ClassSessionRemindersTable;
   in_app_notifications: InAppNotificationsTable;
   email_notification_intents: EmailNotificationIntentsTable;

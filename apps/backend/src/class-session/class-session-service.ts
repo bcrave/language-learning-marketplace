@@ -5,6 +5,7 @@ import { sql } from "kysely";
 import type { Administrator } from "../curriculum/curriculum-service.js";
 import { recordCurriculumAudit } from "../curriculum/curriculum-service.js";
 import type { Database } from "../database/database.js";
+import { requestWaitlistPromotion } from "../waitlist/waitlist-promotion-request.js";
 import { resolveFixedDurationLocalInterval, type LocalTimeDisambiguation } from "../teacher-availability/teacher-availability-time.js";
 import {
   ClassSessionPublicationErrorCode,
@@ -218,6 +219,9 @@ export async function changeClassSessionSeatCapacity(
     if (!session || session.state !== "PUBLISHED") return deny(transaction, ClassSessionSeatCapacityErrorCode.ClassSessionNotFound, "Choose a published Class Session.");
     if (input.seatCapacity < session.occupied_seats) return deny(transaction, ClassSessionSeatCapacityErrorCode.SeatCapacityBelowOccupiedSeats, "Seat Capacity cannot be lower than the occupied seats.");
     const updated = await transaction.updateTable("class_sessions").set({ seat_capacity: input.seatCapacity }).where("id", "=", input.classSessionId).returningAll().executeTakeFirstOrThrow();
+    if (input.seatCapacity > session.seat_capacity) {
+      await requestWaitlistPromotion(transaction, session.id);
+    }
     await recordCurriculumAudit(transaction, { administratorId: administrator.id, correlationId, operation: "class-session.seat-capacity-changed", targetType: "ClassSession", targetId: input.classSessionId, reasonCode: "CLASS_SESSION_SEAT_CAPACITY_CHANGED" });
     return { __typename: "ChangeClassSessionSeatCapacitySuccess" as const, classSession: classSessionProjection(updated) };
   };

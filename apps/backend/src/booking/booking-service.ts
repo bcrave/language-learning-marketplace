@@ -10,6 +10,7 @@ import type { Database } from "../database/database.js";
 import type { ClassSessionsTable } from "../database/types.js";
 import { projectClassCreditAccount } from "../class-credit/class-credit-service.js";
 import { classSessionProjection } from "../class-session/class-session-service.js";
+import { requestWaitlistPromotion } from "../waitlist/waitlist-promotion-request.js";
 
 type Student = { id: string };
 type BookingErrorCode =
@@ -207,6 +208,54 @@ async function deactivateStudentBookingCommitment(
     .set({ terminal_outcome: "SUPPRESSED", completed_at: now })
     .where("class_session_id", "=", session.id).where("recipient_user_id", "=", studentId)
     .where("commitment_role", "=", "STUDENT").where("terminal_outcome", "is", null).execute();
+  await requestWaitlistPromotion(transaction, session.id);
+}
+
+export async function createEligibleStudentBooking(
+  transaction: Database,
+  studentId: string,
+  session: Selectable<ClassSessionsTable>,
+  now: Date,
+  lateCancellationRefundUntil: Date | null = null,
+) {
+  const existing = await transaction.selectFrom("bookings").select("id")
+    .where("student_user_id", "=", studentId).where("class_session_id", "=", session.id)
+    .where("state", "=", "ACTIVE").executeTakeFirst();
+  if (existing) return { status: "INELIGIBLE" as const, reason: "ALREADY_BOOKED" as const };
+
+  const endsAt = new Date(session.starts_at.getTime() + 60 * 60_000);
+  const conflict = await transaction.selectFrom("schedule_commitments").select("id")
+    .where("user_id", "=", studentId).where("active", "=", true)
+    .where("starts_at", "<", endsAt).where("ends_at", ">", session.starts_at)
+    .executeTakeFirst();
+  if (conflict) return { status: "INELIGIBLE" as const, reason: "SCHEDULE_CONFLICT" as const };
+
+  const account = await transaction.selectFrom("class_credit_accounts").select("available_balance")
+    .where("student_user_id", "=", studentId).forUpdate().executeTakeFirst();
+  if (!account || account.available_balance < 1) {
+    return { status: "INELIGIBLE" as const, reason: "INSUFFICIENT_CLASS_CREDITS" as const };
+  }
+
+  const booking = await activateStudentBooking(
+    transaction,
+    studentId,
+    session,
+    now,
+    null,
+    lateCancellationRefundUntil,
+  );
+  const availableBalance = account.available_balance - 1;
+  await transaction.insertInto("class_credit_ledger_entries").values({
+    student_user_id: studentId,
+    amount: -1,
+    source: "BOOKING_DEDUCTION",
+    source_reference: booking.id,
+    reason: null,
+  }).execute();
+  await transaction.updateTable("class_credit_accounts")
+    .set({ available_balance: availableBalance, updated_at: now })
+    .where("student_user_id", "=", studentId).executeTakeFirstOrThrow();
+  return { status: "BOOKED" as const, booking, availableBalance };
 }
 
 export async function bookClassSession(
@@ -225,51 +274,28 @@ export async function bookClassSession(
   if (!bookingWindowIsOpen(now, session.starts_at)) {
     return denyBooking(transaction, student.id, "booking.created", session.id, correlationId, "BOOKING_WINDOW_CLOSED", "Booking closes 30 minutes before the Class Session starts.");
   }
-  const existing = await transaction.selectFrom("bookings").select("id")
-    .where("student_user_id", "=", student.id).where("class_session_id", "=", session.id)
-    .where("state", "=", "ACTIVE").executeTakeFirst();
-  if (existing) {
-    return denyBooking(transaction, student.id, "booking.created", existing.id, correlationId, "ALREADY_BOOKED", "You already have an active Booking for this Class Session.");
-  }
   if (session.occupied_seats >= session.seat_capacity) {
     return denyBooking(transaction, student.id, "booking.created", session.id, correlationId, "SESSION_FULL", "The Class Session has no available seats.");
   }
-  const endsAt = new Date(session.starts_at.getTime() + 60 * 60_000);
-  const conflict = await transaction.selectFrom("schedule_commitments").select("id")
-    .where("user_id", "=", student.id).where("active", "=", true)
-    .where("starts_at", "<", endsAt).where("ends_at", ">", session.starts_at)
-    .executeTakeFirst();
-  if (conflict) {
-    return denyBooking(transaction, student.id, "booking.created", session.id, correlationId, "SCHEDULE_CONFLICT", "This Class Session overlaps another active Student or Teacher commitment.");
+  const outcome = await createEligibleStudentBooking(transaction, student.id, session, now);
+  if (outcome.status === "INELIGIBLE") {
+    const messages = {
+      ALREADY_BOOKED: "You already have an active Booking for this Class Session.",
+      SCHEDULE_CONFLICT: "This Class Session overlaps another active Student or Teacher commitment.",
+      INSUFFICIENT_CLASS_CREDITS: "One available Class Credit is required to book.",
+    } as const;
+    return denyBooking(transaction, student.id, "booking.created", session.id, correlationId, outcome.reason, messages[outcome.reason]);
   }
-  const account = await transaction.selectFrom("class_credit_accounts").select("available_balance")
-    .where("student_user_id", "=", student.id).forUpdate().executeTakeFirst();
-  if (!account || account.available_balance < 1) {
-    return denyBooking(transaction, student.id, "booking.created", session.id, correlationId, "INSUFFICIENT_CLASS_CREDITS", "One available Class Credit is required to book.");
-  }
-
-  const booking = await activateStudentBooking(transaction, student.id, session, now);
-  const availableBalance = account.available_balance - 1;
-  await transaction.insertInto("class_credit_ledger_entries").values({
-    student_user_id: student.id,
-    amount: -1,
-    source: "BOOKING_DEDUCTION",
-    source_reference: booking.id,
-    reason: null,
-  }).execute();
-  await transaction.updateTable("class_credit_accounts")
-    .set({ available_balance: availableBalance, updated_at: now })
-    .where("student_user_id", "=", student.id).executeTakeFirstOrThrow();
-  await recordBookingAudit(transaction, student.id, "booking.created", booking.id, correlationId, "SUCCEEDED", "BOOKING_CREATED");
-  await notifyStudent(transaction, student.id, `booking.created:${booking.id}`, "booking.created.student", {
+  await recordBookingAudit(transaction, student.id, "booking.created", outcome.booking.id, correlationId, "SUCCEEDED", "BOOKING_CREATED");
+  await notifyStudent(transaction, student.id, `booking.created:${outcome.booking.id}`, "booking.created.student", {
     classSessionId: session.id,
     startsAt: session.starts_at,
-    availableBalance,
+    availableBalance: outcome.availableBalance,
   });
   return {
     __typename: "BookClassSessionSuccess" as const,
-    booking: await projectBooking(transaction, booking.id),
-    account: await projectClassCreditAccount(transaction, student.id, availableBalance),
+    booking: await projectBooking(transaction, outcome.booking.id),
+    account: await projectClassCreditAccount(transaction, student.id, outcome.availableBalance),
   };
 }
 

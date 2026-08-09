@@ -12,10 +12,13 @@ import {
   CancelBookingDocument,
   ClassSessionDiscoveryOptionsDocument,
   DiscoverClassSessionsDocument,
+  JoinWaitlistDocument,
   RescheduleBookingDocument,
   SetStudentPlacementDocument,
   StudentBookingsDocument,
+  StudentWaitlistEntriesDocument,
   StudentPlacementsDocument,
+  WithdrawWaitlistDocument,
 } from "../src/generated/graphql.js";
 import { StudentDiscoveryPanel } from "../src/student-discovery.js";
 
@@ -25,6 +28,10 @@ const mocks: MockedResponse[] = [
   {
     request: { query: StudentBookingsDocument },
     result: { data: { studentBookings: [] } },
+  },
+  {
+    request: { query: StudentWaitlistEntriesDocument },
+    result: { data: { studentWaitlistEntries: [] } },
   },
   {
     request: { query: StudentPlacementsDocument },
@@ -222,6 +229,79 @@ describe("Student Class Session Discovery", () => {
     await user.click(screen.getByRole("button", { name: /Cancel Booking for/ }));
     expect(await screen.findByText("Booking cancelled. One Class Credit was returned.")).toHaveAttribute("role", "status");
     expect(screen.getByRole("button", { name: "Book Class Session" })).toBeVisible();
+  });
+
+  it("lets the Student join and withdraw from a full Waitlist with accessible status feedback", async () => {
+    const user = userEvent.setup();
+    const sessionId = "00000000-0000-4000-8000-000000000010";
+    const entryId = "00000000-0000-4000-8000-000000000088";
+    const fullDiscoveryMocks = mocks.map((mock) => {
+      if (mock.request.query !== DiscoverClassSessionsDocument) return mock;
+      const result = mock.result as { data: { discoverClassSessions: {
+        appliedFilter: Record<string, unknown>;
+        nodes: Array<Record<string, unknown>>;
+        pageInfo: Record<string, unknown>;
+      } } };
+      return {
+        ...mock,
+        result: { data: { discoverClassSessions: {
+          ...result.data.discoverClassSessions,
+          nodes: result.data.discoverClassSessions.nodes.map((session) => ({
+            ...session,
+            occupiedSeats: 5,
+          })),
+        } } },
+      };
+    });
+    const activeEntry = {
+      __typename: "WaitlistEntry",
+      id: entryId,
+      state: "ACTIVE",
+      terminalReason: null,
+      joinedAt: "2026-08-05T12:00:00Z",
+      expiresAt: "2026-08-06T14:00:00Z",
+      completedAt: null,
+      resultingBooking: null,
+      classSession: {
+        __typename: "ClassSession",
+        id: sessionId,
+        startsAt: "2026-08-06T16:00:00Z",
+        endsAt: "2026-08-06T17:00:00Z",
+        occupiedSeats: 5,
+        seatCapacity: 5,
+      },
+    };
+    const waitlistMocks = [
+      ...fullDiscoveryMocks,
+      {
+        request: { query: JoinWaitlistDocument, variables: { input: { idempotencyKey: "join-key", classSessionId: sessionId } } },
+        result: { data: { joinWaitlist: { __typename: "JoinWaitlistSuccess", entry: activeEntry } } },
+      },
+      { request: { query: StudentWaitlistEntriesDocument }, result: { data: { studentWaitlistEntries: [activeEntry] } } },
+      {
+        request: { query: WithdrawWaitlistDocument, variables: { input: { idempotencyKey: "withdraw-key", waitlistEntryId: entryId } } },
+        result: { data: { withdrawWaitlist: {
+          __typename: "WithdrawWaitlistSuccess",
+          entry: { ...activeEntry, state: "WITHDRAWN", terminalReason: "WITHDRAWN", completedAt: "2026-08-05T12:05:00Z" },
+        } } },
+      },
+      { request: { query: StudentWaitlistEntriesDocument }, result: { data: { studentWaitlistEntries: [] } } },
+      { request: { query: StudentBookingsDocument }, result: { data: { studentBookings: [] } } },
+    ];
+    const keys = ["join-key", "withdraw-key"];
+    const { container } = renderPanel("en", waitlistMocks, () => keys.shift()!);
+    await screen.findByRole("heading", { name: "Conversación práctica" });
+
+    await user.click(screen.getByRole("button", { name: "Join Waitlist" }));
+    expect(await screen.findByText("Waitlist joined. No seat or Class Credit is reserved."))
+      .toHaveAttribute("role", "status");
+    await user.click(screen.getByRole("button", { name: /Withdraw from Waitlist for/ }));
+    expect(await screen.findByText("Waitlist withdrawn. No Booking was created or Class Credit exchanged."))
+      .toHaveAttribute("role", "status");
+    expect(screen.getByRole("button", { name: "Join Waitlist" })).toBeVisible();
+    const accessibility = await axe.run(container);
+    expect(accessibility.violations.filter(({ impact }) => impact === "serious" || impact === "critical"))
+      .toEqual([]);
   });
 
   it("lets the Student reschedule an active Booking to a discovered Class Session for the same Lesson Unit", async () => {

@@ -20,6 +20,7 @@ describe("Student Booking GraphQL API", () => {
   let db: Database;
   let postgres: StartedPostgreSqlContainer;
   const now = new Date("2026-08-10T12:00:00.000Z");
+  let currentNow = now;
   const studentId = randomUUID();
   const studentSubject = randomUUID();
   const teacherId = randomUUID();
@@ -36,7 +37,7 @@ describe("Student Booking GraphQL API", () => {
       `booking_${randomUUID().replaceAll("-", "")}`,
     );
     db = createDatabase(databaseUrl);
-    api = createApi({ db, authMode: "fake", nodeEnv: "test", now: () => now });
+    api = createApi({ db, authMode: "fake", nodeEnv: "test", now: () => currentNow });
 
     await db.insertInto("users").values([
       {
@@ -969,6 +970,38 @@ describe("Student Booking GraphQL API", () => {
     });
   });
 
+  it("refunds a late cancellation made within 30 minutes of automatic Waitlist promotion", async () => {
+    const waitlistedStudent = await createStudentWithCredits(1);
+    const fillers = await Promise.all([createStudentWithCredits(1), createStudentWithCredits(1)]);
+    const shortNoticeTeacher = await createTeacher();
+    const sessionId = await insertClassSession("2026-08-10T15:00:00.000Z", shortNoticeTeacher.id);
+    const fillerBookings = await Promise.all(fillers.map((filler) =>
+      bookAs(filler.subject, sessionId))) as BookingMutationResponse[];
+    const joined = await joinWaitlistAs(waitlistedStudent.subject, sessionId) as {
+      data: { joinWaitlist: { entry: { id: string } } };
+    };
+    await cancelAs(fillers[0]!.subject, fillerBookings[0]!.data.bookClassSession.booking.id);
+    await processWaitlistEntries(db, now, "waitlist-short-notice-promotion");
+    const promoted = await db.selectFrom("waitlist_entries").select("promoted_booking_id")
+      .where("id", "=", joined.data.joinWaitlist.entry.id).executeTakeFirstOrThrow();
+    expect(await db.selectFrom("email_notification_intents").select("rendered_content")
+      .where("recipient_user_id", "=", waitlistedStudent.id)
+      .where("message_id", "=", "waitlist-entry.promoted.student").executeTakeFirstOrThrow())
+      .toEqual({ rendered_content: expect.stringContaining("Starting soon") });
+
+    currentNow = new Date("2026-08-10T12:20:00.000Z");
+    try {
+      expect(await cancelAs(waitlistedStudent.subject, promoted.promoted_booking_id!)).toMatchObject({
+        data: { cancelBooking: {
+          booking: { state: "ENDED", classCreditRefunded: true },
+          account: { availableBalance: 1 },
+        } },
+      });
+    } finally {
+      currentNow = now;
+    }
+  });
+
   it("returns only the Student's Waitlist Entries and audits a denied sensitive read", async () => {
     const firstStudent = await createStudentWithCredits(1);
     const secondStudent = await createStudentWithCredits(1);
@@ -1223,6 +1256,37 @@ describe("Student Booking GraphQL API", () => {
       outcome: "DENIED",
       reason_code: "STUDENT_ROLE_REQUIRED",
     });
+  });
+
+  it("rejects malformed Waitlist identifiers at the GraphQL boundary and audits the denials", async () => {
+    for (const attempt of [
+      {
+        operation: "waitlist-entry.created",
+        reason: "INVALID_JOIN_WAITLIST_INPUT",
+        query: `mutation Join($input: JoinWaitlistInput!) { joinWaitlist(input: $input) { ... on WaitlistError { code } } }`,
+        input: { idempotencyKey: randomUUID(), classSessionId: "not-a-class-session-id" },
+      },
+      {
+        operation: "waitlist-entry.withdrawn",
+        reason: "INVALID_WITHDRAW_WAITLIST_INPUT",
+        query: `mutation Withdraw($input: WithdrawWaitlistInput!) { withdrawWaitlist(input: $input) { ... on WaitlistError { code } } }`,
+        input: { idempotencyKey: randomUUID(), waitlistEntryId: "not-a-waitlist-entry-id" },
+      },
+    ]) {
+      const correlationId = `invalid-waitlist-${randomUUID()}`;
+      const result = await graphql(attempt.query, { input: attempt.input }, correlationId) as {
+        data: null;
+        errors: Array<{ extensions: { code: string } }>;
+      };
+      expect(result.data).toBeNull();
+      expect(result.errors[0]?.extensions.code).toBe("BAD_USER_INPUT");
+      expect(await db.selectFrom("audit_entries").select(["operation", "outcome", "reason_code"])
+        .where("correlation_id", "=", correlationId).executeTakeFirstOrThrow()).toEqual({
+        operation: attempt.operation,
+        outcome: "DENIED",
+        reason_code: attempt.reason,
+      });
+    }
   });
 
   async function insertClassSession(

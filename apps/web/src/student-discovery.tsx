@@ -8,10 +8,14 @@ import {
   CancelBookingDocument,
   ClassSessionDiscoveryOptionsDocument,
   DiscoverClassSessionsDocument,
+  JoinWaitlistDocument,
   RescheduleBookingDocument,
   SetStudentPlacementDocument,
   StudentBookingsDocument,
+  StudentWaitlistEntriesDocument,
   StudentPlacementsDocument,
+  WaitlistEntryFieldsFragmentDoc,
+  WithdrawWaitlistDocument,
   type ClassSessionDiscoveryInput,
   type CurriculumLevel,
   type DiscoverClassSessionsQuery,
@@ -34,6 +38,19 @@ const bookingErrorMessages: Record<string, string> = {
   SESSION_FULL: "booking.error.SESSION_FULL",
 };
 
+const waitlistErrorMessages: Record<string, string> = {
+  ALREADY_BOOKED: "waitlist.error.ALREADY_BOOKED",
+  ALREADY_WAITLISTED: "waitlist.error.ALREADY_WAITLISTED",
+  CLASS_SESSION_NOT_FOUND: "waitlist.error.CLASS_SESSION_NOT_FOUND",
+  IDEMPOTENCY_KEY_REUSED: "waitlist.error.IDEMPOTENCY_KEY_REUSED",
+  INSUFFICIENT_CLASS_CREDITS: "waitlist.error.INSUFFICIENT_CLASS_CREDITS",
+  SCHEDULE_CONFLICT: "waitlist.error.SCHEDULE_CONFLICT",
+  SESSION_NOT_FULL: "waitlist.error.SESSION_NOT_FULL",
+  WAITLIST_ENTRY_NOT_ACTIVE: "waitlist.error.WAITLIST_ENTRY_NOT_ACTIVE",
+  WAITLIST_ENTRY_NOT_FOUND: "waitlist.error.WAITLIST_ENTRY_NOT_FOUND",
+  WAITLIST_NOT_OPEN: "waitlist.error.WAITLIST_NOT_OPEN",
+};
+
 type DiscoveryConnection = DiscoverClassSessionsQuery["discoverClassSessions"];
 
 export function StudentDiscoveryPanel({
@@ -47,6 +64,7 @@ export function StudentDiscoveryPanel({
   const placements = useQuery(StudentPlacementsDocument);
   const options = useQuery(ClassSessionDiscoveryOptionsDocument);
   const bookings = useQuery(StudentBookingsDocument);
+  const waitlistEntries = useQuery(StudentWaitlistEntriesDocument);
   const [initialized, setInitialized] = useState(false);
   const [targetLanguage, setTargetLanguage] = useState("");
   const [curriculumLevel, setCurriculumLevel] = useState<CurriculumLevel | "">("");
@@ -59,10 +77,14 @@ export function StudentDiscoveryPanel({
   const [bookClassSession, bookingMutation] = useMutation(BookClassSessionDocument);
   const [cancelBooking, cancellationMutation] = useMutation(CancelBookingDocument);
   const [rescheduleBooking, rescheduleMutation] = useMutation(RescheduleBookingDocument);
+  const [joinWaitlist, joinWaitlistMutation] = useMutation(JoinWaitlistDocument);
+  const [withdrawWaitlist, withdrawWaitlistMutation] = useMutation(WithdrawWaitlistDocument);
   const [bookingStatus, setBookingStatus] = useState<"created" | "refunded" | "forfeited" | "rescheduled" | null>(null);
   const [bookingErrorCode, setBookingErrorCode] = useState<string | null>(null);
+  const [waitlistStatus, setWaitlistStatus] = useState<"joined" | "withdrawn" | "promotionWon" | null>(null);
+  const [waitlistErrorCode, setWaitlistErrorCode] = useState<string | null>(null);
   const [occupiedSeats, setOccupiedSeats] = useState<Record<string, number>>({});
-  const [pendingAttempt, setPendingAttempt] = useState<{ action: "book" | "cancel" | "reschedule"; targetId: string; key: string } | null>(null);
+  const [pendingAttempt, setPendingAttempt] = useState<{ action: "book" | "cancel" | "reschedule" | "joinWaitlist" | "withdrawWaitlist"; targetId: string; key: string } | null>(null);
 
   useEffect(() => {
     if (initialized || !placements.data || !options.data) return;
@@ -97,7 +119,13 @@ export function StudentDiscoveryPanel({
     .filter((booking) => booking.state === "ACTIVE");
   const activeBookings = new Map(activeBookingList
     .map((booking) => [booking.classSession.id, booking]));
+  const activeWaitlistList = readFragment(
+    WaitlistEntryFieldsFragmentDoc,
+    waitlistEntries.data?.studentWaitlistEntries ?? [],
+  ).filter((entry) => entry.state === "ACTIVE");
+  const activeWaitlists = new Map(activeWaitlistList.map((entry) => [entry.classSession.id, entry]));
   const bookingBusy = bookingMutation.loading || cancellationMutation.loading || rescheduleMutation.loading;
+  const waitlistBusy = joinWaitlistMutation.loading || withdrawWaitlistMutation.loading;
 
   async function book(sessionId: string) {
     setBookingStatus(null);
@@ -180,6 +208,49 @@ export function StudentDiscoveryPanel({
       setPendingAttempt(null);
     } catch {
       setBookingErrorCode("UNEXPECTED");
+    }
+  }
+
+  async function join(sessionId: string) {
+    setWaitlistStatus(null);
+    setWaitlistErrorCode(null);
+    const attempt = pendingAttempt?.action === "joinWaitlist" && pendingAttempt.targetId === sessionId
+      ? pendingAttempt
+      : { action: "joinWaitlist" as const, targetId: sessionId, key: idempotencyKeyFactory() };
+    setPendingAttempt(attempt);
+    try {
+      const result = (await joinWaitlist({
+        variables: { input: { idempotencyKey: attempt.key, classSessionId: sessionId } },
+        refetchQueries: [StudentWaitlistEntriesDocument],
+        awaitRefetchQueries: true,
+      })).data?.joinWaitlist;
+      if (result?.__typename === "JoinWaitlistSuccess") setWaitlistStatus("joined");
+      else if (result?.__typename === "WaitlistError") setWaitlistErrorCode(result.code);
+      setPendingAttempt(null);
+    } catch {
+      setWaitlistErrorCode("UNEXPECTED");
+    }
+  }
+
+  async function withdraw(entryId: string) {
+    setWaitlistStatus(null);
+    setWaitlistErrorCode(null);
+    const attempt = pendingAttempt?.action === "withdrawWaitlist" && pendingAttempt.targetId === entryId
+      ? pendingAttempt
+      : { action: "withdrawWaitlist" as const, targetId: entryId, key: idempotencyKeyFactory() };
+    setPendingAttempt(attempt);
+    try {
+      const result = (await withdrawWaitlist({
+        variables: { input: { idempotencyKey: attempt.key, waitlistEntryId: entryId } },
+        refetchQueries: [StudentWaitlistEntriesDocument, StudentBookingsDocument],
+        awaitRefetchQueries: true,
+      })).data?.withdrawWaitlist;
+      if (result?.__typename === "WithdrawWaitlistSuccess") setWaitlistStatus("withdrawn");
+      else if (result?.__typename === "WaitlistPromotionWon") setWaitlistStatus("promotionWon");
+      else if (result?.__typename === "WaitlistError") setWaitlistErrorCode(result.code);
+      setPendingAttempt(null);
+    } catch {
+      setWaitlistErrorCode("UNEXPECTED");
     }
   }
 
@@ -278,6 +349,15 @@ export function StudentDiscoveryPanel({
       {discovery.error && <p role="alert"><FormattedMessage id="discovery.error" /></p>}
       {bookingStatus && <p role="status"><FormattedMessage id={bookingStatus === "created" ? "booking.created" : bookingStatus === "refunded" ? "booking.cancelled.refunded" : bookingStatus === "forfeited" ? "booking.cancelled.forfeited" : "booking.rescheduled"} /></p>}
       {bookingErrorCode && <p role="alert"><FormattedMessage id={bookingErrorMessages[bookingErrorCode] ?? "booking.error"} /></p>}
+      {waitlistStatus && <p role="status"><FormattedMessage id={
+        waitlistStatus === "joined"
+          ? "waitlist.joined"
+          : waitlistStatus === "withdrawn"
+            ? "waitlist.withdrawn"
+            : "waitlist.promotionWon"
+      } /></p>}
+      {waitlistErrorCode && <p role="alert"><FormattedMessage id={waitlistErrorMessages[waitlistErrorCode] ?? "waitlist.error"} /></p>}
+      {waitlistEntries.error && <p role="alert"><FormattedMessage id="waitlist.error" /></p>}
       {activeBookingList.length > 0 && (
         <section aria-labelledby="student-active-bookings">
           <h3 id="student-active-bookings"><FormattedMessage id="booking.activeTitle" /></h3>
@@ -307,6 +387,7 @@ export function StudentDiscoveryPanel({
           <ul>
             {nodes.map((session) => {
               const activeBooking = activeBookings.get(session.id);
+              const activeWaitlist = activeWaitlists.get(session.id);
               const reschedulableBookings = activeBookingList.filter((booking) =>
                 booking.classSession.lessonUnitId === session.lessonUnit.id
                 && booking.classSession.id !== session.id);
@@ -341,6 +422,21 @@ export function StudentDiscoveryPanel({
                   </section>
                   {activeBooking ? (
                     <p><FormattedMessage id="booking.active" /></p>
+                  ) : activeWaitlist ? (
+                    <div>
+                      <p><FormattedMessage id="waitlist.active" /></p>
+                      <button
+                        type="button"
+                        disabled={waitlistBusy}
+                        aria-label={intl.formatMessage(
+                          { id: "waitlist.withdrawFor" },
+                          { startsAt: new Date(session.startsAt) },
+                        )}
+                        onClick={() => void withdraw(activeWaitlist.id)}
+                      >
+                        <FormattedMessage id={withdrawWaitlistMutation.loading ? "waitlist.withdrawing" : "waitlist.withdrawAction"} />
+                      </button>
+                    </div>
                   ) : reschedulableBookings.length > 0 && displayedOccupiedSeats < session.seatCapacity ? (
                     <div>{reschedulableBookings.map((booking) => (
                       <button
@@ -363,7 +459,15 @@ export function StudentDiscoveryPanel({
                     <button type="button" disabled={bookingBusy || bookings.loading || Boolean(bookings.error)} onClick={() => void book(session.id)}>
                       <FormattedMessage id={bookingMutation.loading ? "booking.booking" : "booking.bookAction"} />
                     </button>
-                  ) : null}
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={waitlistBusy || waitlistEntries.loading || Boolean(waitlistEntries.error)}
+                      onClick={() => void join(session.id)}
+                    >
+                      <FormattedMessage id={joinWaitlistMutation.loading ? "waitlist.joining" : "waitlist.joinAction"} />
+                    </button>
+                  )}
                 </article>
               </li>
               );

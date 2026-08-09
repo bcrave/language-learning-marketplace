@@ -133,6 +133,14 @@ const rescheduleBookingInputSchema = z.object({
   bookingId: z.uuid(),
   replacementClassSessionId: z.uuid(),
 });
+const joinWaitlistInputSchema = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  classSessionId: z.uuid(),
+});
+const withdrawWaitlistInputSchema = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  waitlistEntryId: z.uuid(),
+});
 
 function graphQLInterfaceLocale(locale: "en" | "es" | null) {
   if (locale === null) return null;
@@ -495,26 +503,36 @@ export function createApi(options: {
         },
         joinWaitlist: async (_parent, { input }, context) => {
           const student = await authenticateStudent(context, "waitlist-entry.created", "WaitlistEntry");
+          const validatedInput = joinWaitlistInputSchema.safeParse(input);
+          if (!validatedInput.success) {
+            await recordStudentMutationAudit(context.db, student.id, "waitlist-entry.created", "WaitlistEntry", context.correlationId, "DENIED", "INVALID_JOIN_WAITLIST_INPUT");
+            throw createGraphQLError("Provide a valid Class Session identifier", { extensions: { code: "BAD_USER_INPUT" } });
+          }
           return graphQLResult(await idempotentStudentMutation(
             context,
             student,
             "waitlist-entry.created",
-            input.idempotencyKey,
-            input,
-            (transaction) => joinWaitlist(transaction, student, input, context.correlationId, options.now?.() ?? new Date()),
+            validatedInput.data.idempotencyKey,
+            validatedInput.data,
+            (transaction) => joinWaitlist(transaction, student, validatedInput.data, context.correlationId, options.now?.() ?? new Date()),
             { __typename: "WaitlistError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
             "WaitlistEntry",
           ));
         },
         withdrawWaitlist: async (_parent, { input }, context) => {
           const student = await authenticateStudent(context, "waitlist-entry.withdrawn", "WaitlistEntry");
+          const validatedInput = withdrawWaitlistInputSchema.safeParse(input);
+          if (!validatedInput.success) {
+            await recordStudentMutationAudit(context.db, student.id, "waitlist-entry.withdrawn", "WaitlistEntry", context.correlationId, "DENIED", "INVALID_WITHDRAW_WAITLIST_INPUT");
+            throw createGraphQLError("Provide a valid Waitlist Entry identifier", { extensions: { code: "BAD_USER_INPUT" } });
+          }
           return graphQLResult(await idempotentStudentMutation(
             context,
             student,
             "waitlist-entry.withdrawn",
-            input.idempotencyKey,
-            input,
-            (transaction) => withdrawWaitlist(transaction, student, input, context.correlationId, options.now?.() ?? new Date()),
+            validatedInput.data.idempotencyKey,
+            validatedInput.data,
+            (transaction) => withdrawWaitlist(transaction, student, validatedInput.data, context.correlationId, options.now?.() ?? new Date()),
             { __typename: "WaitlistError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
             "WaitlistEntry",
           ));
