@@ -38,7 +38,7 @@ export interface RoleWorkspacePlacesTable {
 export interface AuditEntriesTable {
   id: Generated<string>;
   actor_user_id: string | null;
-  system_identity: "CLASS_SESSION_REMINDER_WORKER" | null;
+  system_identity: "CLASS_SESSION_REMINDER_WORKER" | "WAITLIST_WORKER" | null;
   acting_role: UserRole | null;
   operation: string;
   target_type: string;
@@ -70,6 +70,8 @@ export interface TeacherQualificationsTable { id: Generated<string>; teacher_use
 export interface ClassSessionsTable { id: Generated<string>; lesson_unit_id: string; teacher_user_id: string; starts_at: Date; scheduling_time_zone: string; seat_capacity: Generated<number>; occupied_seats: Generated<number>; state: "PUBLISHED" | "CANCELLED" }
 export interface ScheduleCommitmentsTable { id: Generated<string>; user_id: string; class_session_id: string; commitment_role: "STUDENT" | "TEACHER"; starts_at: Date; ends_at: Date; active: Generated<boolean> }
 export interface BookingsTable { id: Generated<string>; student_user_id: string; class_session_id: string; teacher_user_id_at_booking: string; state: Generated<"ACTIVE" | "ENDED">; terminal_reason: "STUDENT_CANCELLATION" | "RESCHEDULED" | null; class_credit_refunded: Generated<boolean>; late_cancellation_refund_until: Date | null; rescheduled_from_booking_id: Generated<string | null>; booked_at: Generated<Date>; ended_at: Date | null }
+export type WaitlistTerminalReason = "WITHDRAWN" | "PROMOTED" | "EXPIRED" | "CLASS_SESSION_UNAVAILABLE" | "INSUFFICIENT_CLASS_CREDITS" | "SCHEDULE_CONFLICT" | "ALREADY_BOOKED";
+export interface WaitlistEntriesTable { id: Generated<string>; student_user_id: string; class_session_id: string; state: "ACTIVE" | "WITHDRAWN" | "PROMOTED" | "EXPIRED" | "INELIGIBLE"; terminal_reason: WaitlistTerminalReason | null; joined_at: Date; expires_at: Date; completed_at: Date | null; promoted_booking_id: string | null }
 export interface ClassSessionRemindersTable { id: Generated<string>; class_session_id: string; recipient_user_id: string; commitment_role: "STUDENT" | "TEACHER"; due_at: Date; terminal_outcome: "DELIVERED" | "SUPPRESSED" | null; completed_at: Date | null }
 export interface InAppNotificationsTable { id: Generated<string>; recipient_user_id: string; message_id: string; variables: JSONColumnType<Record<string, unknown>>; source_reference: Generated<string | null>; created_at: Generated<Date> }
 export interface EmailNotificationIntentsTable { id: Generated<string>; recipient_user_id: string; message_id: string; locale: "en" | "es"; variables: JSONColumnType<Record<string, unknown>>; rendered_content: string; source_reference: Generated<string | null>; created_at: Generated<Date> }
@@ -101,6 +103,7 @@ export interface DatabaseSchema {
   class_sessions: ClassSessionsTable;
   schedule_commitments: ScheduleCommitmentsTable;
   bookings: BookingsTable;
+  waitlist_entries: WaitlistEntriesTable;
   class_session_reminders: ClassSessionRemindersTable;
   in_app_notifications: InAppNotificationsTable;
   email_notification_intents: EmailNotificationIntentsTable;

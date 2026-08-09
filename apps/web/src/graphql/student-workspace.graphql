@@ -126,3 +126,35 @@ mutation RescheduleBooking($input: RescheduleBookingInput!) {
     ... on BookingError { code message }
   }
 }
+
+fragment WaitlistEntryFields on WaitlistEntry {
+  id
+  state
+  terminalReason
+  joinedAt
+  expiresAt
+  completedAt
+  classSession { id startsAt endsAt occupiedSeats seatCapacity }
+  resultingBooking { ...BookingFields }
+}
+
+query StudentWaitlistEntries {
+  studentWaitlistEntries { ...WaitlistEntryFields }
+}
+
+mutation JoinWaitlist($input: JoinWaitlistInput!) {
+  joinWaitlist(input: $input) {
+    __typename
+    ... on JoinWaitlistSuccess { entry { ...WaitlistEntryFields } }
+    ... on WaitlistError { code message }
+  }
+}
+
+mutation WithdrawWaitlist($input: WithdrawWaitlistInput!) {
+  withdrawWaitlist(input: $input) {
+    __typename
+    ... on WithdrawWaitlistSuccess { entry { ...WaitlistEntryFields } }
+    ... on WaitlistPromotionWon { booking { ...BookingFields } }
+    ... on WaitlistError { code message }
+  }
+}

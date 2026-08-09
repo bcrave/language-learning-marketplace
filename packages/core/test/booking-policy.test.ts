@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import {
   bookingWindowIsOpen,
   studentCancellationCreditOutcome,
+  waitlistExpiresAt,
+  waitlistIsOpen,
 } from "../src/index.js";
 
 describe("Booking timing policy", () => {
@@ -15,6 +17,9 @@ describe("Booking timing policy", () => {
     expect(studentCancellationCreditOutcome(new Date("2026-08-09T12:00:00.000Z"), startsAt)).toBe("REFUND");
     expect(studentCancellationCreditOutcome(new Date("2026-08-09T12:00:00.001Z"), startsAt)).toBe("FORFEIT");
     expect(studentCancellationCreditOutcome(startsAt, startsAt)).toBe("CLOSED");
+    expect(waitlistExpiresAt(startsAt)).toEqual(new Date("2026-08-10T10:00:00.000Z"));
+    expect(waitlistIsOpen(new Date("2026-08-10T09:59:59.999Z"), startsAt)).toBe(true);
+    expect(waitlistIsOpen(new Date("2026-08-10T10:00:00.000Z"), startsAt)).toBe(false);
   });
 
   it("classifies generated instants without gaps around the accepted thresholds", () => {
@@ -30,6 +35,7 @@ describe("Booking timing policy", () => {
               ? "REFUND"
               : "FORFEIT",
         );
+        expect(waitlistIsOpen(now, startsAt)).toBe(offsetFromStart < -2 * 60 * 60_000);
       },
     ));
   });

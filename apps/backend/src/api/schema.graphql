@@ -71,6 +71,18 @@ type BookingError { code: BookingErrorCode!, message: String! }
 union BookClassSessionResult = BookClassSessionSuccess | BookingError
 union CancelBookingResult = CancelBookingSuccess | BookingError
 union RescheduleBookingResult = RescheduleBookingSuccess | BookingError
+enum WaitlistEntryState { ACTIVE WITHDRAWN PROMOTED EXPIRED INELIGIBLE }
+enum WaitlistTerminalReason { WITHDRAWN PROMOTED EXPIRED CLASS_SESSION_UNAVAILABLE INSUFFICIENT_CLASS_CREDITS SCHEDULE_CONFLICT ALREADY_BOOKED }
+type WaitlistEntry { id: ID!, state: WaitlistEntryState!, terminalReason: WaitlistTerminalReason, joinedAt: String!, expiresAt: String!, completedAt: String, classSession: ClassSession!, resultingBooking: Booking }
+input JoinWaitlistInput { idempotencyKey: ID!, classSessionId: ID! }
+input WithdrawWaitlistInput { idempotencyKey: ID!, waitlistEntryId: ID! }
+type JoinWaitlistSuccess { entry: WaitlistEntry! }
+type WithdrawWaitlistSuccess { entry: WaitlistEntry! }
+type WaitlistPromotionWon { booking: Booking! }
+enum WaitlistErrorCode { CLASS_SESSION_NOT_FOUND WAITLIST_NOT_OPEN SESSION_NOT_FULL INSUFFICIENT_CLASS_CREDITS SCHEDULE_CONFLICT ALREADY_BOOKED ALREADY_WAITLISTED WAITLIST_ENTRY_NOT_FOUND WAITLIST_ENTRY_NOT_ACTIVE IDEMPOTENCY_KEY_REUSED }
+type WaitlistError { code: WaitlistErrorCode!, message: String! }
+union JoinWaitlistResult = JoinWaitlistSuccess | WaitlistError
+union WithdrawWaitlistResult = WithdrawWaitlistSuccess | WaitlistPromotionWon | WaitlistError
 input PublishClassSessionInput { idempotencyKey: ID!, lessonUnitId: ID!, teacherUserId: ID!, startsAtLocal: String!, schedulingTimeZone: String!, timeDisambiguation: LocalTimeDisambiguation!, seatCapacity: Int = 5 }
 type PublishClassSessionSuccess { classSession: ClassSession! }
 enum ClassSessionPublicationErrorCode { INVALID_SEAT_CAPACITY INVALID_SCHEDULING_TIME_ZONE LOCAL_TIME_FOLD LOCAL_TIME_GAP INVALID_LOCAL_DATE_TIME INVALID_LESSON_UNIT TEACHER_QUALIFICATION_REQUIRED TEACHER_AVAILABILITY_REQUIRED AVAILABILITY_EXCEPTION_CONFLICT TEACHER_SCHEDULE_CONFLICT }
@@ -241,6 +253,7 @@ type Query {
   discoverClassSessions(input: ClassSessionDiscoveryInput!): ClassSessionDiscoveryConnection!
   studentClassCredits: ClassCreditAccount!
   studentBookings: [Booking!]!
+  studentWaitlistEntries: [WaitlistEntry!]!
   administrationClassCredits(studentUserId: ID!): ClassCreditAccount
   administrationClassSessions: [ClassSession!]!
   teacherAvailability: TeacherAvailability!
@@ -260,6 +273,8 @@ type Mutation {
   bookClassSession(input: BookClassSessionInput!): BookClassSessionResult!
   cancelBooking(input: CancelBookingInput!): CancelBookingResult!
   rescheduleBooking(input: RescheduleBookingInput!): RescheduleBookingResult!
+  joinWaitlist(input: JoinWaitlistInput!): JoinWaitlistResult!
+  withdrawWaitlist(input: WithdrawWaitlistInput!): WithdrawWaitlistResult!
   publishClassSession(input: PublishClassSessionInput!): PublishClassSessionResult!
   changeClassSessionSeatCapacity(input: ChangeClassSessionSeatCapacityInput!): ChangeClassSessionSeatCapacityResult!
   saveTeacherAvailabilityRange(input: SaveTeacherAvailabilityRangeInput!): SaveTeacherAvailabilityRangeResult!

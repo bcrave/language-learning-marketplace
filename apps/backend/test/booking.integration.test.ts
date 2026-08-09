@@ -6,12 +6,14 @@ import {
   type StartedPostgreSqlContainer,
 } from "@marketplace/test-support";
 import fc from "fast-check";
+import { sql } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createApi } from "../src/api/app.js";
 import { deliverDueClassSessionReminders } from "../src/class-session/class-session-reminder-worker.js";
 import { createDatabase, type Database } from "../src/database/database.js";
 import { migrateDatabase } from "../src/database/migrate.js";
+import { processWaitlistEntries } from "../src/waitlist/waitlist-worker.js";
 
 describe("Student Booking GraphQL API", () => {
   let api: ReturnType<typeof createApi>;
@@ -821,6 +823,408 @@ describe("Student Booking GraphQL API", () => {
     })).rejects.toThrow("occupied seats must equal active Booking history");
   });
 
+  it("joins a full Class Session Waitlist without reserving a seat or Class Credit", async () => {
+    const waitlistedStudent = await createStudentWithCredits(1);
+    const fillers = await Promise.all([
+      createStudentWithCredits(1),
+      createStudentWithCredits(1),
+    ]);
+    const sessionId = await insertClassSession("2026-08-20T14:00:00.000Z");
+    await Promise.all(fillers.map((filler) => bookAs(filler.subject, sessionId)));
+    const correlationId = `waitlist-joined-${randomUUID()}`;
+
+    const result = await graphqlAs(waitlistedStudent.subject, `
+      mutation JoinWaitlist($input: JoinWaitlistInput!) {
+        joinWaitlist(input: $input) {
+          ... on JoinWaitlistSuccess {
+            entry { id state joinedAt expiresAt classSession { id occupiedSeats seatCapacity } }
+          }
+          ... on WaitlistError { code }
+        }
+      }
+    `, { input: { idempotencyKey: randomUUID(), classSessionId: sessionId } }, correlationId);
+
+    expect(result).toEqual({ data: { joinWaitlist: { entry: {
+      id: expect.any(String),
+      state: "ACTIVE",
+      joinedAt: expect.any(String),
+      expiresAt: "2026-08-20T12:00:00.000Z",
+      classSession: { id: sessionId, occupiedSeats: 2, seatCapacity: 2 },
+    } } } });
+    expect(await db.selectFrom("class_credit_accounts").select("available_balance")
+      .where("student_user_id", "=", waitlistedStudent.id).executeTakeFirstOrThrow())
+      .toEqual({ available_balance: 1 });
+    expect(await db.selectFrom("bookings").select("id")
+      .where("student_user_id", "=", waitlistedStudent.id).execute()).toEqual([]);
+    expect(await db.selectFrom("audit_entries").select(["operation", "outcome", "reason_code"])
+      .where("correlation_id", "=", correlationId).executeTakeFirstOrThrow()).toEqual({
+      operation: "waitlist-entry.created",
+      outcome: "SUCCEEDED",
+      reason_code: "WAITLIST_ENTRY_CREATED",
+    });
+    expect(await db.selectFrom("in_app_notifications").select("message_id")
+      .where("recipient_user_id", "=", waitlistedStudent.id)
+      .where("message_id", "=", "waitlist-entry.created.student").execute()).toHaveLength(1);
+    expect(await db.selectFrom("email_notification_intents").select("id")
+      .where("recipient_user_id", "=", waitlistedStudent.id)
+      .where("message_id", "=", "waitlist-entry.created.student").execute()).toEqual([]);
+  });
+
+  it("withdraws an active Waitlist Entry without changing Class Credits", async () => {
+    const waitlistedStudent = await createStudentWithCredits(1);
+    const fillers = await Promise.all([createStudentWithCredits(1), createStudentWithCredits(1)]);
+    const sessionId = await insertClassSession("2026-08-21T14:00:00.000Z");
+    await Promise.all(fillers.map((filler) => bookAs(filler.subject, sessionId)));
+    const joined = await joinWaitlistAs(waitlistedStudent.subject, sessionId) as {
+      data: { joinWaitlist: { entry: { id: string } } };
+    };
+    const entryId = joined.data.joinWaitlist.entry.id;
+    const correlationId = `waitlist-withdrawn-${randomUUID()}`;
+
+    const result = await graphqlAs(waitlistedStudent.subject, `
+      mutation WithdrawWaitlist($input: WithdrawWaitlistInput!) {
+        withdrawWaitlist(input: $input) {
+          ... on WithdrawWaitlistSuccess {
+            entry { id state terminalReason completedAt resultingBooking { id } }
+          }
+          ... on WaitlistPromotionWon { booking { id } }
+          ... on WaitlistError { code }
+        }
+      }
+    `, { input: { idempotencyKey: randomUUID(), waitlistEntryId: entryId } }, correlationId);
+
+    expect(result).toEqual({ data: { withdrawWaitlist: { entry: {
+      id: entryId,
+      state: "WITHDRAWN",
+      terminalReason: "WITHDRAWN",
+      completedAt: now.toISOString(),
+      resultingBooking: null,
+    } } } });
+    expect(await db.selectFrom("class_credit_accounts").select("available_balance")
+      .where("student_user_id", "=", waitlistedStudent.id).executeTakeFirstOrThrow())
+      .toEqual({ available_balance: 1 });
+    expect(await db.selectFrom("audit_entries").select(["operation", "outcome", "reason_code"])
+      .where("correlation_id", "=", correlationId).executeTakeFirstOrThrow()).toEqual({
+      operation: "waitlist-entry.withdrawn",
+      outcome: "SUCCEEDED",
+      reason_code: "WAITLIST_ENTRY_WITHDRAWN",
+    });
+    expect(await db.selectFrom("in_app_notifications").select("message_id")
+      .where("source_reference", "=", `waitlist-entry.withdrawn:${entryId}`).execute())
+      .toEqual([{ message_id: "waitlist-entry.withdrawn.student" }]);
+  });
+
+  it("promotes Waitlist Entries by join time and stable identity with a 30-minute refund window", async () => {
+    const filler = await createStudentWithCredits(1);
+    const contenders = await Promise.all([createStudentWithCredits(1), createStudentWithCredits(1)]);
+    await db.updateTable("users").set({ interface_locale: "es" })
+      .where("id", "in", contenders.map(({ id }) => id)).execute();
+    const sessionId = await insertClassSession("2026-08-22T14:00:00.000Z", teacherId, { seatCapacity: 2 });
+    const secondFiller = await createStudentWithCredits(1);
+    const fillerBookings = await Promise.all([
+      bookAs(filler.subject, sessionId),
+      bookAs(secondFiller.subject, sessionId),
+    ]) as BookingMutationResponse[];
+    const joined = await Promise.all(contenders.map((contender) =>
+      joinWaitlistAs(contender.subject, sessionId))) as Array<{
+      data: { joinWaitlist: { entry: { id: string } } };
+    }>;
+    const expectedPromotedIndex = joined[0]!.data.joinWaitlist.entry.id
+      < joined[1]!.data.joinWaitlist.entry.id ? 0 : 1;
+
+    await cancelAs(filler.subject, fillerBookings[0]!.data.bookClassSession.booking.id);
+    expect(await processWaitlistEntries(db, now, "waitlist-promotion-test")).toBe(1);
+
+    const entries = await db.selectFrom("waitlist_entries")
+      .select(["student_user_id", "state", "promoted_booking_id"])
+      .where("class_session_id", "=", sessionId).execute();
+    expect(entries.find(({ student_user_id }) => student_user_id === contenders[expectedPromotedIndex]!.id))
+      .toMatchObject({ state: "PROMOTED", promoted_booking_id: expect.any(String) });
+    expect(entries.find(({ student_user_id }) => student_user_id === contenders[1 - expectedPromotedIndex]!.id))
+      .toMatchObject({ state: "ACTIVE", promoted_booking_id: null });
+    expect(await db.selectFrom("bookings").select(["student_user_id", "late_cancellation_refund_until"])
+      .where("class_session_id", "=", sessionId).where("state", "=", "ACTIVE")
+      .where("student_user_id", "in", contenders.map(({ id }) => id)).execute()).toEqual([{
+      student_user_id: contenders[expectedPromotedIndex]!.id,
+      late_cancellation_refund_until: new Date("2026-08-10T12:30:00.000Z"),
+    }]);
+    expect(await db.selectFrom("class_credit_accounts").select(["student_user_id", "available_balance"])
+      .where("student_user_id", "in", contenders.map(({ id }) => id)).execute())
+      .toEqual(expect.arrayContaining([
+        { student_user_id: contenders[expectedPromotedIndex]!.id, available_balance: 0 },
+        { student_user_id: contenders[1 - expectedPromotedIndex]!.id, available_balance: 1 },
+      ]));
+    expect(await db.selectFrom("email_notification_intents").select(["message_id", "rendered_content"])
+      .where("recipient_user_id", "=", contenders[expectedPromotedIndex]!.id)
+      .where("message_id", "=", "waitlist-entry.promoted.student").execute())
+      .toEqual([{
+        message_id: "waitlist-entry.promoted.student",
+        rendered_content: expect.stringContaining("lista de espera"),
+      }]);
+    expect(await db.selectFrom("audit_entries").select(["system_identity", "outcome", "reason_code"])
+      .where("correlation_id", "=", "waitlist-promotion-test").executeTakeFirstOrThrow()).toEqual({
+      system_identity: "WAITLIST_WORKER",
+      outcome: "SUCCEEDED",
+      reason_code: "WAITLIST_ENTRY_PROMOTED",
+    });
+  });
+
+  it("returns only the Student's Waitlist Entries and audits a denied sensitive read", async () => {
+    const firstStudent = await createStudentWithCredits(1);
+    const secondStudent = await createStudentWithCredits(1);
+    const fillers = await Promise.all([createStudentWithCredits(1), createStudentWithCredits(1)]);
+    const sessionId = await insertClassSession("2026-08-23T14:00:00.000Z");
+    await Promise.all(fillers.map((filler) => bookAs(filler.subject, sessionId)));
+    const firstEntry = await joinWaitlistAs(firstStudent.subject, sessionId) as {
+      data: { joinWaitlist: { entry: { id: string } } };
+    };
+    await joinWaitlistAs(secondStudent.subject, sessionId);
+
+    expect(await graphqlAs(firstStudent.subject, `
+      query { studentWaitlistEntries { id state classSession { id } } }
+    `)).toEqual({ data: { studentWaitlistEntries: [{
+      id: firstEntry.data.joinWaitlist.entry.id,
+      state: "ACTIVE",
+      classSession: { id: sessionId },
+    }] } });
+
+    const teacher = await createTeacher();
+    const correlationId = `waitlist-read-denied-${randomUUID()}`;
+    const denied = await graphqlAs(teacher.subject, `
+      query { studentWaitlistEntries { id } }
+    `, undefined, correlationId) as { data: null; errors: Array<{ extensions: { code: string } }> };
+    expect(denied.data).toBeNull();
+    expect(denied.errors[0]?.extensions.code).toBe("FORBIDDEN");
+    expect(await db.selectFrom("audit_entries").select(["operation", "target_type", "outcome", "reason_code"])
+      .where("correlation_id", "=", correlationId).executeTakeFirstOrThrow()).toEqual({
+      operation: "waitlist-entry.read",
+      target_type: "WaitlistEntry",
+      outcome: "DENIED",
+      reason_code: "STUDENT_ROLE_REQUIRED",
+    });
+  });
+
+  it("expires an active Waitlist Entry exactly two hours before the Class Session", async () => {
+    const waitlistedStudent = await createStudentWithCredits(1);
+    const fillers = await Promise.all([createStudentWithCredits(1), createStudentWithCredits(1)]);
+    const expiryTeacher = await createTeacher();
+    const sessionId = await insertClassSession("2026-08-12T14:00:00.000Z", expiryTeacher.id);
+    await Promise.all(fillers.map((filler) => bookAs(filler.subject, sessionId)));
+    const joined = await joinWaitlistAs(waitlistedStudent.subject, sessionId) as {
+      data: { joinWaitlist: { entry: { id: string } } };
+    };
+
+    await processWaitlistEntries(
+      db,
+      new Date("2026-08-12T12:00:00.000Z"),
+      "waitlist-expiry-test",
+    );
+
+    expect(await db.selectFrom("waitlist_entries").select(["state", "terminal_reason", "completed_at"])
+      .where("id", "=", joined.data.joinWaitlist.entry.id).executeTakeFirstOrThrow()).toEqual({
+      state: "EXPIRED",
+      terminal_reason: "EXPIRED",
+      completed_at: new Date("2026-08-12T12:00:00.000Z"),
+    });
+    expect(await db.selectFrom("email_notification_intents").select(["message_id", "rendered_content"])
+      .where("recipient_user_id", "=", waitlistedStudent.id)
+      .where("message_id", "=", "waitlist-entry.expired.student").execute())
+      .toEqual([{ message_id: "waitlist-entry.expired.student", rendered_content: expect.stringContaining(sessionId) }]);
+    expect(await db.selectFrom("class_credit_accounts").select("available_balance")
+      .where("student_user_id", "=", waitlistedStudent.id).executeTakeFirstOrThrow())
+      .toEqual({ available_balance: 1 });
+  });
+
+  it("closes a newly ineligible entry and continues promotion with the next eligible Student", async () => {
+    const fillers = await Promise.all([createStudentWithCredits(1), createStudentWithCredits(1)]);
+    const contenders = await Promise.all([createStudentWithCredits(1), createStudentWithCredits(1)]);
+    const promotionTeacher = await createTeacher();
+    const sessionId = await insertClassSession("2026-08-24T14:00:00.000Z", promotionTeacher.id);
+    const fillerBookings = await Promise.all(fillers.map((filler) =>
+      bookAs(filler.subject, sessionId))) as BookingMutationResponse[];
+    const joined = await Promise.all(contenders.map((contender) =>
+      joinWaitlistAs(contender.subject, sessionId))) as Array<{
+      data: { joinWaitlist: { entry: { id: string } } };
+    }>;
+    const firstIndex = joined[0]!.data.joinWaitlist.entry.id < joined[1]!.data.joinWaitlist.entry.id ? 0 : 1;
+    await db.updateTable("class_credit_accounts").set({ available_balance: 0 })
+      .where("student_user_id", "=", contenders[firstIndex]!.id).executeTakeFirstOrThrow();
+    await cancelAs(fillers[0]!.subject, fillerBookings[0]!.data.bookClassSession.booking.id);
+
+    await processWaitlistEntries(db, now, "waitlist-ineligibility-test");
+
+    expect(await db.selectFrom("waitlist_entries").select(["student_user_id", "state", "terminal_reason"])
+      .where("class_session_id", "=", sessionId).execute()).toEqual(expect.arrayContaining([
+      {
+        student_user_id: contenders[firstIndex]!.id,
+        state: "INELIGIBLE",
+        terminal_reason: "INSUFFICIENT_CLASS_CREDITS",
+      },
+      {
+        student_user_id: contenders[1 - firstIndex]!.id,
+        state: "PROMOTED",
+        terminal_reason: "PROMOTED",
+      },
+    ]));
+    expect(await db.selectFrom("email_notification_intents").select(["recipient_user_id", "message_id"])
+      .where("recipient_user_id", "in", contenders.map(({ id }) => id))
+      .where("message_id", "in", ["waitlist-entry.ineligible.student", "waitlist-entry.promoted.student"])
+      .execute()).toEqual(expect.arrayContaining([
+      { recipient_user_id: contenders[firstIndex]!.id, message_id: "waitlist-entry.ineligible.student" },
+      { recipient_user_id: contenders[1 - firstIndex]!.id, message_id: "waitlist-entry.promoted.student" },
+    ]));
+  });
+
+  it("serializes Waitlist Withdrawal and promotion into one valid terminal result", async () => {
+    const waitlistedStudent = await createStudentWithCredits(1);
+    const fillers = await Promise.all([createStudentWithCredits(1), createStudentWithCredits(1)]);
+    const raceTeacher = await createTeacher();
+    const sessionId = await insertClassSession("2026-08-25T14:00:00.000Z", raceTeacher.id);
+    const fillerBookings = await Promise.all(fillers.map((filler) =>
+      bookAs(filler.subject, sessionId))) as BookingMutationResponse[];
+    const joined = await joinWaitlistAs(waitlistedStudent.subject, sessionId) as {
+      data: { joinWaitlist: { entry: { id: string } } };
+    };
+    const entryId = joined.data.joinWaitlist.entry.id;
+    await cancelAs(fillers[0]!.subject, fillerBookings[0]!.data.bookClassSession.booking.id);
+
+    const [, withdrawal] = await Promise.all([
+      processWaitlistEntries(db, now, "waitlist-race-worker"),
+      withdrawWaitlistAs(waitlistedStudent.subject, entryId),
+    ]) as [number, {
+      data: { withdrawWaitlist: { entry?: { state: string }; booking?: { id: string } } };
+    }];
+
+    const entry = await db.selectFrom("waitlist_entries").select(["state", "terminal_reason", "promoted_booking_id"])
+      .where("id", "=", entryId).executeTakeFirstOrThrow();
+    expect(["WITHDRAWN", "PROMOTED"]).toContain(entry.state);
+    if (entry.state === "WITHDRAWN") {
+      expect(entry).toEqual({ state: "WITHDRAWN", terminal_reason: "WITHDRAWN", promoted_booking_id: null });
+      expect(withdrawal.data.withdrawWaitlist.entry).toEqual({ state: "WITHDRAWN" });
+    } else {
+      expect(entry).toMatchObject({ state: "PROMOTED", terminal_reason: "PROMOTED", promoted_booking_id: expect.any(String) });
+      expect(withdrawal.data.withdrawWaitlist.booking).toEqual({ id: entry.promoted_booking_id });
+    }
+    expect(await db.selectFrom("bookings").select("id")
+      .where("student_user_id", "=", waitlistedStudent.id)
+      .where("class_session_id", "=", sessionId).execute())
+      .toHaveLength(entry.state === "PROMOTED" ? 1 : 0);
+  });
+
+  it("preserves queue position after a temporary promotion failure and succeeds on retry", async () => {
+    const waitlistedStudent = await createStudentWithCredits(1);
+    const fillers = await Promise.all([createStudentWithCredits(1), createStudentWithCredits(1)]);
+    const retryTeacher = await createTeacher();
+    const sessionId = await insertClassSession("2026-08-26T14:00:00.000Z", retryTeacher.id);
+    const fillerBookings = await Promise.all(fillers.map((filler) =>
+      bookAs(filler.subject, sessionId))) as BookingMutationResponse[];
+    const joined = await joinWaitlistAs(waitlistedStudent.subject, sessionId) as {
+      data: { joinWaitlist: { entry: { id: string } } };
+    };
+    const entryId = joined.data.joinWaitlist.entry.id;
+    await cancelAs(fillers[0]!.subject, fillerBookings[0]!.data.bookClassSession.booking.id);
+    await sql.raw(`
+      create function fail_waitlist_promotion_test() returns trigger language plpgsql as $$
+      begin raise exception 'temporary promotion failure'; end; $$;
+      create trigger fail_waitlist_promotion_test
+      before insert on bookings for each row
+      when (new.student_user_id = '${waitlistedStudent.id}'::uuid)
+      execute function fail_waitlist_promotion_test();
+    `).execute(db);
+
+    try {
+      await expect(processWaitlistEntries(db, now, "waitlist-retry-failed"))
+        .rejects.toThrow("temporary promotion failure");
+      expect(await db.selectFrom("waitlist_entries").select(["state", "terminal_reason"])
+        .where("id", "=", entryId).executeTakeFirstOrThrow()).toEqual({
+        state: "ACTIVE",
+        terminal_reason: null,
+      });
+      expect(await db.selectFrom("audit_entries").select(["outcome", "reason_code"])
+        .where("correlation_id", "=", "waitlist-retry-failed").executeTakeFirstOrThrow()).toEqual({
+        outcome: "FAILED",
+        reason_code: "WAITLIST_PROCESSING_FAILED",
+      });
+    } finally {
+      await sql.raw(`
+        drop trigger fail_waitlist_promotion_test on bookings;
+        drop function fail_waitlist_promotion_test();
+      `).execute(db);
+    }
+
+    await processWaitlistEntries(db, now, "waitlist-retry-succeeded");
+    expect(await db.selectFrom("waitlist_entries").select(["state", "terminal_reason"])
+      .where("id", "=", entryId).executeTakeFirstOrThrow()).toEqual({
+      state: "PROMOTED",
+      terminal_reason: "PROMOTED",
+    });
+  });
+
+  it("enforces every Waitlist join eligibility rule and audits denied authorization", async () => {
+    const fillers = await Promise.all([createStudentWithCredits(1), createStudentWithCredits(1)]);
+    const eligibilityTeacher = await createTeacher();
+    const sessionId = await insertClassSession("2026-08-27T14:00:00.000Z", eligibilityTeacher.id);
+    await Promise.all(fillers.map((filler) => bookAs(filler.subject, sessionId)));
+
+    const noCreditStudent = await createStudentWithCredits(0);
+    expect(await joinWaitlistAs(noCreditStudent.subject, sessionId)).toEqual({
+      data: { joinWaitlist: { code: "INSUFFICIENT_CLASS_CREDITS" } },
+    });
+
+    const conflictingStudent = await createStudentWithCredits(1, true);
+    await insertClassSession("2026-08-27T14:30:00.000Z", conflictingStudent.id);
+    expect(await joinWaitlistAs(conflictingStudent.subject, sessionId)).toEqual({
+      data: { joinWaitlist: { code: "SCHEDULE_CONFLICT" } },
+    });
+
+    expect(await joinWaitlistAs(fillers[0]!.subject, sessionId)).toEqual({
+      data: { joinWaitlist: { code: "ALREADY_BOOKED" } },
+    });
+
+    const duplicateStudent = await createStudentWithCredits(1);
+    await joinWaitlistAs(duplicateStudent.subject, sessionId);
+    expect(await joinWaitlistAs(duplicateStudent.subject, sessionId)).toEqual({
+      data: { joinWaitlist: { code: "ALREADY_WAITLISTED" } },
+    });
+
+    const openSessionTeacher = await createTeacher();
+    const openSessionId = await insertClassSession("2026-08-28T14:00:00.000Z", openSessionTeacher.id);
+    expect(await joinWaitlistAs(duplicateStudent.subject, openSessionId)).toEqual({
+      data: { joinWaitlist: { code: "SESSION_NOT_FULL" } },
+    });
+
+    const cutoffTeacher = await createTeacher();
+    const cutoffSessionId = await insertClassSession("2026-08-10T14:00:00.000Z", cutoffTeacher.id);
+    const cutoffFillers = await Promise.all([createStudentWithCredits(1), createStudentWithCredits(1)]);
+    await Promise.all(cutoffFillers.map((filler) => bookAs(filler.subject, cutoffSessionId)));
+    expect(await joinWaitlistAs(duplicateStudent.subject, cutoffSessionId)).toEqual({
+      data: { joinWaitlist: { code: "WAITLIST_NOT_OPEN" } },
+    });
+
+    const teacherOnly = await createTeacher();
+    const correlationId = `waitlist-join-denied-${randomUUID()}`;
+    const denied = await graphqlAs(teacherOnly.subject, `
+      mutation JoinWaitlist($input: JoinWaitlistInput!) {
+        joinWaitlist(input: $input) {
+          ... on JoinWaitlistSuccess { entry { id } }
+          ... on WaitlistError { code }
+        }
+      }
+    `, { input: { idempotencyKey: randomUUID(), classSessionId: sessionId } }, correlationId) as {
+      data: null;
+      errors: Array<{ extensions: { code: string } }>;
+    };
+    expect(denied.data).toBeNull();
+    expect(denied.errors[0]?.extensions.code).toBe("FORBIDDEN");
+    expect(await db.selectFrom("audit_entries").select(["operation", "target_type", "outcome", "reason_code"])
+      .where("correlation_id", "=", correlationId).executeTakeFirstOrThrow()).toEqual({
+      operation: "waitlist-entry.created",
+      target_type: "WaitlistEntry",
+      outcome: "DENIED",
+      reason_code: "STUDENT_ROLE_REQUIRED",
+    });
+  });
+
   async function insertClassSession(
     startsAt: string,
     assignedTeacherId = teacherId,
@@ -854,6 +1258,29 @@ describe("Student Booking GraphQL API", () => {
         }
       }
     `, { input: { idempotencyKey, classSessionId: sessionId } });
+  }
+
+  async function joinWaitlistAs(subject: string, sessionId: string, idempotencyKey = randomUUID()) {
+    return graphqlAs(subject, `
+      mutation JoinWaitlist($input: JoinWaitlistInput!) {
+        joinWaitlist(input: $input) {
+          ... on JoinWaitlistSuccess { entry { id } }
+          ... on WaitlistError { code }
+        }
+      }
+    `, { input: { idempotencyKey, classSessionId: sessionId } });
+  }
+
+  async function withdrawWaitlistAs(subject: string, waitlistEntryId: string, idempotencyKey = randomUUID()) {
+    return graphqlAs(subject, `
+      mutation WithdrawWaitlist($input: WithdrawWaitlistInput!) {
+        withdrawWaitlist(input: $input) {
+          ... on WithdrawWaitlistSuccess { entry { state } }
+          ... on WaitlistPromotionWon { booking { id } }
+          ... on WaitlistError { code }
+        }
+      }
+    `, { input: { idempotencyKey, waitlistEntryId } });
   }
 
   async function cancelAs(subject: string, bookingId: string, idempotencyKey = randomUUID()) {

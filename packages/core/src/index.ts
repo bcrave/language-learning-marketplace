@@ -9,6 +9,7 @@ export type UserRole = (typeof USER_ROLES)[number];
 
 const BOOKING_DEADLINE_MILLISECONDS = 30 * 60_000;
 const REFUND_DEADLINE_MILLISECONDS = 24 * 60 * 60_000;
+const WAITLIST_DEADLINE_MILLISECONDS = 2 * 60 * 60_000;
 
 export function bookingWindowIsOpen(now: Date, startsAt: Date) {
   return startsAt.getTime() - now.getTime() >= BOOKING_DEADLINE_MILLISECONDS;
@@ -20,6 +21,14 @@ export function studentCancellationCreditOutcome(now: Date, startsAt: Date) {
   return timeUntilStart >= REFUND_DEADLINE_MILLISECONDS
     ? "REFUND" as const
     : "FORFEIT" as const;
+}
+
+export function waitlistExpiresAt(startsAt: Date) {
+  return new Date(startsAt.getTime() - WAITLIST_DEADLINE_MILLISECONDS);
+}
+
+export function waitlistIsOpen(now: Date, startsAt: Date) {
+  return now < waitlistExpiresAt(startsAt);
 }
 
 export const INTERFACE_LOCALES = ["en", "es"] as const;
@@ -232,6 +241,11 @@ export const interfaceMessages = {
     "booking.created.student": "Booking confirmed for Class Session {classSessionId} on {startsAt, date, long} at {startsAt, time, short}. One Class Credit was exchanged; {availableBalance, plural, one {# remains} other {# remain}}.",
     "booking.cancelled.student": "Booking cancelled for Class Session {classSessionId}. {classCreditRefunded, select, true {One Class Credit was returned.} other {The Class Credit was forfeited under the late-cancellation rule.}} Available balance: {availableBalance, number}.",
     "booking.rescheduled.student": "Booking moved from Class Session {originalClassSessionId} to Class Session {replacementClassSessionId} on {startsAt, date, long} at {startsAt, time, short}. The same Class Credit was retained.",
+    "waitlist-entry.created.student": "Waitlist joined for Class Session {classSessionId} until {expiresAt, date, long} at {expiresAt, time, short}. No seat or Class Credit is reserved; promotion may automatically exchange one Class Credit.",
+    "waitlist-entry.withdrawn.student": "Waitlist withdrawn for Class Session {classSessionId}. Automatic promotion stopped; no Booking was created and no Class Credit was exchanged.",
+    "waitlist-entry.promoted.student": "Waitlist promotion confirmed Booking {bookingId} for Class Session {classSessionId} on {startsAt, date, long} at {startsAt, time, short}. One Class Credit was exchanged. You may cancel for a refund until {refundUntil, time, short}.",
+    "waitlist-entry.ineligible.student": "Waitlist promotion ended for Class Session {classSessionId}: {reasonCode, select, INSUFFICIENT_CLASS_CREDITS {an available Class Credit is no longer available} SCHEDULE_CONFLICT {another commitment now overlaps this Class Session} ALREADY_BOOKED {an active Booking already exists} CLASS_SESSION_UNAVAILABLE {the Class Session is no longer available} other {eligibility changed}}. No Booking was created or Class Credit exchanged.",
+    "waitlist-entry.expired.student": "Waitlist Entry expired for Class Session {classSessionId}. No Booking was created or Class Credit exchanged.",
     "classSession.loading": "Loading Class Session administration…",
     "classSession.loadError": "We couldn't load Class Session administration. Try again.",
     "classSession.title": "Class Session administration",
@@ -553,6 +567,11 @@ export const interfaceMessages = {
     "booking.created.student": "Reserva confirmada para la sesión de clase {classSessionId} el {startsAt, date, long} a las {startsAt, time, short}. Se canjeó un crédito de clase; quedan {availableBalance, number}.",
     "booking.rescheduled.student": "Reserva trasladada de la sesión de clase {originalClassSessionId} a la sesión de clase {replacementClassSessionId} el {startsAt, date, long} a las {startsAt, time, short}. Se conservó el mismo crédito de clase.",
     "booking.cancelled.student": "Reserva cancelada para la sesión de clase {classSessionId}. {classCreditRefunded, select, true {Se devolvió un crédito de clase.} other {El crédito de clase se perdió según la regla de cancelación tardía.}} Saldo disponible: {availableBalance, number}.",
+    "waitlist-entry.created.student": "Te uniste a la lista de espera de la sesión de clase {classSessionId} hasta el {expiresAt, date, long} a las {expiresAt, time, short}. No se reserva ninguna plaza ni crédito de clase; la promoción puede canjear automáticamente un crédito de clase.",
+    "waitlist-entry.withdrawn.student": "Te retiraste de la lista de espera de la sesión de clase {classSessionId}. La promoción automática se detuvo; no se creó ninguna reserva ni se canjeó ningún crédito de clase.",
+    "waitlist-entry.promoted.student": "La lista de espera confirmó la reserva {bookingId} para la sesión de clase {classSessionId} el {startsAt, date, long} a las {startsAt, time, short}. Se canjeó un crédito de clase. Puedes cancelar con reembolso hasta las {refundUntil, time, short}.",
+    "waitlist-entry.ineligible.student": "La promoción de la lista de espera terminó para la sesión de clase {classSessionId}: {reasonCode, select, INSUFFICIENT_CLASS_CREDITS {ya no hay un crédito de clase disponible} SCHEDULE_CONFLICT {otro compromiso coincide ahora con esta sesión de clase} ALREADY_BOOKED {ya existe una reserva activa} CLASS_SESSION_UNAVAILABLE {la sesión de clase ya no está disponible} other {la elegibilidad cambió}}. No se creó ninguna reserva ni se canjeó ningún crédito de clase.",
+    "waitlist-entry.expired.student": "La entrada de la lista de espera para la sesión de clase {classSessionId} caducó. No se creó ninguna reserva ni se canjeó ningún crédito de clase.",
     "classSession.loading": "Cargando la administración de sesiones de clase…",
     "classSession.loadError": "No pudimos cargar la administración de sesiones de clase. Inténtalo de nuevo.",
     "classSession.title": "Administración de sesiones de clase",

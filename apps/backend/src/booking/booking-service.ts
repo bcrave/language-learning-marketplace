@@ -65,7 +65,7 @@ async function denyBooking(
   return bookingError(code, message);
 }
 
-async function projectBooking(db: Database, bookingId: string) {
+export async function projectBooking(db: Database, bookingId: string) {
   const row = await db.selectFrom("bookings")
     .innerJoin("class_sessions", "class_sessions.id", "bookings.class_session_id")
     .select([
@@ -140,12 +140,13 @@ async function notifyStudent(
   }).execute();
 }
 
-async function activateStudentBooking(
+export async function activateStudentBooking(
   transaction: Database,
   studentId: string,
   session: Selectable<ClassSessionsTable>,
   now: Date,
   rescheduledFromBookingId: string | null = null,
+  lateCancellationRefundUntil: Date | null = null,
 ) {
   const booking = await transaction.insertInto("bookings").values({
     student_user_id: studentId,
@@ -154,7 +155,7 @@ async function activateStudentBooking(
     state: "ACTIVE",
     terminal_reason: null,
     class_credit_refunded: false,
-    late_cancellation_refund_until: null,
+    late_cancellation_refund_until: lateCancellationRefundUntil,
     rescheduled_from_booking_id: rescheduledFromBookingId,
     ended_at: null,
   }).returning("id").executeTakeFirstOrThrow();

@@ -4,6 +4,7 @@ import { classSessionReminderTasks } from "../class-session/class-session-remind
 import { parseAppConfig } from "../config.js";
 import { createDatabase } from "../database/database.js";
 import { migrateDatabase } from "../database/migrate.js";
+import { waitlistTasks } from "../waitlist/waitlist-worker.js";
 
 const config = parseAppConfig(process.env);
 const db = createDatabase(config.DATABASE_URL);
@@ -14,8 +15,11 @@ const runner = await run({
   concurrency: 1,
   noHandleSignals: true,
   pollInterval: 10_000,
-  crontab: "* * * * * deliver_class_session_reminders",
-  taskList: classSessionReminderTasks(db),
+  crontab: "* * * * * deliver_class_session_reminders\n* * * * * process_waitlist_entries",
+  taskList: {
+    ...classSessionReminderTasks(db),
+    ...waitlistTasks(db),
+  },
 });
 
 console.log(JSON.stringify({ event: "worker.started" }));

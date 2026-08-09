@@ -62,6 +62,7 @@ import {
   subscriptionForStudent,
   undoSubscriptionCancellation,
 } from "../subscription/subscription-service.js";
+import { joinWaitlist, waitlistEntriesForStudent, withdrawWaitlist } from "../waitlist/waitlist-service.js";
 import {
   InterfaceLocale,
   type Resolvers,
@@ -188,7 +189,13 @@ export function createApi(options: {
       BookClassSessionResult: { __resolveType: (value) => value.__typename! },
       CancelBookingResult: { __resolveType: (value) => value.__typename! },
       RescheduleBookingResult: { __resolveType: (value) => value.__typename! },
+      JoinWaitlistResult: { __resolveType: (value) => value.__typename! },
+      WithdrawWaitlistResult: { __resolveType: (value) => value.__typename! },
       Query: {
+        studentWaitlistEntries: async (_parent, _arguments, context) => {
+          const student = await authenticateStudent(context, "waitlist-entry.read", "WaitlistEntry");
+          return graphQLResult(await waitlistEntriesForStudent(context.db, student.id));
+        },
         studentPlacements: async (_parent, _arguments, context) => {
           const student = await authenticateStudent(context, "student-placement.read", "StudentPlacement");
           return graphQLResult(await studentPlacements(context.db, student));
@@ -484,6 +491,32 @@ export function createApi(options: {
             (transaction) => rescheduleBooking(transaction, student, validatedInput.data, context.correlationId, options.now?.() ?? new Date()),
             { __typename: "BookingError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
             "Booking",
+          ));
+        },
+        joinWaitlist: async (_parent, { input }, context) => {
+          const student = await authenticateStudent(context, "waitlist-entry.created", "WaitlistEntry");
+          return graphQLResult(await idempotentStudentMutation(
+            context,
+            student,
+            "waitlist-entry.created",
+            input.idempotencyKey,
+            input,
+            (transaction) => joinWaitlist(transaction, student, input, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "WaitlistError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "WaitlistEntry",
+          ));
+        },
+        withdrawWaitlist: async (_parent, { input }, context) => {
+          const student = await authenticateStudent(context, "waitlist-entry.withdrawn", "WaitlistEntry");
+          return graphQLResult(await idempotentStudentMutation(
+            context,
+            student,
+            "waitlist-entry.withdrawn",
+            input.idempotencyKey,
+            input,
+            (transaction) => withdrawWaitlist(transaction, student, input, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "WaitlistError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "WaitlistEntry",
           ));
         },
         publishClassSession: async (_parent, { input }, context) => {

@@ -409,6 +409,18 @@ export type InvalidLessonMaterial = {
   message: Scalars['String']['output'];
 };
 
+export type JoinWaitlistInput = {
+  classSessionId: Scalars['ID']['input'];
+  idempotencyKey: Scalars['ID']['input'];
+};
+
+export type JoinWaitlistResult = JoinWaitlistSuccess | WaitlistError;
+
+export type JoinWaitlistSuccess = {
+  __typename?: 'JoinWaitlistSuccess';
+  entry: WaitlistEntry;
+};
+
 export type LessonMaterial = {
   __typename?: 'LessonMaterial';
   httpsUrl?: Maybe<Scalars['String']['output']>;
@@ -461,6 +473,7 @@ export type Mutation = {
   createLessonUnit: CreateLessonUnitResult;
   endTeacherAvailabilityRange: EndTeacherAvailabilityRangeResult;
   grantTeacherQualification: GrantTeacherQualificationResult;
+  joinWaitlist: JoinWaitlistResult;
   placeLessonUnitInCourse: ReorderLessonUnitResult;
   processSubscriptionProviderEvent: ProcessSubscriptionProviderEventResult;
   publishClassSession: PublishClassSessionResult;
@@ -479,6 +492,7 @@ export type Mutation = {
   scheduleSubscriptionCancellation: ScheduleSubscriptionCancellationResult;
   setStudentPlacement: StudentPlacement;
   undoSubscriptionCancellation: UndoSubscriptionCancellationResult;
+  withdrawWaitlist: WithdrawWaitlistResult;
 };
 
 
@@ -529,6 +543,11 @@ export type MutationEndTeacherAvailabilityRangeArgs = {
 
 export type MutationGrantTeacherQualificationArgs = {
   input: ChangeTeacherQualificationInput;
+};
+
+
+export type MutationJoinWaitlistArgs = {
+  input: JoinWaitlistInput;
 };
 
 
@@ -621,6 +640,11 @@ export type MutationUndoSubscriptionCancellationArgs = {
   input: SubscriptionLifecycleInput;
 };
 
+
+export type MutationWithdrawWaitlistArgs = {
+  input: WithdrawWaitlistInput;
+};
+
 export type ProcessSubscriptionProviderEventInput = {
   effectiveAt: Scalars['String']['input'];
   eventType: SubscriptionProviderEventType;
@@ -681,6 +705,7 @@ export type Query = {
   studentClassCredits: ClassCreditAccount;
   studentPlacements: Array<StudentPlacement>;
   studentSubscription?: Maybe<Subscription>;
+  studentWaitlistEntries: Array<WaitlistEntry>;
   studentWorkspace: StudentWorkspace;
   teacherAvailability: TeacherAvailability;
   teacherAvailabilityPreview: Array<TeacherAvailabilityOccurrence>;
@@ -1030,6 +1055,60 @@ export enum UserRole {
   Teacher = 'TEACHER'
 }
 
+export type WaitlistEntry = {
+  __typename?: 'WaitlistEntry';
+  classSession: ClassSession;
+  completedAt?: Maybe<Scalars['String']['output']>;
+  expiresAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  joinedAt: Scalars['String']['output'];
+  resultingBooking?: Maybe<Booking>;
+  state: WaitlistEntryState;
+  terminalReason?: Maybe<WaitlistTerminalReason>;
+};
+
+export enum WaitlistEntryState {
+  Active = 'ACTIVE',
+  Expired = 'EXPIRED',
+  Ineligible = 'INELIGIBLE',
+  Promoted = 'PROMOTED',
+  Withdrawn = 'WITHDRAWN'
+}
+
+export type WaitlistError = {
+  __typename?: 'WaitlistError';
+  code: WaitlistErrorCode;
+  message: Scalars['String']['output'];
+};
+
+export enum WaitlistErrorCode {
+  AlreadyBooked = 'ALREADY_BOOKED',
+  AlreadyWaitlisted = 'ALREADY_WAITLISTED',
+  ClassSessionNotFound = 'CLASS_SESSION_NOT_FOUND',
+  IdempotencyKeyReused = 'IDEMPOTENCY_KEY_REUSED',
+  InsufficientClassCredits = 'INSUFFICIENT_CLASS_CREDITS',
+  ScheduleConflict = 'SCHEDULE_CONFLICT',
+  SessionNotFull = 'SESSION_NOT_FULL',
+  WaitlistEntryNotActive = 'WAITLIST_ENTRY_NOT_ACTIVE',
+  WaitlistEntryNotFound = 'WAITLIST_ENTRY_NOT_FOUND',
+  WaitlistNotOpen = 'WAITLIST_NOT_OPEN'
+}
+
+export type WaitlistPromotionWon = {
+  __typename?: 'WaitlistPromotionWon';
+  booking: Booking;
+};
+
+export enum WaitlistTerminalReason {
+  AlreadyBooked = 'ALREADY_BOOKED',
+  ClassSessionUnavailable = 'CLASS_SESSION_UNAVAILABLE',
+  Expired = 'EXPIRED',
+  InsufficientClassCredits = 'INSUFFICIENT_CLASS_CREDITS',
+  Promoted = 'PROMOTED',
+  ScheduleConflict = 'SCHEDULE_CONFLICT',
+  Withdrawn = 'WITHDRAWN'
+}
+
 export enum Weekday {
   Friday = 'FRIDAY',
   Monday = 'MONDAY',
@@ -1039,6 +1118,18 @@ export enum Weekday {
   Tuesday = 'TUESDAY',
   Wednesday = 'WEDNESDAY'
 }
+
+export type WithdrawWaitlistInput = {
+  idempotencyKey: Scalars['ID']['input'];
+  waitlistEntryId: Scalars['ID']['input'];
+};
+
+export type WithdrawWaitlistResult = WaitlistError | WaitlistPromotionWon | WithdrawWaitlistSuccess;
+
+export type WithdrawWaitlistSuccess = {
+  __typename?: 'WithdrawWaitlistSuccess';
+  entry: WaitlistEntry;
+};
 
 export enum WorkspacePlace {
   AdministrationOperations = 'ADMINISTRATION_OPERATIONS',
@@ -1173,6 +1264,10 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( ChangeTeacherQualificationSuccess )
     | ( CurriculumConflict )
   ;
+  JoinWaitlistResult:
+    | ( JoinWaitlistSuccess )
+    | ( WaitlistError )
+  ;
   ProcessSubscriptionProviderEventResult:
     | ( ProcessSubscriptionProviderEventSuccess )
     | ( SubscriptionConflict )
@@ -1228,6 +1323,11 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( CurriculumConflict )
     | ( InstructionalIdentityLocked )
     | ( UpdateLessonUnitSuccess )
+  ;
+  WithdrawWaitlistResult:
+    | ( WaitlistError )
+    | ( WaitlistPromotionWon )
+    | ( WithdrawWaitlistSuccess )
   ;
 };
 
@@ -1299,6 +1399,9 @@ export type ResolversTypes = {
   Int: ResolverTypeWrapper<Scalars['Int']['output']>;
   InterfaceLocale: InterfaceLocale;
   InvalidLessonMaterial: ResolverTypeWrapper<InvalidLessonMaterial>;
+  JoinWaitlistInput: JoinWaitlistInput;
+  JoinWaitlistResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['JoinWaitlistResult']>;
+  JoinWaitlistSuccess: ResolverTypeWrapper<JoinWaitlistSuccess>;
   LessonMaterial: ResolverTypeWrapper<LessonMaterial>;
   LessonMaterialKind: LessonMaterialKind;
   LessonUnit: ResolverTypeWrapper<LessonUnit>;
@@ -1370,7 +1473,16 @@ export type ResolversTypes = {
   UpsertTopicSuccess: ResolverTypeWrapper<UpsertTopicSuccess>;
   User: ResolverTypeWrapper<User>;
   UserRole: UserRole;
+  WaitlistEntry: ResolverTypeWrapper<WaitlistEntry>;
+  WaitlistEntryState: WaitlistEntryState;
+  WaitlistError: ResolverTypeWrapper<WaitlistError>;
+  WaitlistErrorCode: WaitlistErrorCode;
+  WaitlistPromotionWon: ResolverTypeWrapper<WaitlistPromotionWon>;
+  WaitlistTerminalReason: WaitlistTerminalReason;
   Weekday: Weekday;
+  WithdrawWaitlistInput: WithdrawWaitlistInput;
+  WithdrawWaitlistResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['WithdrawWaitlistResult']>;
+  WithdrawWaitlistSuccess: ResolverTypeWrapper<WithdrawWaitlistSuccess>;
   WorkspacePlace: WorkspacePlace;
   WorkspaceRelationshipScope: WorkspaceRelationshipScope;
 };
@@ -1433,6 +1545,9 @@ export type ResolversParentTypes = {
   InstructionalIdentityLocked: InstructionalIdentityLocked;
   Int: Scalars['Int']['output'];
   InvalidLessonMaterial: InvalidLessonMaterial;
+  JoinWaitlistInput: JoinWaitlistInput;
+  JoinWaitlistResult: ResolversUnionTypes<ResolversParentTypes>['JoinWaitlistResult'];
+  JoinWaitlistSuccess: JoinWaitlistSuccess;
   LessonMaterial: LessonMaterial;
   LessonUnit: LessonUnit;
   Mutation: Record<PropertyKey, never>;
@@ -1498,6 +1613,12 @@ export type ResolversParentTypes = {
   UpsertTopicInput: UpsertTopicInput;
   UpsertTopicSuccess: UpsertTopicSuccess;
   User: User;
+  WaitlistEntry: WaitlistEntry;
+  WaitlistError: WaitlistError;
+  WaitlistPromotionWon: WaitlistPromotionWon;
+  WithdrawWaitlistInput: WithdrawWaitlistInput;
+  WithdrawWaitlistResult: ResolversUnionTypes<ResolversParentTypes>['WithdrawWaitlistResult'];
+  WithdrawWaitlistSuccess: WithdrawWaitlistSuccess;
 };
 
 export type AddAvailabilityExceptionResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['AddAvailabilityExceptionResult'] = ResolversParentTypes['AddAvailabilityExceptionResult']> = {
@@ -1752,6 +1873,15 @@ export type InvalidLessonMaterialResolvers<ContextType = any, ParentType extends
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
+export type JoinWaitlistResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['JoinWaitlistResult'] = ResolversParentTypes['JoinWaitlistResult']> = {
+  __resolveType: TypeResolveFn<'JoinWaitlistSuccess' | 'WaitlistError', ParentType, ContextType>;
+};
+
+export type JoinWaitlistSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['JoinWaitlistSuccess'] = ResolversParentTypes['JoinWaitlistSuccess']> = {
+  entry?: Resolver<ResolversTypes['WaitlistEntry'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
 export type LessonMaterialResolvers<ContextType = any, ParentType extends ResolversParentTypes['LessonMaterial'] = ResolversParentTypes['LessonMaterial']> = {
   httpsUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
@@ -1785,6 +1915,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   createLessonUnit?: Resolver<ResolversTypes['CreateLessonUnitResult'], ParentType, ContextType, RequireFields<MutationCreateLessonUnitArgs, 'input'>>;
   endTeacherAvailabilityRange?: Resolver<ResolversTypes['EndTeacherAvailabilityRangeResult'], ParentType, ContextType, RequireFields<MutationEndTeacherAvailabilityRangeArgs, 'input'>>;
   grantTeacherQualification?: Resolver<ResolversTypes['GrantTeacherQualificationResult'], ParentType, ContextType, RequireFields<MutationGrantTeacherQualificationArgs, 'input'>>;
+  joinWaitlist?: Resolver<ResolversTypes['JoinWaitlistResult'], ParentType, ContextType, RequireFields<MutationJoinWaitlistArgs, 'input'>>;
   placeLessonUnitInCourse?: Resolver<ResolversTypes['ReorderLessonUnitResult'], ParentType, ContextType, RequireFields<MutationPlaceLessonUnitInCourseArgs, 'input'>>;
   processSubscriptionProviderEvent?: Resolver<ResolversTypes['ProcessSubscriptionProviderEventResult'], ParentType, ContextType, RequireFields<MutationProcessSubscriptionProviderEventArgs, 'input'>>;
   publishClassSession?: Resolver<ResolversTypes['PublishClassSessionResult'], ParentType, ContextType, RequireFields<MutationPublishClassSessionArgs, 'input'>>;
@@ -1803,6 +1934,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   scheduleSubscriptionCancellation?: Resolver<ResolversTypes['ScheduleSubscriptionCancellationResult'], ParentType, ContextType, RequireFields<MutationScheduleSubscriptionCancellationArgs, 'input'>>;
   setStudentPlacement?: Resolver<ResolversTypes['StudentPlacement'], ParentType, ContextType, RequireFields<MutationSetStudentPlacementArgs, 'input'>>;
   undoSubscriptionCancellation?: Resolver<ResolversTypes['UndoSubscriptionCancellationResult'], ParentType, ContextType, RequireFields<MutationUndoSubscriptionCancellationArgs, 'input'>>;
+  withdrawWaitlist?: Resolver<ResolversTypes['WithdrawWaitlistResult'], ParentType, ContextType, RequireFields<MutationWithdrawWaitlistArgs, 'input'>>;
 };
 
 export type ProcessSubscriptionProviderEventResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['ProcessSubscriptionProviderEventResult'] = ResolversParentTypes['ProcessSubscriptionProviderEventResult']> = {
@@ -1848,6 +1980,7 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   studentClassCredits?: Resolver<ResolversTypes['ClassCreditAccount'], ParentType, ContextType>;
   studentPlacements?: Resolver<Array<ResolversTypes['StudentPlacement']>, ParentType, ContextType>;
   studentSubscription?: Resolver<Maybe<ResolversTypes['Subscription']>, ParentType, ContextType>;
+  studentWaitlistEntries?: Resolver<Array<ResolversTypes['WaitlistEntry']>, ParentType, ContextType>;
   studentWorkspace?: Resolver<ResolversTypes['StudentWorkspace'], ParentType, ContextType>;
   teacherAvailability?: Resolver<ResolversTypes['TeacherAvailability'], ParentType, ContextType>;
   teacherAvailabilityPreview?: Resolver<Array<ResolversTypes['TeacherAvailabilityOccurrence']>, ParentType, ContextType, RequireFields<QueryTeacherAvailabilityPreviewArgs, 'localDates'>>;
@@ -2056,6 +2189,37 @@ export type UserResolvers<ContextType = any, ParentType extends ResolversParentT
   interfaceLocale?: Resolver<Maybe<ResolversTypes['InterfaceLocale']>, ParentType, ContextType>;
 };
 
+export type WaitlistEntryResolvers<ContextType = any, ParentType extends ResolversParentTypes['WaitlistEntry'] = ResolversParentTypes['WaitlistEntry']> = {
+  classSession?: Resolver<ResolversTypes['ClassSession'], ParentType, ContextType>;
+  completedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  expiresAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  joinedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  resultingBooking?: Resolver<Maybe<ResolversTypes['Booking']>, ParentType, ContextType>;
+  state?: Resolver<ResolversTypes['WaitlistEntryState'], ParentType, ContextType>;
+  terminalReason?: Resolver<Maybe<ResolversTypes['WaitlistTerminalReason']>, ParentType, ContextType>;
+};
+
+export type WaitlistErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['WaitlistError'] = ResolversParentTypes['WaitlistError']> = {
+  code?: Resolver<ResolversTypes['WaitlistErrorCode'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type WaitlistPromotionWonResolvers<ContextType = any, ParentType extends ResolversParentTypes['WaitlistPromotionWon'] = ResolversParentTypes['WaitlistPromotionWon']> = {
+  booking?: Resolver<ResolversTypes['Booking'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type WithdrawWaitlistResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['WithdrawWaitlistResult'] = ResolversParentTypes['WithdrawWaitlistResult']> = {
+  __resolveType: TypeResolveFn<'WaitlistError' | 'WaitlistPromotionWon' | 'WithdrawWaitlistSuccess', ParentType, ContextType>;
+};
+
+export type WithdrawWaitlistSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['WithdrawWaitlistSuccess'] = ResolversParentTypes['WithdrawWaitlistSuccess']> = {
+  entry?: Resolver<ResolversTypes['WaitlistEntry'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
 export type Resolvers<ContextType = any> = {
   AddAvailabilityExceptionResult?: AddAvailabilityExceptionResultResolvers<ContextType>;
   AddAvailabilityExceptionSuccess?: AddAvailabilityExceptionSuccessResolvers<ContextType>;
@@ -2099,6 +2263,8 @@ export type Resolvers<ContextType = any> = {
   GrantTeacherQualificationResult?: GrantTeacherQualificationResultResolvers<ContextType>;
   InstructionalIdentityLocked?: InstructionalIdentityLockedResolvers<ContextType>;
   InvalidLessonMaterial?: InvalidLessonMaterialResolvers<ContextType>;
+  JoinWaitlistResult?: JoinWaitlistResultResolvers<ContextType>;
+  JoinWaitlistSuccess?: JoinWaitlistSuccessResolvers<ContextType>;
   LessonMaterial?: LessonMaterialResolvers<ContextType>;
   LessonUnit?: LessonUnitResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
@@ -2146,5 +2312,10 @@ export type Resolvers<ContextType = any> = {
   UpdateLessonUnitSuccess?: UpdateLessonUnitSuccessResolvers<ContextType>;
   UpsertTopicSuccess?: UpsertTopicSuccessResolvers<ContextType>;
   User?: UserResolvers<ContextType>;
+  WaitlistEntry?: WaitlistEntryResolvers<ContextType>;
+  WaitlistError?: WaitlistErrorResolvers<ContextType>;
+  WaitlistPromotionWon?: WaitlistPromotionWonResolvers<ContextType>;
+  WithdrawWaitlistResult?: WithdrawWaitlistResultResolvers<ContextType>;
+  WithdrawWaitlistSuccess?: WithdrawWaitlistSuccessResolvers<ContextType>;
 };
 
