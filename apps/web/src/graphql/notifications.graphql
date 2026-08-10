@@ -1,0 +1,28 @@
+query Notifications {
+  notifications {
+    id
+    messageId
+    renderedContent
+    readAt
+    archivedAt
+    createdAt
+  }
+}
+
+mutation MarkNotificationRead($id: ID!) {
+  markNotificationRead(id: $id) {
+    id
+    messageId
+    renderedContent
+    readAt
+    archivedAt
+    createdAt
+  }
+}
+
+mutation ArchiveNotification($id: ID!) {
+  archiveNotification(id: $id) {
+    id
+    archivedAt
+  }
+}

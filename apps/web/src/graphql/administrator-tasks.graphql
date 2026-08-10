@@ -1,0 +1,31 @@
+query AdministratorTasks {
+  administratorTasks {
+    id
+    requiredRole
+    kind
+    state
+    correlationReference
+    safeContext { channel messageId recipientReference }
+    createdAt
+    resolvedAt
+  }
+}
+
+mutation ResolveAdministratorTask($input: ResolveAdministratorTaskInput!) {
+  resolveAdministratorTask(input: $input) {
+    __typename
+    ... on ResolveAdministratorTaskSuccess {
+      task {
+        id
+        requiredRole
+        kind
+        state
+        correlationReference
+        safeContext { channel messageId recipientReference }
+        createdAt
+        resolvedAt
+      }
+    }
+    ... on AdministratorTaskError { code message }
+  }
+}

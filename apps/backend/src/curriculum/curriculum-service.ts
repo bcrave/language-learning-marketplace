@@ -363,15 +363,15 @@ export async function saveTeacherProfile(db: Database, administrator: Administra
   }
 }
 
-async function qualificationNotification(transaction: Database, teacherUserId: string, messageId: string, variables: Record<string, unknown>) {
+async function qualificationNotification(transaction: Database, teacherUserId: string, messageId: string, variables: Record<string, unknown>, sourceReference: string) {
   const teacher = await transaction.selectFrom("users").select("interface_locale").where("id", "=", teacherUserId).executeTakeFirstOrThrow();
   const locale = teacher.interface_locale ?? "en";
   const level = String((variables.curriculumLevels as string[])[0]);
   const targetLanguage = String(variables.targetLanguage);
   const template = interfaceMessages[locale][messageId as "teacher-qualification.granted.teacher" | "teacher-qualification.removed.teacher"];
   const renderedContent = String(new IntlMessageFormat(template, locale).format({ targetLanguage, curriculumLevel: level, effectiveTime: new Date(String(variables.effectiveTime)) }));
-  await transaction.insertInto("in_app_notifications").values({ recipient_user_id: teacherUserId, message_id: messageId, variables: JSON.stringify(variables) }).execute();
-  await transaction.insertInto("email_notification_intents").values({ recipient_user_id: teacherUserId, message_id: messageId, locale, variables: JSON.stringify(variables), rendered_content: renderedContent }).execute();
+  await transaction.insertInto("in_app_notifications").values({ recipient_user_id: teacherUserId, message_id: messageId, variables: JSON.stringify(variables), source_reference: sourceReference }).execute();
+  await transaction.insertInto("email_notification_intents").values({ recipient_user_id: teacherUserId, message_id: messageId, locale, variables: JSON.stringify(variables), rendered_content: renderedContent, source_reference: sourceReference }).execute();
 }
 
 export async function changeTeacherQualification(db: Database, administrator: Administrator, input: { teacherUserId: string; targetLanguage: string; curriculumLevel: CurriculumLevel }, correlationId: string, action: "grant" | "remove") {
@@ -397,7 +397,8 @@ export async function changeTeacherQualification(db: Database, administrator: Ad
         await transaction.deleteFrom("teacher_qualifications").where("teacher_user_id", "=", input.teacherUserId).where("target_language", "=", input.targetLanguage).where("curriculum_level", "=", input.curriculumLevel).executeTakeFirstOrThrow();
       }
       const messageId = action === "grant" ? "teacher-qualification.granted.teacher" : "teacher-qualification.removed.teacher";
-      await qualificationNotification(transaction, input.teacherUserId, messageId, { targetLanguage: input.targetLanguage, curriculumLevels: [input.curriculumLevel], effectiveTime: new Date().toISOString() });
+      const notificationSourceReference = `${messageId}:${qualificationId ?? `${input.teacherUserId}:${input.targetLanguage}:${input.curriculumLevel}`}`;
+      await qualificationNotification(transaction, input.teacherUserId, messageId, { targetLanguage: input.targetLanguage, curriculumLevels: [input.curriculumLevel], effectiveTime: new Date().toISOString() }, notificationSourceReference);
       await recordCurriculumAudit(transaction, { administratorId: administrator.id, correlationId, operation: `teacher-qualification.${action === "grant" ? "granted" : "removed"}`, targetType: "TeacherQualification", targetId: qualificationId ?? input.teacherUserId, reasonCode: action === "grant" ? "TEACHER_QUALIFICATION_GRANTED" : "TEACHER_QUALIFICATION_REMOVED" });
       return { blocked: null, unchanged: null, qualificationId };
     });

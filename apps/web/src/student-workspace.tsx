@@ -31,6 +31,8 @@ import { AdminClassCredits, StudentClassCredits, StudentSubscription } from "./c
 import { TeacherAvailabilityPanel } from "./teacher-availability.js";
 import { TeacherSchedulePanel } from "./teacher-schedule.js";
 import { StudentDiscoveryPanel } from "./student-discovery.js";
+import { NotificationInbox } from "./notification-inbox.js";
+import { AdministratorTaskQueue } from "./administrator-task-queue.js";
 
 const graphQLInterfaceLocales: Record<InterfaceLocale, GraphQLInterfaceLocale> = {
   en: "EN",
@@ -308,6 +310,7 @@ function WorkspaceContent({
             {intl.formatMessage({ id: "workspace.eyebrow" })}
           </a>}
           <a href="#settings">{intl.formatMessage({ id: "workspace.settings" })}</a>
+          <a href="#notifications">{intl.formatMessage({ id: "notifications.title" })}</a>
         </nav>
       </aside>
       {workspaceContext && (
@@ -341,6 +344,7 @@ function WorkspaceContent({
         <p className="lede">
           {intl.formatMessage({ id: "workspace.introduction" })}
         </p>
+        {hasSavedPreferences && <NotificationInbox />}
         <section className="workspace-card" aria-labelledby="next-step-title">
           <h2 id="next-step-title">
             {intl.formatMessage({ id: place.labelId })}
@@ -401,6 +405,7 @@ function WorkspaceContent({
         </section>
         {currentPlace === "ADMINISTRATION_OPERATIONS" && (
           <>
+            <AdministratorTaskQueue />
             <AdminClassCredits />
             <AdminClassSessions locale={locale} />
             <AdminCurriculum locale={locale} />

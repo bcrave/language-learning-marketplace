@@ -38,7 +38,7 @@ export interface RoleWorkspacePlacesTable {
 export interface AuditEntriesTable {
   id: Generated<string>;
   actor_user_id: string | null;
-  system_identity: "CLASS_SESSION_REMINDER_WORKER" | "WAITLIST_WORKER" | null;
+  system_identity: "CLASS_SESSION_REMINDER_WORKER" | "WAITLIST_WORKER" | "NOTIFICATION_DELIVERY_WORKER" | "NOTIFICATION_MAINTENANCE_WORKER" | null;
   acting_role: UserRole | null;
   operation: string;
   target_type: string;
@@ -74,8 +74,12 @@ export type WaitlistTerminalReason = "WITHDRAWN" | "PROMOTED" | "EXPIRED" | "CLA
 export interface WaitlistEntriesTable { id: Generated<string>; student_user_id: string; class_session_id: string; state: "ACTIVE" | "WITHDRAWN" | "PROMOTED" | "EXPIRED" | "INELIGIBLE"; terminal_reason: WaitlistTerminalReason | null; joined_at: Date; expires_at: Date; completed_at: Date | null; promoted_booking_id: string | null }
 export interface WaitlistPromotionRequestsTable { class_session_id: string; requested_at: Generated<Date>; request_version: Generated<number>; processed_at: Date | null }
 export interface ClassSessionRemindersTable { id: Generated<string>; class_session_id: string; recipient_user_id: string; commitment_role: "STUDENT" | "TEACHER"; due_at: Date; terminal_outcome: "DELIVERED" | "SUPPRESSED" | null; completed_at: Date | null }
-export interface InAppNotificationsTable { id: Generated<string>; recipient_user_id: string; message_id: string; variables: JSONColumnType<Record<string, unknown>>; source_reference: Generated<string | null>; created_at: Generated<Date> }
-export interface EmailNotificationIntentsTable { id: Generated<string>; recipient_user_id: string; message_id: string; locale: "en" | "es"; variables: JSONColumnType<Record<string, unknown>>; rendered_content: string; source_reference: Generated<string | null>; created_at: Generated<Date> }
+export interface InAppNotificationsTable { id: Generated<string>; recipient_user_id: string; message_id: string; variables: JSONColumnType<Record<string, unknown>>; source_reference: string; read_at: Generated<Date | null>; archived_at: Generated<Date | null>; created_at: Generated<Date> }
+export interface EmailNotificationIntentsTable { id: Generated<string>; recipient_user_id: string; message_id: string; locale: "en" | "es"; variables: JSONColumnType<Record<string, unknown>>; rendered_content: string; source_reference: string; state: Generated<"PENDING" | "DELIVERED" | "EXHAUSTED" | "SUPPRESSED">; attempt_count: Generated<number>; next_attempt_at: Generated<Date>; completed_at: Generated<Date | null>; provider_message_id: Generated<string | null>; created_at: Generated<Date> }
+export interface NotificationDeliveryAttemptsTable { id: Generated<string>; notification_intent_id: string; attempt_number: number; outcome: "DELIVERED" | "RETRYABLE_FAILURE" | "PERMANENT_FAILURE"; safe_failure_code: string | null; attempted_at: Generated<Date> }
+export interface DeliveryReceiptsTable { id: Generated<string>; source_reference: string; recipient_user_id: string; channel: "IN_APP" | "EMAIL"; outcome: "DELIVERED" | "SUPPRESSED" | "DELIVERY_UNCERTAIN"; completed_at: Date; provider_message_id: string | null }
+export interface RecordedEmailDeliveriesTable { id: Generated<string>; idempotency_key: string; recipient_user_id: string; locale: "en" | "es"; rendered_content: string | null; accepted_at: Generated<Date>; content_expired_at: Generated<Date | null> }
+export interface AdministratorTaskItemsTable { id: Generated<string>; required_role: Generated<"PLATFORM_ADMINISTRATOR">; kind: "NOTIFICATION_DELIVERY_RECONCILIATION"; state: Generated<"OPEN" | "RESOLVED">; correlation_reference: string; safe_context: JSONColumnType<{ channel: "EMAIL"; messageId: string; recipientReference: string }>; source_reference: string; recipient_reference: string; created_at: Generated<Date>; resolved_at: Generated<Date | null>; resolution_reason: Generated<string | null> }
 export interface MutationIdempotencyRecordsTable { actor_user_id: string; operation: string; idempotency_key: string; input_fingerprint: string; outcome: JSONColumnType<Record<string, unknown>>; created_at: Generated<Date> }
 export interface ClassCreditAccountsTable { student_user_id: string; available_balance: Generated<number>; updated_at: Generated<Date> }
 export interface ClassCreditLedgerEntriesTable { id: Generated<string>; student_user_id: string; amount: number; source: "CREDIT_ADJUSTMENT" | "SUBSCRIPTION_GRANT" | "ORGANIZATION_CREDIT_GRANT" | "BOOKING_DEDUCTION" | "BOOKING_REFUND"; source_reference: string; reason: string | null; created_at: Generated<Date> }
@@ -112,6 +116,10 @@ export interface DatabaseSchema {
   class_session_reminders: ClassSessionRemindersTable;
   in_app_notifications: InAppNotificationsTable;
   email_notification_intents: EmailNotificationIntentsTable;
+  notification_delivery_attempts: NotificationDeliveryAttemptsTable;
+  delivery_receipts: DeliveryReceiptsTable;
+  recorded_email_deliveries: RecordedEmailDeliveriesTable;
+  administrator_task_items: AdministratorTaskItemsTable;
   mutation_idempotency_records: MutationIdempotencyRecordsTable;
   class_credit_accounts: ClassCreditAccountsTable;
   class_credit_ledger_entries: ClassCreditLedgerEntriesTable;

@@ -75,6 +75,7 @@ export async function deliverDueClassSessionReminders(
             : "class-session.reminder.teacher",
           classSessionId: reminder.class_session_id,
           startsAt: commitment.starts_at,
+          sourceReference: `class-session.reminder.${reminder.commitment_role.toLowerCase()}:${reminder.id}`,
         });
         await transaction.updateTable("class_session_reminders").set({ terminal_outcome: "DELIVERED", completed_at: now }).where("id", "=", reminder.id).execute();
         await recordReminderAudit(transaction as Database, reminder.class_session_id, correlationId, "SUCCEEDED", "CLASS_SESSION_REMINDER_DELIVERED");

@@ -260,7 +260,49 @@ type RoleWorkspace {
   rolePlaces: [RolePlace!]!
 }
 
+type InAppNotification {
+  id: ID!
+  messageId: String!
+  renderedContent: String!
+  readAt: String
+  archivedAt: String
+  createdAt: String!
+}
+
+enum NotificationChannel { IN_APP EMAIL }
+enum AdministratorTaskKind { NOTIFICATION_DELIVERY_RECONCILIATION }
+enum AdministratorTaskState { OPEN RESOLVED }
+
+type AdministratorTaskSafeContext {
+  channel: NotificationChannel!
+  messageId: String!
+  recipientReference: ID!
+}
+
+type AdministratorTaskItem {
+  id: ID!
+  requiredRole: UserRole!
+  kind: AdministratorTaskKind!
+  state: AdministratorTaskState!
+  correlationReference: String!
+  safeContext: AdministratorTaskSafeContext!
+  createdAt: String!
+  resolvedAt: String
+}
+
+input ResolveAdministratorTaskInput {
+  idempotencyKey: String!
+  taskId: ID!
+  reason: String!
+}
+
+type ResolveAdministratorTaskSuccess { task: AdministratorTaskItem! }
+type AdministratorTaskError { code: String! message: String! }
+union ResolveAdministratorTaskResult = ResolveAdministratorTaskSuccess | AdministratorTaskError
+
 type Query {
+  notifications: [InAppNotification!]!
+  administratorTasks: [AdministratorTaskItem!]!
   studentSubscription: Subscription
   studentPlacements: [StudentPlacement!]!
   classSessionDiscoveryOptions: ClassSessionDiscoveryOptions!
@@ -282,6 +324,9 @@ type Query {
 }
 
 type Mutation {
+  markNotificationRead(id: ID!): InAppNotification!
+  archiveNotification(id: ID!): InAppNotification!
+  resolveAdministratorTask(input: ResolveAdministratorTaskInput!): ResolveAdministratorTaskResult!
   processSubscriptionProviderEvent(input: ProcessSubscriptionProviderEventInput!): ProcessSubscriptionProviderEventResult!
   scheduleSubscriptionCancellation(input: SubscriptionLifecycleInput!): ScheduleSubscriptionCancellationResult!
   undoSubscriptionCancellation(input: SubscriptionLifecycleInput!): UndoSubscriptionCancellationResult!

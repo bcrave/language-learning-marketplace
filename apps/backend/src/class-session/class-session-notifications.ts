@@ -7,7 +7,7 @@ type TeacherClassSessionNotification = {
   teacherUserId: string;
   classSessionId: string;
   startsAt: Date;
-  sourceReference?: string;
+  sourceReference: string;
 } & ({
   messageId: "class-session.teacher-assigned.teacher" | "class-session.teacher-substituted.teacher";
   imminent: boolean;
@@ -19,7 +19,7 @@ type ClassSessionNotification = TeacherClassSessionNotification | ({
   recipientUserId: string;
   classSessionId: string;
   startsAt: Date;
-  sourceReference?: string;
+  sourceReference: string;
 } & ({
   messageId: "class-session.teacher-substituted.student";
   replacementTeacherDisplayName: string;
@@ -47,8 +47,8 @@ export async function notifyClassSessionUser(
     date: { long: { ...IntlMessageFormat.formats.date.long, timeZone } },
     time: { short: { ...IntlMessageFormat.formats.time.short, timeZone } },
   }).format({ ...variables, startsAt: notification.startsAt }));
-  await db.insertInto("in_app_notifications").values({ recipient_user_id: recipientUserId, message_id: notification.messageId, variables: JSON.stringify(variables), source_reference: notification.sourceReference ?? null }).execute();
-  await db.insertInto("email_notification_intents").values({ recipient_user_id: recipientUserId, message_id: notification.messageId, locale, variables: JSON.stringify(variables), rendered_content: renderedContent, source_reference: notification.sourceReference ?? null }).execute();
+  await db.insertInto("in_app_notifications").values({ recipient_user_id: recipientUserId, message_id: notification.messageId, variables: JSON.stringify(variables), source_reference: notification.sourceReference }).execute();
+  await db.insertInto("email_notification_intents").values({ recipient_user_id: recipientUserId, message_id: notification.messageId, locale, variables: JSON.stringify(variables), rendered_content: renderedContent, source_reference: notification.sourceReference }).execute();
 }
 
 export async function notifyClassSessionTeacher(

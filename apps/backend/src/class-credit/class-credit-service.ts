@@ -163,10 +163,12 @@ export async function adjustClassCredits(
     interfaceMessages[locale][messageId],
     locale,
   ).format(variables));
+  const notificationSourceReference = `credit-adjustment.committed.student:${adjustmentId}`;
   await transaction.insertInto("in_app_notifications").values({
     recipient_user_id: input.studentUserId,
     message_id: messageId,
     variables: JSON.stringify(variables),
+    source_reference: notificationSourceReference,
   }).execute();
   await transaction.insertInto("email_notification_intents").values({
     recipient_user_id: input.studentUserId,
@@ -174,6 +176,7 @@ export async function adjustClassCredits(
     locale,
     variables: JSON.stringify(variables),
     rendered_content: renderedContent,
+    source_reference: notificationSourceReference,
   }).execute();
 
   return {

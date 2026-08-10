@@ -77,6 +77,40 @@ export type AdministrationCurriculum = {
   topics: Array<Topic>;
 };
 
+export type AdministratorTaskError = {
+  __typename?: 'AdministratorTaskError';
+  code: Scalars['String']['output'];
+  message: Scalars['String']['output'];
+};
+
+export type AdministratorTaskItem = {
+  __typename?: 'AdministratorTaskItem';
+  correlationReference: Scalars['String']['output'];
+  createdAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  kind: AdministratorTaskKind;
+  requiredRole: UserRole;
+  resolvedAt?: Maybe<Scalars['String']['output']>;
+  safeContext: AdministratorTaskSafeContext;
+  state: AdministratorTaskState;
+};
+
+export enum AdministratorTaskKind {
+  NotificationDeliveryReconciliation = 'NOTIFICATION_DELIVERY_RECONCILIATION'
+}
+
+export type AdministratorTaskSafeContext = {
+  __typename?: 'AdministratorTaskSafeContext';
+  channel: NotificationChannel;
+  messageId: Scalars['String']['output'];
+  recipientReference: Scalars['ID']['output'];
+};
+
+export enum AdministratorTaskState {
+  Open = 'OPEN',
+  Resolved = 'RESOLVED'
+}
+
 export type AvailabilityException = {
   __typename?: 'AvailabilityException';
   endsAt: Scalars['String']['output'];
@@ -452,6 +486,16 @@ export type EndTeacherAvailabilityRangeSuccess = {
 
 export type GrantTeacherQualificationResult = ChangeTeacherQualificationSuccess | CurriculumConflict;
 
+export type InAppNotification = {
+  __typename?: 'InAppNotification';
+  archivedAt?: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  messageId: Scalars['String']['output'];
+  readAt?: Maybe<Scalars['String']['output']>;
+  renderedContent: Scalars['String']['output'];
+};
+
 export type InstructionalIdentityLocked = {
   __typename?: 'InstructionalIdentityLocked';
   code: Scalars['String']['output'];
@@ -526,6 +570,7 @@ export type Mutation = {
   addAvailabilityException: AddAvailabilityExceptionResult;
   addLessonMaterial: AddLessonMaterialResult;
   adjustClassCredits: AdjustClassCreditsResult;
+  archiveNotification: InAppNotification;
   bookClassSession: BookClassSessionResult;
   cancelBooking: CancelBookingResult;
   cancelClassSession: CancelClassSessionResult;
@@ -535,6 +580,7 @@ export type Mutation = {
   endTeacherAvailabilityRange: EndTeacherAvailabilityRangeResult;
   grantTeacherQualification: GrantTeacherQualificationResult;
   joinWaitlist: JoinWaitlistResult;
+  markNotificationRead: InAppNotification;
   placeLessonUnitInCourse: ReorderLessonUnitResult;
   processSubscriptionProviderEvent: ProcessSubscriptionProviderEventResult;
   publishClassSession: PublishClassSessionResult;
@@ -543,6 +589,7 @@ export type Mutation = {
   removeTeacherQualification: RemoveTeacherQualificationResult;
   reportAbsence: ReportAbsenceResult;
   rescheduleBooking: RescheduleBookingResult;
+  resolveAdministratorTask: ResolveAdministratorTaskResult;
   retireLessonUnit: RetireLessonUnitResult;
   reviseCourseDetails: UpdateCourseResult;
   reviseLessonMaterial: ReviseLessonMaterialResult;
@@ -571,6 +618,11 @@ export type MutationAddLessonMaterialArgs = {
 
 export type MutationAdjustClassCreditsArgs = {
   input: AdjustClassCreditsInput;
+};
+
+
+export type MutationArchiveNotificationArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
@@ -619,6 +671,11 @@ export type MutationJoinWaitlistArgs = {
 };
 
 
+export type MutationMarkNotificationReadArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
 export type MutationPlaceLessonUnitInCourseArgs = {
   input: ReorderLessonUnitInput;
 };
@@ -656,6 +713,11 @@ export type MutationReportAbsenceArgs = {
 
 export type MutationRescheduleBookingArgs = {
   input: RescheduleBookingInput;
+};
+
+
+export type MutationResolveAdministratorTaskArgs = {
+  input: ResolveAdministratorTaskInput;
 };
 
 
@@ -723,6 +785,11 @@ export type MutationWithdrawWaitlistArgs = {
   input: WithdrawWaitlistInput;
 };
 
+export enum NotificationChannel {
+  Email = 'EMAIL',
+  InApp = 'IN_APP'
+}
+
 export type ProcessSubscriptionProviderEventInput = {
   effectiveAt: Scalars['String']['input'];
   eventType: SubscriptionProviderEventType;
@@ -776,8 +843,10 @@ export type Query = {
   administrationClassCredits?: Maybe<ClassCreditAccount>;
   administrationClassSessions: Array<ClassSession>;
   administrationCurriculum: AdministrationCurriculum;
+  administratorTasks: Array<AdministratorTaskItem>;
   classSessionDiscoveryOptions: ClassSessionDiscoveryOptions;
   discoverClassSessions: ClassSessionDiscoveryConnection;
+  notifications: Array<InAppNotification>;
   publicTeacherProfile?: Maybe<PublicTeacherProfile>;
   roleWorkspace: RoleWorkspace;
   studentBookings: Array<Booking>;
@@ -879,6 +948,19 @@ export type RescheduleBookingSuccess = {
   account: ClassCreditAccount;
   originalBooking: Booking;
   replacementBooking: Booking;
+};
+
+export type ResolveAdministratorTaskInput = {
+  idempotencyKey: Scalars['String']['input'];
+  reason: Scalars['String']['input'];
+  taskId: Scalars['ID']['input'];
+};
+
+export type ResolveAdministratorTaskResult = AdministratorTaskError | ResolveAdministratorTaskSuccess;
+
+export type ResolveAdministratorTaskSuccess = {
+  __typename?: 'ResolveAdministratorTaskSuccess';
+  task: AdministratorTaskItem;
 };
 
 export type RetireLessonUnitInput = {
@@ -1410,6 +1492,10 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( BookingError )
     | ( RescheduleBookingSuccess )
   ;
+  ResolveAdministratorTaskResult:
+    | ( AdministratorTaskError )
+    | ( ResolveAdministratorTaskSuccess )
+  ;
   RetireLessonUnitResult:
     | ( CurriculumConflict )
     | ( RetireLessonUnitSuccess )
@@ -1466,6 +1552,11 @@ export type ResolversTypes = {
   AdjustClassCreditsResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['AdjustClassCreditsResult']>;
   AdjustClassCreditsSuccess: ResolverTypeWrapper<AdjustClassCreditsSuccess>;
   AdministrationCurriculum: ResolverTypeWrapper<AdministrationCurriculum>;
+  AdministratorTaskError: ResolverTypeWrapper<AdministratorTaskError>;
+  AdministratorTaskItem: ResolverTypeWrapper<AdministratorTaskItem>;
+  AdministratorTaskKind: AdministratorTaskKind;
+  AdministratorTaskSafeContext: ResolverTypeWrapper<AdministratorTaskSafeContext>;
+  AdministratorTaskState: AdministratorTaskState;
   AvailabilityException: ResolverTypeWrapper<AvailabilityException>;
   AvailabilityExceptionSessionConflict: ResolverTypeWrapper<AvailabilityExceptionSessionConflict>;
   BookClassSessionInput: BookClassSessionInput;
@@ -1523,6 +1614,7 @@ export type ResolversTypes = {
   EndTeacherAvailabilityRangeSuccess: ResolverTypeWrapper<EndTeacherAvailabilityRangeSuccess>;
   GrantTeacherQualificationResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['GrantTeacherQualificationResult']>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
+  InAppNotification: ResolverTypeWrapper<InAppNotification>;
   InstructionalIdentityLocked: ResolverTypeWrapper<InstructionalIdentityLocked>;
   Int: ResolverTypeWrapper<Scalars['Int']['output']>;
   InterfaceLocale: InterfaceLocale;
@@ -1536,6 +1628,7 @@ export type ResolversTypes = {
   LessonUnitState: LessonUnitState;
   LocalTimeDisambiguation: LocalTimeDisambiguation;
   Mutation: ResolverTypeWrapper<Record<PropertyKey, never>>;
+  NotificationChannel: NotificationChannel;
   ProcessSubscriptionProviderEventInput: ProcessSubscriptionProviderEventInput;
   ProcessSubscriptionProviderEventResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ProcessSubscriptionProviderEventResult']>;
   ProcessSubscriptionProviderEventSuccess: ResolverTypeWrapper<ProcessSubscriptionProviderEventSuccess>;
@@ -1558,6 +1651,9 @@ export type ResolversTypes = {
   RescheduleBookingInput: RescheduleBookingInput;
   RescheduleBookingResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RescheduleBookingResult']>;
   RescheduleBookingSuccess: ResolverTypeWrapper<RescheduleBookingSuccess>;
+  ResolveAdministratorTaskInput: ResolveAdministratorTaskInput;
+  ResolveAdministratorTaskResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ResolveAdministratorTaskResult']>;
+  ResolveAdministratorTaskSuccess: ResolverTypeWrapper<ResolveAdministratorTaskSuccess>;
   RetireLessonUnitInput: RetireLessonUnitInput;
   RetireLessonUnitResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RetireLessonUnitResult']>;
   RetireLessonUnitSuccess: ResolverTypeWrapper<RetireLessonUnitSuccess>;
@@ -1634,6 +1730,9 @@ export type ResolversParentTypes = {
   AdjustClassCreditsResult: ResolversUnionTypes<ResolversParentTypes>['AdjustClassCreditsResult'];
   AdjustClassCreditsSuccess: AdjustClassCreditsSuccess;
   AdministrationCurriculum: AdministrationCurriculum;
+  AdministratorTaskError: AdministratorTaskError;
+  AdministratorTaskItem: AdministratorTaskItem;
+  AdministratorTaskSafeContext: AdministratorTaskSafeContext;
   AvailabilityException: AvailabilityException;
   AvailabilityExceptionSessionConflict: AvailabilityExceptionSessionConflict;
   BookClassSessionInput: BookClassSessionInput;
@@ -1681,6 +1780,7 @@ export type ResolversParentTypes = {
   EndTeacherAvailabilityRangeSuccess: EndTeacherAvailabilityRangeSuccess;
   GrantTeacherQualificationResult: ResolversUnionTypes<ResolversParentTypes>['GrantTeacherQualificationResult'];
   ID: Scalars['ID']['output'];
+  InAppNotification: InAppNotification;
   InstructionalIdentityLocked: InstructionalIdentityLocked;
   Int: Scalars['Int']['output'];
   InvalidLessonMaterial: InvalidLessonMaterial;
@@ -1712,6 +1812,9 @@ export type ResolversParentTypes = {
   RescheduleBookingInput: RescheduleBookingInput;
   RescheduleBookingResult: ResolversUnionTypes<ResolversParentTypes>['RescheduleBookingResult'];
   RescheduleBookingSuccess: RescheduleBookingSuccess;
+  ResolveAdministratorTaskInput: ResolveAdministratorTaskInput;
+  ResolveAdministratorTaskResult: ResolversUnionTypes<ResolversParentTypes>['ResolveAdministratorTaskResult'];
+  ResolveAdministratorTaskSuccess: ResolveAdministratorTaskSuccess;
   RetireLessonUnitInput: RetireLessonUnitInput;
   RetireLessonUnitResult: ResolversUnionTypes<ResolversParentTypes>['RetireLessonUnitResult'];
   RetireLessonUnitSuccess: RetireLessonUnitSuccess;
@@ -1804,6 +1907,29 @@ export type AdministrationCurriculumResolvers<ContextType = any, ParentType exte
   courses?: Resolver<Array<ResolversTypes['Course']>, ParentType, ContextType>;
   teachers?: Resolver<Array<ResolversTypes['PublicTeacherProfile']>, ParentType, ContextType>;
   topics?: Resolver<Array<ResolversTypes['Topic']>, ParentType, ContextType>;
+};
+
+export type AdministratorTaskErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['AdministratorTaskError'] = ResolversParentTypes['AdministratorTaskError']> = {
+  code?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type AdministratorTaskItemResolvers<ContextType = any, ParentType extends ResolversParentTypes['AdministratorTaskItem'] = ResolversParentTypes['AdministratorTaskItem']> = {
+  correlationReference?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  kind?: Resolver<ResolversTypes['AdministratorTaskKind'], ParentType, ContextType>;
+  requiredRole?: Resolver<ResolversTypes['UserRole'], ParentType, ContextType>;
+  resolvedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  safeContext?: Resolver<ResolversTypes['AdministratorTaskSafeContext'], ParentType, ContextType>;
+  state?: Resolver<ResolversTypes['AdministratorTaskState'], ParentType, ContextType>;
+};
+
+export type AdministratorTaskSafeContextResolvers<ContextType = any, ParentType extends ResolversParentTypes['AdministratorTaskSafeContext'] = ResolversParentTypes['AdministratorTaskSafeContext']> = {
+  channel?: Resolver<ResolversTypes['NotificationChannel'], ParentType, ContextType>;
+  messageId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  recipientReference?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
 };
 
 export type AvailabilityExceptionResolvers<ContextType = any, ParentType extends ResolversParentTypes['AvailabilityException'] = ResolversParentTypes['AvailabilityException']> = {
@@ -2033,6 +2159,15 @@ export type GrantTeacherQualificationResultResolvers<ContextType = any, ParentTy
   __resolveType: TypeResolveFn<'ChangeTeacherQualificationSuccess' | 'CurriculumConflict', ParentType, ContextType>;
 };
 
+export type InAppNotificationResolvers<ContextType = any, ParentType extends ResolversParentTypes['InAppNotification'] = ResolversParentTypes['InAppNotification']> = {
+  archivedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  messageId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  readAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  renderedContent?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
 export type InstructionalIdentityLockedResolvers<ContextType = any, ParentType extends ResolversParentTypes['InstructionalIdentityLocked'] = ResolversParentTypes['InstructionalIdentityLocked']> = {
   code?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   lessonUnitId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
@@ -2080,6 +2215,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   addAvailabilityException?: Resolver<ResolversTypes['AddAvailabilityExceptionResult'], ParentType, ContextType, RequireFields<MutationAddAvailabilityExceptionArgs, 'input'>>;
   addLessonMaterial?: Resolver<ResolversTypes['AddLessonMaterialResult'], ParentType, ContextType, RequireFields<MutationAddLessonMaterialArgs, 'input'>>;
   adjustClassCredits?: Resolver<ResolversTypes['AdjustClassCreditsResult'], ParentType, ContextType, RequireFields<MutationAdjustClassCreditsArgs, 'input'>>;
+  archiveNotification?: Resolver<ResolversTypes['InAppNotification'], ParentType, ContextType, RequireFields<MutationArchiveNotificationArgs, 'id'>>;
   bookClassSession?: Resolver<ResolversTypes['BookClassSessionResult'], ParentType, ContextType, RequireFields<MutationBookClassSessionArgs, 'input'>>;
   cancelBooking?: Resolver<ResolversTypes['CancelBookingResult'], ParentType, ContextType, RequireFields<MutationCancelBookingArgs, 'input'>>;
   cancelClassSession?: Resolver<ResolversTypes['CancelClassSessionResult'], ParentType, ContextType, RequireFields<MutationCancelClassSessionArgs, 'input'>>;
@@ -2089,6 +2225,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   endTeacherAvailabilityRange?: Resolver<ResolversTypes['EndTeacherAvailabilityRangeResult'], ParentType, ContextType, RequireFields<MutationEndTeacherAvailabilityRangeArgs, 'input'>>;
   grantTeacherQualification?: Resolver<ResolversTypes['GrantTeacherQualificationResult'], ParentType, ContextType, RequireFields<MutationGrantTeacherQualificationArgs, 'input'>>;
   joinWaitlist?: Resolver<ResolversTypes['JoinWaitlistResult'], ParentType, ContextType, RequireFields<MutationJoinWaitlistArgs, 'input'>>;
+  markNotificationRead?: Resolver<ResolversTypes['InAppNotification'], ParentType, ContextType, RequireFields<MutationMarkNotificationReadArgs, 'id'>>;
   placeLessonUnitInCourse?: Resolver<ResolversTypes['ReorderLessonUnitResult'], ParentType, ContextType, RequireFields<MutationPlaceLessonUnitInCourseArgs, 'input'>>;
   processSubscriptionProviderEvent?: Resolver<ResolversTypes['ProcessSubscriptionProviderEventResult'], ParentType, ContextType, RequireFields<MutationProcessSubscriptionProviderEventArgs, 'input'>>;
   publishClassSession?: Resolver<ResolversTypes['PublishClassSessionResult'], ParentType, ContextType, RequireFields<MutationPublishClassSessionArgs, 'input'>>;
@@ -2097,6 +2234,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   removeTeacherQualification?: Resolver<ResolversTypes['RemoveTeacherQualificationResult'], ParentType, ContextType, RequireFields<MutationRemoveTeacherQualificationArgs, 'input'>>;
   reportAbsence?: Resolver<ResolversTypes['ReportAbsenceResult'], ParentType, ContextType, RequireFields<MutationReportAbsenceArgs, 'input'>>;
   rescheduleBooking?: Resolver<ResolversTypes['RescheduleBookingResult'], ParentType, ContextType, RequireFields<MutationRescheduleBookingArgs, 'input'>>;
+  resolveAdministratorTask?: Resolver<ResolversTypes['ResolveAdministratorTaskResult'], ParentType, ContextType, RequireFields<MutationResolveAdministratorTaskArgs, 'input'>>;
   retireLessonUnit?: Resolver<ResolversTypes['RetireLessonUnitResult'], ParentType, ContextType, RequireFields<MutationRetireLessonUnitArgs, 'input'>>;
   reviseCourseDetails?: Resolver<ResolversTypes['UpdateCourseResult'], ParentType, ContextType, RequireFields<MutationReviseCourseDetailsArgs, 'input'>>;
   reviseLessonMaterial?: Resolver<ResolversTypes['ReviseLessonMaterialResult'], ParentType, ContextType, RequireFields<MutationReviseLessonMaterialArgs, 'input'>>;
@@ -2148,8 +2286,10 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   administrationClassCredits?: Resolver<Maybe<ResolversTypes['ClassCreditAccount']>, ParentType, ContextType, RequireFields<QueryAdministrationClassCreditsArgs, 'studentUserId'>>;
   administrationClassSessions?: Resolver<Array<ResolversTypes['ClassSession']>, ParentType, ContextType>;
   administrationCurriculum?: Resolver<ResolversTypes['AdministrationCurriculum'], ParentType, ContextType, RequireFields<QueryAdministrationCurriculumArgs, 'locale'>>;
+  administratorTasks?: Resolver<Array<ResolversTypes['AdministratorTaskItem']>, ParentType, ContextType>;
   classSessionDiscoveryOptions?: Resolver<ResolversTypes['ClassSessionDiscoveryOptions'], ParentType, ContextType>;
   discoverClassSessions?: Resolver<ResolversTypes['ClassSessionDiscoveryConnection'], ParentType, ContextType, RequireFields<QueryDiscoverClassSessionsArgs, 'input'>>;
+  notifications?: Resolver<Array<ResolversTypes['InAppNotification']>, ParentType, ContextType>;
   publicTeacherProfile?: Resolver<Maybe<ResolversTypes['PublicTeacherProfile']>, ParentType, ContextType, RequireFields<QueryPublicTeacherProfileArgs, 'locale' | 'teacherUserId'>>;
   roleWorkspace?: Resolver<ResolversTypes['RoleWorkspace'], ParentType, ContextType, RequireFields<QueryRoleWorkspaceArgs, 'actingRole'>>;
   studentBookings?: Resolver<Array<ResolversTypes['Booking']>, ParentType, ContextType>;
@@ -2203,6 +2343,15 @@ export type RescheduleBookingSuccessResolvers<ContextType = any, ParentType exte
   account?: Resolver<ResolversTypes['ClassCreditAccount'], ParentType, ContextType>;
   originalBooking?: Resolver<ResolversTypes['Booking'], ParentType, ContextType>;
   replacementBooking?: Resolver<ResolversTypes['Booking'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type ResolveAdministratorTaskResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['ResolveAdministratorTaskResult'] = ResolversParentTypes['ResolveAdministratorTaskResult']> = {
+  __resolveType: TypeResolveFn<'AdministratorTaskError' | 'ResolveAdministratorTaskSuccess', ParentType, ContextType>;
+};
+
+export type ResolveAdministratorTaskSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['ResolveAdministratorTaskSuccess'] = ResolversParentTypes['ResolveAdministratorTaskSuccess']> = {
+  task?: Resolver<ResolversTypes['AdministratorTaskItem'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
@@ -2426,6 +2575,9 @@ export type Resolvers<ContextType = any> = {
   AdjustClassCreditsResult?: AdjustClassCreditsResultResolvers<ContextType>;
   AdjustClassCreditsSuccess?: AdjustClassCreditsSuccessResolvers<ContextType>;
   AdministrationCurriculum?: AdministrationCurriculumResolvers<ContextType>;
+  AdministratorTaskError?: AdministratorTaskErrorResolvers<ContextType>;
+  AdministratorTaskItem?: AdministratorTaskItemResolvers<ContextType>;
+  AdministratorTaskSafeContext?: AdministratorTaskSafeContextResolvers<ContextType>;
   AvailabilityException?: AvailabilityExceptionResolvers<ContextType>;
   AvailabilityExceptionSessionConflict?: AvailabilityExceptionSessionConflictResolvers<ContextType>;
   BookClassSessionResult?: BookClassSessionResultResolvers<ContextType>;
@@ -2462,6 +2614,7 @@ export type Resolvers<ContextType = any> = {
   EndTeacherAvailabilityRangeResult?: EndTeacherAvailabilityRangeResultResolvers<ContextType>;
   EndTeacherAvailabilityRangeSuccess?: EndTeacherAvailabilityRangeSuccessResolvers<ContextType>;
   GrantTeacherQualificationResult?: GrantTeacherQualificationResultResolvers<ContextType>;
+  InAppNotification?: InAppNotificationResolvers<ContextType>;
   InstructionalIdentityLocked?: InstructionalIdentityLockedResolvers<ContextType>;
   InvalidLessonMaterial?: InvalidLessonMaterialResolvers<ContextType>;
   JoinWaitlistResult?: JoinWaitlistResultResolvers<ContextType>;
@@ -2484,6 +2637,8 @@ export type Resolvers<ContextType = any> = {
   ReportAbsenceSuccess?: ReportAbsenceSuccessResolvers<ContextType>;
   RescheduleBookingResult?: RescheduleBookingResultResolvers<ContextType>;
   RescheduleBookingSuccess?: RescheduleBookingSuccessResolvers<ContextType>;
+  ResolveAdministratorTaskResult?: ResolveAdministratorTaskResultResolvers<ContextType>;
+  ResolveAdministratorTaskSuccess?: ResolveAdministratorTaskSuccessResolvers<ContextType>;
   RetireLessonUnitResult?: RetireLessonUnitResultResolvers<ContextType>;
   RetireLessonUnitSuccess?: RetireLessonUnitSuccessResolvers<ContextType>;
   ReviseLessonMaterialResult?: ReviseLessonMaterialResultResolvers<ContextType>;

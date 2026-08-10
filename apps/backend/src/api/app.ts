@@ -64,6 +64,7 @@ import {
   undoSubscriptionCancellation,
 } from "../subscription/subscription-service.js";
 import { joinWaitlist, waitlistEntriesForStudent, withdrawWaitlist } from "../waitlist/waitlist-service.js";
+import { notificationsForUser, openAdministratorTasks, resolveAdministratorTask, updateNotificationState, userForNotificationAccess } from "../notification/notification-service.js";
 import {
   InterfaceLocale,
   type Resolvers,
@@ -200,7 +201,26 @@ export function createApi(options: {
       RescheduleBookingResult: { __resolveType: (value) => value.__typename! },
       JoinWaitlistResult: { __resolveType: (value) => value.__typename! },
       WithdrawWaitlistResult: { __resolveType: (value) => value.__typename! },
+      ResolveAdministratorTaskResult: { __resolveType: (value) => value.__typename! },
       Query: {
+        notifications: async (_parent, _arguments, context) => {
+          const user = await authenticateNotificationUser(context);
+          return graphQLResult(await notificationsForUser(context.db, user));
+        },
+        administratorTasks: async (_parent, _arguments, context) => {
+          await authenticateAdministrator(context, "administrator-task.read", "AdministratorTaskItem");
+          const tasks = await openAdministratorTasks(context.db);
+          return graphQLResult(tasks.map((task) => ({
+            id: task.id,
+            requiredRole: GraphQLUserRole.PlatformAdministrator,
+            kind: task.kind,
+            state: task.state,
+            correlationReference: task.correlation_reference,
+            safeContext: task.safe_context,
+            createdAt: task.created_at.toISOString(),
+            resolvedAt: task.resolved_at?.toISOString() ?? null,
+          })));
+        },
         studentWaitlistEntries: async (_parent, _arguments, context) => {
           const student = await authenticateStudent(context, "waitlist-entry.read", "WaitlistEntry");
           return graphQLResult(await waitlistEntriesForStudent(context.db, student.id));
@@ -403,6 +423,35 @@ export function createApi(options: {
         },
       },
       Mutation: {
+        markNotificationRead: async (_parent, { id }, context) => {
+          const user = await authenticateNotificationUser(context);
+          const updated = await updateNotificationState(context.db, { notificationId: id, userId: user.id, action: "READ", correlationId: context.correlationId, now: options.now?.() ?? new Date() });
+          if (!updated) throw createGraphQLError("The notification is unavailable", { extensions: { code: "FORBIDDEN" } });
+          return graphQLResult((await notificationsForUser(context.db, user)).find((notification) => notification.id === id)!);
+        },
+        archiveNotification: async (_parent, { id }, context) => {
+          const user = await authenticateNotificationUser(context);
+          const updated = await updateNotificationState(context.db, { notificationId: id, userId: user.id, action: "ARCHIVE", correlationId: context.correlationId, now: options.now?.() ?? new Date() });
+          if (!updated) throw createGraphQLError("The notification is unavailable", { extensions: { code: "FORBIDDEN" } });
+          return graphQLResult({ id: updated.id, messageId: updated.message_id, renderedContent: "", readAt: updated.read_at?.toISOString() ?? null, archivedAt: updated.archived_at?.toISOString() ?? null, createdAt: updated.created_at.toISOString() });
+        },
+        resolveAdministratorTask: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "administrator-task.resolve", "AdministratorTaskItem");
+          return graphQLResult(await idempotentAdministrationMutation(
+            context,
+            administrator,
+            "administrator-task.resolve",
+            input.idempotencyKey,
+            input,
+            async (transaction) => {
+              if (input.reason.trim().length < 10 || input.reason.length > 500) return { __typename: "AdministratorTaskError", code: "INVALID_REASON", message: "Give a concise resolution reason between 10 and 500 characters." };
+              const task = await resolveAdministratorTask(transaction, administrator.id, input.taskId, input.reason.trim(), context.correlationId, options.now?.() ?? new Date());
+              if (!task) return { __typename: "AdministratorTaskError", code: "TASK_NOT_OPEN", message: "The administrator task is not open." };
+              return { __typename: "ResolveAdministratorTaskSuccess", task: { id: task.id, requiredRole: GraphQLUserRole.PlatformAdministrator, kind: task.kind, state: task.state, correlationReference: task.correlation_reference, safeContext: task.safe_context, createdAt: task.created_at.toISOString(), resolvedAt: task.resolved_at?.toISOString() ?? null } };
+            },
+            { __typename: "AdministratorTaskError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+          ));
+        },
         processSubscriptionProviderEvent: async (_parent, { input }, context) => {
           const administrator = await authenticateAdministrator(context, "subscription.provider-event.processed");
           if (options.nodeEnv === "production") {
@@ -826,7 +875,7 @@ export function createApi(options: {
       },
   };
 
-  async function authenticateAdministrator(context: ApiContext, operation: string) {
+  async function authenticateAdministrator(context: ApiContext, operation: string, targetType = "CurriculumAdministration") {
     const identity = await context.authenticator.authenticate(context.request);
     if (!identity) {
       throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
@@ -840,7 +889,7 @@ export function createApi(options: {
         administratorId: result.userId!,
         correlationId: context.correlationId,
         operation,
-        targetType: "CurriculumAdministration",
+        targetType,
         targetId: result.userId,
         outcome: "DENIED",
         reasonCode: "PLATFORM_ADMINISTRATOR_ROLE_REQUIRED",
@@ -848,6 +897,14 @@ export function createApi(options: {
       throw createGraphQLError("The Platform Administrator Role Assignment is required", { extensions: { code: "FORBIDDEN" } });
     }
     return result.administrator;
+  }
+
+  async function authenticateNotificationUser(context: ApiContext) {
+    const identity = await context.authenticator.authenticate(context.request);
+    if (!identity) throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+    const user = await userForNotificationAccess(context.db, identity);
+    if (!user) throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+    return user;
   }
 
   async function authenticateTeacher(context: ApiContext, operation: string) {
