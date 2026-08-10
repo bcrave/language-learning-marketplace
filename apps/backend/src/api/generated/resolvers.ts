@@ -11,6 +11,19 @@ export type Scalars = {
   Float: { input: number; output: number; }
 };
 
+export type AbsenceRequest = {
+  __typename?: 'AbsenceRequest';
+  classSessions: Array<ClassSession>;
+  id: Scalars['ID']['output'];
+  requestedAt: Scalars['String']['output'];
+  state: AbsenceRequestState;
+};
+
+export enum AbsenceRequestState {
+  Open = 'OPEN',
+  Resolved = 'RESOLVED'
+}
+
 export type AddAvailabilityExceptionInput = {
   endDisambiguation: LocalTimeDisambiguation;
   endsAtLocal: Scalars['String']['input'];
@@ -132,6 +145,7 @@ export enum BookingState {
 }
 
 export enum BookingTerminalReason {
+  ClassSessionCancellation = 'CLASS_SESSION_CANCELLATION',
   Rescheduled = 'RESCHEDULED',
   StudentCancellation = 'STUDENT_CANCELLATION'
 }
@@ -147,6 +161,23 @@ export type CancelBookingSuccess = {
   __typename?: 'CancelBookingSuccess';
   account: ClassCreditAccount;
   booking: Booking;
+};
+
+export type CancelClassSessionInput = {
+  absenceRequestId: Scalars['ID']['input'];
+  classSessionId: Scalars['ID']['input'];
+  idempotencyKey: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+};
+
+export type CancelClassSessionResult = CancelClassSessionSuccess | ClassSessionDisruptionError;
+
+export type CancelClassSessionSuccess = {
+  __typename?: 'CancelClassSessionSuccess';
+  absenceRequest: AbsenceRequest;
+  classSession: ClassSession;
+  refundedBookingCount: Scalars['Int']['output'];
+  removedWaitlistEntryCount: Scalars['Int']['output'];
 };
 
 export type ChangeClassSessionSeatCapacityInput = {
@@ -214,6 +245,7 @@ export enum ClassCreditLedgerSource {
 
 export type ClassSession = {
   __typename?: 'ClassSession';
+  cancellationReason?: Maybe<Scalars['String']['output']>;
   endsAt: Scalars['String']['output'];
   id: Scalars['ID']['output'];
   lessonUnitId: Scalars['ID']['output'];
@@ -221,6 +253,7 @@ export type ClassSession = {
   schedulingTimeZone: Scalars['String']['output'];
   seatCapacity: Scalars['Int']['output'];
   startsAt: Scalars['String']['output'];
+  state: ClassSessionState;
   teacherUserId: Scalars['ID']['output'];
 };
 
@@ -268,6 +301,28 @@ export type ClassSessionDiscoveryTeacherOption = {
   id: Scalars['ID']['output'];
 };
 
+export type ClassSessionDisruptionError = {
+  __typename?: 'ClassSessionDisruptionError';
+  code: ClassSessionDisruptionErrorCode;
+  message: Scalars['String']['output'];
+};
+
+export enum ClassSessionDisruptionErrorCode {
+  AbsenceAlreadyReported = 'ABSENCE_ALREADY_REPORTED',
+  AbsenceRequestNotFound = 'ABSENCE_REQUEST_NOT_FOUND',
+  AttendanceAlreadySubmitted = 'ATTENDANCE_ALREADY_SUBMITTED',
+  ClassSessionAlreadyStarted = 'CLASS_SESSION_ALREADY_STARTED',
+  ClassSessionNotAssigned = 'CLASS_SESSION_NOT_ASSIGNED',
+  ClassSessionNotFound = 'CLASS_SESSION_NOT_FOUND',
+  DisruptionAlreadyResolved = 'DISRUPTION_ALREADY_RESOLVED',
+  IdempotencyKeyReused = 'IDEMPOTENCY_KEY_REUSED',
+  InvalidClassSessions = 'INVALID_CLASS_SESSIONS',
+  InvalidReason = 'INVALID_REASON',
+  ReplacementTeacherRequired = 'REPLACEMENT_TEACHER_REQUIRED',
+  TeacherQualificationRequired = 'TEACHER_QUALIFICATION_REQUIRED',
+  TeacherScheduleConflict = 'TEACHER_SCHEDULE_CONFLICT'
+}
+
 export type ClassSessionPublicationError = {
   __typename?: 'ClassSessionPublicationError';
   code: ClassSessionPublicationErrorCode;
@@ -297,6 +352,11 @@ export enum ClassSessionSeatCapacityErrorCode {
   ClassSessionNotFound = 'CLASS_SESSION_NOT_FOUND',
   InvalidSeatCapacity = 'INVALID_SEAT_CAPACITY',
   SeatCapacityBelowOccupiedSeats = 'SEAT_CAPACITY_BELOW_OCCUPIED_SEATS'
+}
+
+export enum ClassSessionState {
+  Cancelled = 'CANCELLED',
+  Published = 'PUBLISHED'
 }
 
 export type Course = {
@@ -468,6 +528,7 @@ export type Mutation = {
   adjustClassCredits: AdjustClassCreditsResult;
   bookClassSession: BookClassSessionResult;
   cancelBooking: CancelBookingResult;
+  cancelClassSession: CancelClassSessionResult;
   changeClassSessionSeatCapacity: ChangeClassSessionSeatCapacityResult;
   createCourse: CreateCourseResult;
   createLessonUnit: CreateLessonUnitResult;
@@ -480,6 +541,7 @@ export type Mutation = {
   rememberRoleWorkspacePlace: RolePlace;
   removeAvailabilityException: RemoveAvailabilityExceptionResult;
   removeTeacherQualification: RemoveTeacherQualificationResult;
+  reportAbsence: ReportAbsenceResult;
   rescheduleBooking: RescheduleBookingResult;
   retireLessonUnit: RetireLessonUnitResult;
   reviseCourseDetails: UpdateCourseResult;
@@ -491,6 +553,7 @@ export type Mutation = {
   saveUserPreferences: SaveUserPreferencesPayload;
   scheduleSubscriptionCancellation: ScheduleSubscriptionCancellationResult;
   setStudentPlacement: StudentPlacement;
+  substituteTeacher: SubstituteTeacherResult;
   undoSubscriptionCancellation: UndoSubscriptionCancellationResult;
   withdrawWaitlist: WithdrawWaitlistResult;
 };
@@ -518,6 +581,11 @@ export type MutationBookClassSessionArgs = {
 
 export type MutationCancelBookingArgs = {
   input: CancelBookingInput;
+};
+
+
+export type MutationCancelClassSessionArgs = {
+  input: CancelClassSessionInput;
 };
 
 
@@ -581,6 +649,11 @@ export type MutationRemoveTeacherQualificationArgs = {
 };
 
 
+export type MutationReportAbsenceArgs = {
+  input: ReportAbsenceInput;
+};
+
+
 export type MutationRescheduleBookingArgs = {
   input: RescheduleBookingInput;
 };
@@ -633,6 +706,11 @@ export type MutationScheduleSubscriptionCancellationArgs = {
 
 export type MutationSetStudentPlacementArgs = {
   input: SetStudentPlacementInput;
+};
+
+
+export type MutationSubstituteTeacherArgs = {
+  input: SubstituteTeacherInput;
 };
 
 
@@ -694,6 +772,7 @@ export type PublishClassSessionSuccess = {
 
 export type Query = {
   __typename?: 'Query';
+  administrationAbsenceRequests: Array<AbsenceRequest>;
   administrationClassCredits?: Maybe<ClassCreditAccount>;
   administrationClassSessions: Array<ClassSession>;
   administrationCurriculum: AdministrationCurriculum;
@@ -707,8 +786,10 @@ export type Query = {
   studentSubscription?: Maybe<Subscription>;
   studentWaitlistEntries: Array<WaitlistEntry>;
   studentWorkspace: StudentWorkspace;
+  teacherAbsenceRequests: Array<AbsenceRequest>;
   teacherAvailability: TeacherAvailability;
   teacherAvailabilityPreview: Array<TeacherAvailabilityOccurrence>;
+  teacherClassSessions: Array<ClassSession>;
 };
 
 
@@ -771,6 +852,18 @@ export type ReorderLessonUnitResult = CurriculumConflict | ReorderLessonUnitSucc
 export type ReorderLessonUnitSuccess = {
   __typename?: 'ReorderLessonUnitSuccess';
   lessonUnit: LessonUnit;
+};
+
+export type ReportAbsenceInput = {
+  classSessionIds: Array<Scalars['ID']['input']>;
+  idempotencyKey: Scalars['ID']['input'];
+};
+
+export type ReportAbsenceResult = ClassSessionDisruptionError | ReportAbsenceSuccess;
+
+export type ReportAbsenceSuccess = {
+  __typename?: 'ReportAbsenceSuccess';
+  absenceRequest: AbsenceRequest;
 };
 
 export type RescheduleBookingInput = {
@@ -938,6 +1031,21 @@ export enum SubscriptionState {
   CancellationScheduled = 'CANCELLATION_SCHEDULED',
   Cancelled = 'CANCELLED'
 }
+
+export type SubstituteTeacherInput = {
+  absenceRequestId: Scalars['ID']['input'];
+  classSessionId: Scalars['ID']['input'];
+  idempotencyKey: Scalars['ID']['input'];
+  replacementTeacherUserId: Scalars['ID']['input'];
+};
+
+export type SubstituteTeacherResult = ClassSessionDisruptionError | SubstituteTeacherSuccess;
+
+export type SubstituteTeacherSuccess = {
+  __typename?: 'SubstituteTeacherSuccess';
+  absenceRequest: AbsenceRequest;
+  classSession: ClassSession;
+};
 
 export type TeacherAvailability = {
   __typename?: 'TeacherAvailability';
@@ -1243,6 +1351,10 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( BookingError )
     | ( CancelBookingSuccess )
   ;
+  CancelClassSessionResult:
+    | ( CancelClassSessionSuccess )
+    | ( ClassSessionDisruptionError )
+  ;
   ChangeClassSessionSeatCapacityResult:
     | ( ChangeClassSessionSeatCapacitySuccess )
     | ( ClassSessionSeatCapacityError )
@@ -1290,6 +1402,10 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( CurriculumConflict )
     | ( ReorderLessonUnitSuccess )
   ;
+  ReportAbsenceResult:
+    | ( ClassSessionDisruptionError )
+    | ( ReportAbsenceSuccess )
+  ;
   RescheduleBookingResult:
     | ( BookingError )
     | ( RescheduleBookingSuccess )
@@ -1310,6 +1426,10 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
   ScheduleSubscriptionCancellationResult:
     | ( ScheduleSubscriptionCancellationSuccess )
     | ( SubscriptionConflict )
+  ;
+  SubstituteTeacherResult:
+    | ( ClassSessionDisruptionError )
+    | ( SubstituteTeacherSuccess )
   ;
   UndoSubscriptionCancellationResult:
     | ( SubscriptionConflict )
@@ -1334,6 +1454,8 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
 
 /** Mapping between all available schema types and the resolvers types */
 export type ResolversTypes = {
+  AbsenceRequest: ResolverTypeWrapper<AbsenceRequest>;
+  AbsenceRequestState: AbsenceRequestState;
   AddAvailabilityExceptionInput: AddAvailabilityExceptionInput;
   AddAvailabilityExceptionResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['AddAvailabilityExceptionResult']>;
   AddAvailabilityExceptionSuccess: ResolverTypeWrapper<AddAvailabilityExceptionSuccess>;
@@ -1358,6 +1480,9 @@ export type ResolversTypes = {
   CancelBookingInput: CancelBookingInput;
   CancelBookingResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['CancelBookingResult']>;
   CancelBookingSuccess: ResolverTypeWrapper<CancelBookingSuccess>;
+  CancelClassSessionInput: CancelClassSessionInput;
+  CancelClassSessionResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['CancelClassSessionResult']>;
+  CancelClassSessionSuccess: ResolverTypeWrapper<CancelClassSessionSuccess>;
   ChangeClassSessionSeatCapacityInput: ChangeClassSessionSeatCapacityInput;
   ChangeClassSessionSeatCapacityResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ChangeClassSessionSeatCapacityResult']>;
   ChangeClassSessionSeatCapacitySuccess: ResolverTypeWrapper<ChangeClassSessionSeatCapacitySuccess>;
@@ -1375,10 +1500,13 @@ export type ResolversTypes = {
   ClassSessionDiscoveryOptions: ResolverTypeWrapper<ClassSessionDiscoveryOptions>;
   ClassSessionDiscoveryPageInfo: ResolverTypeWrapper<ClassSessionDiscoveryPageInfo>;
   ClassSessionDiscoveryTeacherOption: ResolverTypeWrapper<ClassSessionDiscoveryTeacherOption>;
+  ClassSessionDisruptionError: ResolverTypeWrapper<ClassSessionDisruptionError>;
+  ClassSessionDisruptionErrorCode: ClassSessionDisruptionErrorCode;
   ClassSessionPublicationError: ResolverTypeWrapper<ClassSessionPublicationError>;
   ClassSessionPublicationErrorCode: ClassSessionPublicationErrorCode;
   ClassSessionSeatCapacityError: ResolverTypeWrapper<ClassSessionSeatCapacityError>;
   ClassSessionSeatCapacityErrorCode: ClassSessionSeatCapacityErrorCode;
+  ClassSessionState: ClassSessionState;
   Course: ResolverTypeWrapper<Course>;
   CreateCourseInput: CreateCourseInput;
   CreateCourseResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['CreateCourseResult']>;
@@ -1424,6 +1552,9 @@ export type ResolversTypes = {
   ReorderLessonUnitInput: ReorderLessonUnitInput;
   ReorderLessonUnitResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ReorderLessonUnitResult']>;
   ReorderLessonUnitSuccess: ResolverTypeWrapper<ReorderLessonUnitSuccess>;
+  ReportAbsenceInput: ReportAbsenceInput;
+  ReportAbsenceResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ReportAbsenceResult']>;
+  ReportAbsenceSuccess: ResolverTypeWrapper<ReportAbsenceSuccess>;
   RescheduleBookingInput: RescheduleBookingInput;
   RescheduleBookingResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RescheduleBookingResult']>;
   RescheduleBookingSuccess: ResolverTypeWrapper<RescheduleBookingSuccess>;
@@ -1454,6 +1585,9 @@ export type ResolversTypes = {
   SubscriptionLifecycleInput: SubscriptionLifecycleInput;
   SubscriptionProviderEventType: SubscriptionProviderEventType;
   SubscriptionState: SubscriptionState;
+  SubstituteTeacherInput: SubstituteTeacherInput;
+  SubstituteTeacherResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['SubstituteTeacherResult']>;
+  SubstituteTeacherSuccess: ResolverTypeWrapper<SubstituteTeacherSuccess>;
   TeacherAvailability: ResolverTypeWrapper<TeacherAvailability>;
   TeacherAvailabilityOccurrence: ResolverTypeWrapper<TeacherAvailabilityOccurrence>;
   TeacherAvailabilityRange: ResolverTypeWrapper<TeacherAvailabilityRange>;
@@ -1489,6 +1623,7 @@ export type ResolversTypes = {
 
 /** Mapping between all available schema types and the resolvers parents */
 export type ResolversParentTypes = {
+  AbsenceRequest: AbsenceRequest;
   AddAvailabilityExceptionInput: AddAvailabilityExceptionInput;
   AddAvailabilityExceptionResult: ResolversUnionTypes<ResolversParentTypes>['AddAvailabilityExceptionResult'];
   AddAvailabilityExceptionSuccess: AddAvailabilityExceptionSuccess;
@@ -1510,6 +1645,9 @@ export type ResolversParentTypes = {
   CancelBookingInput: CancelBookingInput;
   CancelBookingResult: ResolversUnionTypes<ResolversParentTypes>['CancelBookingResult'];
   CancelBookingSuccess: CancelBookingSuccess;
+  CancelClassSessionInput: CancelClassSessionInput;
+  CancelClassSessionResult: ResolversUnionTypes<ResolversParentTypes>['CancelClassSessionResult'];
+  CancelClassSessionSuccess: CancelClassSessionSuccess;
   ChangeClassSessionSeatCapacityInput: ChangeClassSessionSeatCapacityInput;
   ChangeClassSessionSeatCapacityResult: ResolversUnionTypes<ResolversParentTypes>['ChangeClassSessionSeatCapacityResult'];
   ChangeClassSessionSeatCapacitySuccess: ChangeClassSessionSeatCapacitySuccess;
@@ -1525,6 +1663,7 @@ export type ResolversParentTypes = {
   ClassSessionDiscoveryOptions: ClassSessionDiscoveryOptions;
   ClassSessionDiscoveryPageInfo: ClassSessionDiscoveryPageInfo;
   ClassSessionDiscoveryTeacherOption: ClassSessionDiscoveryTeacherOption;
+  ClassSessionDisruptionError: ClassSessionDisruptionError;
   ClassSessionPublicationError: ClassSessionPublicationError;
   ClassSessionSeatCapacityError: ClassSessionSeatCapacityError;
   Course: Course;
@@ -1567,6 +1706,9 @@ export type ResolversParentTypes = {
   ReorderLessonUnitInput: ReorderLessonUnitInput;
   ReorderLessonUnitResult: ResolversUnionTypes<ResolversParentTypes>['ReorderLessonUnitResult'];
   ReorderLessonUnitSuccess: ReorderLessonUnitSuccess;
+  ReportAbsenceInput: ReportAbsenceInput;
+  ReportAbsenceResult: ResolversUnionTypes<ResolversParentTypes>['ReportAbsenceResult'];
+  ReportAbsenceSuccess: ReportAbsenceSuccess;
   RescheduleBookingInput: RescheduleBookingInput;
   RescheduleBookingResult: ResolversUnionTypes<ResolversParentTypes>['RescheduleBookingResult'];
   RescheduleBookingSuccess: RescheduleBookingSuccess;
@@ -1595,6 +1737,9 @@ export type ResolversParentTypes = {
   Subscription: Record<PropertyKey, never>;
   SubscriptionConflict: SubscriptionConflict;
   SubscriptionLifecycleInput: SubscriptionLifecycleInput;
+  SubstituteTeacherInput: SubstituteTeacherInput;
+  SubstituteTeacherResult: ResolversUnionTypes<ResolversParentTypes>['SubstituteTeacherResult'];
+  SubstituteTeacherSuccess: SubstituteTeacherSuccess;
   TeacherAvailability: TeacherAvailability;
   TeacherAvailabilityOccurrence: TeacherAvailabilityOccurrence;
   TeacherAvailabilityRange: TeacherAvailabilityRange;
@@ -1619,6 +1764,13 @@ export type ResolversParentTypes = {
   WithdrawWaitlistInput: WithdrawWaitlistInput;
   WithdrawWaitlistResult: ResolversUnionTypes<ResolversParentTypes>['WithdrawWaitlistResult'];
   WithdrawWaitlistSuccess: WithdrawWaitlistSuccess;
+};
+
+export type AbsenceRequestResolvers<ContextType = any, ParentType extends ResolversParentTypes['AbsenceRequest'] = ResolversParentTypes['AbsenceRequest']> = {
+  classSessions?: Resolver<Array<ResolversTypes['ClassSession']>, ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  requestedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  state?: Resolver<ResolversTypes['AbsenceRequestState'], ParentType, ContextType>;
 };
 
 export type AddAvailabilityExceptionResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['AddAvailabilityExceptionResult'] = ResolversParentTypes['AddAvailabilityExceptionResult']> = {
@@ -1707,6 +1859,18 @@ export type CancelBookingSuccessResolvers<ContextType = any, ParentType extends 
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
+export type CancelClassSessionResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['CancelClassSessionResult'] = ResolversParentTypes['CancelClassSessionResult']> = {
+  __resolveType: TypeResolveFn<'CancelClassSessionSuccess' | 'ClassSessionDisruptionError', ParentType, ContextType>;
+};
+
+export type CancelClassSessionSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['CancelClassSessionSuccess'] = ResolversParentTypes['CancelClassSessionSuccess']> = {
+  absenceRequest?: Resolver<ResolversTypes['AbsenceRequest'], ParentType, ContextType>;
+  classSession?: Resolver<ResolversTypes['ClassSession'], ParentType, ContextType>;
+  refundedBookingCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  removedWaitlistEntryCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
 export type ChangeClassSessionSeatCapacityResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['ChangeClassSessionSeatCapacityResult'] = ResolversParentTypes['ChangeClassSessionSeatCapacityResult']> = {
   __resolveType: TypeResolveFn<'ChangeClassSessionSeatCapacitySuccess' | 'ClassSessionSeatCapacityError' | 'CurriculumConflict', ParentType, ContextType>;
 };
@@ -1743,6 +1907,7 @@ export type ClassCreditLedgerEntryResolvers<ContextType = any, ParentType extend
 };
 
 export type ClassSessionResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassSession'] = ResolversParentTypes['ClassSession']> = {
+  cancellationReason?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   endsAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   lessonUnitId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
@@ -1750,6 +1915,7 @@ export type ClassSessionResolvers<ContextType = any, ParentType extends Resolver
   schedulingTimeZone?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   seatCapacity?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   startsAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  state?: Resolver<ResolversTypes['ClassSessionState'], ParentType, ContextType>;
   teacherUserId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
 };
 
@@ -1781,6 +1947,12 @@ export type ClassSessionDiscoveryPageInfoResolvers<ContextType = any, ParentType
 export type ClassSessionDiscoveryTeacherOptionResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassSessionDiscoveryTeacherOption'] = ResolversParentTypes['ClassSessionDiscoveryTeacherOption']> = {
   displayName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+};
+
+export type ClassSessionDisruptionErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassSessionDisruptionError'] = ResolversParentTypes['ClassSessionDisruptionError']> = {
+  code?: Resolver<ResolversTypes['ClassSessionDisruptionErrorCode'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
 export type ClassSessionPublicationErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassSessionPublicationError'] = ResolversParentTypes['ClassSessionPublicationError']> = {
@@ -1910,6 +2082,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   adjustClassCredits?: Resolver<ResolversTypes['AdjustClassCreditsResult'], ParentType, ContextType, RequireFields<MutationAdjustClassCreditsArgs, 'input'>>;
   bookClassSession?: Resolver<ResolversTypes['BookClassSessionResult'], ParentType, ContextType, RequireFields<MutationBookClassSessionArgs, 'input'>>;
   cancelBooking?: Resolver<ResolversTypes['CancelBookingResult'], ParentType, ContextType, RequireFields<MutationCancelBookingArgs, 'input'>>;
+  cancelClassSession?: Resolver<ResolversTypes['CancelClassSessionResult'], ParentType, ContextType, RequireFields<MutationCancelClassSessionArgs, 'input'>>;
   changeClassSessionSeatCapacity?: Resolver<ResolversTypes['ChangeClassSessionSeatCapacityResult'], ParentType, ContextType, RequireFields<MutationChangeClassSessionSeatCapacityArgs, 'input'>>;
   createCourse?: Resolver<ResolversTypes['CreateCourseResult'], ParentType, ContextType, RequireFields<MutationCreateCourseArgs, 'input'>>;
   createLessonUnit?: Resolver<ResolversTypes['CreateLessonUnitResult'], ParentType, ContextType, RequireFields<MutationCreateLessonUnitArgs, 'input'>>;
@@ -1922,6 +2095,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   rememberRoleWorkspacePlace?: Resolver<ResolversTypes['RolePlace'], ParentType, ContextType, RequireFields<MutationRememberRoleWorkspacePlaceArgs, 'input'>>;
   removeAvailabilityException?: Resolver<ResolversTypes['RemoveAvailabilityExceptionResult'], ParentType, ContextType, RequireFields<MutationRemoveAvailabilityExceptionArgs, 'input'>>;
   removeTeacherQualification?: Resolver<ResolversTypes['RemoveTeacherQualificationResult'], ParentType, ContextType, RequireFields<MutationRemoveTeacherQualificationArgs, 'input'>>;
+  reportAbsence?: Resolver<ResolversTypes['ReportAbsenceResult'], ParentType, ContextType, RequireFields<MutationReportAbsenceArgs, 'input'>>;
   rescheduleBooking?: Resolver<ResolversTypes['RescheduleBookingResult'], ParentType, ContextType, RequireFields<MutationRescheduleBookingArgs, 'input'>>;
   retireLessonUnit?: Resolver<ResolversTypes['RetireLessonUnitResult'], ParentType, ContextType, RequireFields<MutationRetireLessonUnitArgs, 'input'>>;
   reviseCourseDetails?: Resolver<ResolversTypes['UpdateCourseResult'], ParentType, ContextType, RequireFields<MutationReviseCourseDetailsArgs, 'input'>>;
@@ -1933,6 +2107,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   saveUserPreferences?: Resolver<ResolversTypes['SaveUserPreferencesPayload'], ParentType, ContextType, RequireFields<MutationSaveUserPreferencesArgs, 'input'>>;
   scheduleSubscriptionCancellation?: Resolver<ResolversTypes['ScheduleSubscriptionCancellationResult'], ParentType, ContextType, RequireFields<MutationScheduleSubscriptionCancellationArgs, 'input'>>;
   setStudentPlacement?: Resolver<ResolversTypes['StudentPlacement'], ParentType, ContextType, RequireFields<MutationSetStudentPlacementArgs, 'input'>>;
+  substituteTeacher?: Resolver<ResolversTypes['SubstituteTeacherResult'], ParentType, ContextType, RequireFields<MutationSubstituteTeacherArgs, 'input'>>;
   undoSubscriptionCancellation?: Resolver<ResolversTypes['UndoSubscriptionCancellationResult'], ParentType, ContextType, RequireFields<MutationUndoSubscriptionCancellationArgs, 'input'>>;
   withdrawWaitlist?: Resolver<ResolversTypes['WithdrawWaitlistResult'], ParentType, ContextType, RequireFields<MutationWithdrawWaitlistArgs, 'input'>>;
 };
@@ -1969,6 +2144,7 @@ export type PublishClassSessionSuccessResolvers<ContextType = any, ParentType ex
 };
 
 export type QueryResolvers<ContextType = any, ParentType extends ResolversParentTypes['Query'] = ResolversParentTypes['Query']> = {
+  administrationAbsenceRequests?: Resolver<Array<ResolversTypes['AbsenceRequest']>, ParentType, ContextType>;
   administrationClassCredits?: Resolver<Maybe<ResolversTypes['ClassCreditAccount']>, ParentType, ContextType, RequireFields<QueryAdministrationClassCreditsArgs, 'studentUserId'>>;
   administrationClassSessions?: Resolver<Array<ResolversTypes['ClassSession']>, ParentType, ContextType>;
   administrationCurriculum?: Resolver<ResolversTypes['AdministrationCurriculum'], ParentType, ContextType, RequireFields<QueryAdministrationCurriculumArgs, 'locale'>>;
@@ -1982,8 +2158,10 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   studentSubscription?: Resolver<Maybe<ResolversTypes['Subscription']>, ParentType, ContextType>;
   studentWaitlistEntries?: Resolver<Array<ResolversTypes['WaitlistEntry']>, ParentType, ContextType>;
   studentWorkspace?: Resolver<ResolversTypes['StudentWorkspace'], ParentType, ContextType>;
+  teacherAbsenceRequests?: Resolver<Array<ResolversTypes['AbsenceRequest']>, ParentType, ContextType>;
   teacherAvailability?: Resolver<ResolversTypes['TeacherAvailability'], ParentType, ContextType>;
   teacherAvailabilityPreview?: Resolver<Array<ResolversTypes['TeacherAvailabilityOccurrence']>, ParentType, ContextType, RequireFields<QueryTeacherAvailabilityPreviewArgs, 'localDates'>>;
+  teacherClassSessions?: Resolver<Array<ResolversTypes['ClassSession']>, ParentType, ContextType>;
 };
 
 export type RemoveAvailabilityExceptionResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['RemoveAvailabilityExceptionResult'] = ResolversParentTypes['RemoveAvailabilityExceptionResult']> = {
@@ -2005,6 +2183,15 @@ export type ReorderLessonUnitResultResolvers<ContextType = any, ParentType exten
 
 export type ReorderLessonUnitSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['ReorderLessonUnitSuccess'] = ResolversParentTypes['ReorderLessonUnitSuccess']> = {
   lessonUnit?: Resolver<ResolversTypes['LessonUnit'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type ReportAbsenceResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['ReportAbsenceResult'] = ResolversParentTypes['ReportAbsenceResult']> = {
+  __resolveType: TypeResolveFn<'ClassSessionDisruptionError' | 'ReportAbsenceSuccess', ParentType, ContextType>;
+};
+
+export type ReportAbsenceSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['ReportAbsenceSuccess'] = ResolversParentTypes['ReportAbsenceSuccess']> = {
+  absenceRequest?: Resolver<ResolversTypes['AbsenceRequest'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
@@ -2099,6 +2286,16 @@ export type SubscriptionResolvers<ContextType = any, ParentType extends Resolver
 export type SubscriptionConflictResolvers<ContextType = any, ParentType extends ResolversParentTypes['SubscriptionConflict'] = ResolversParentTypes['SubscriptionConflict']> = {
   code?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type SubstituteTeacherResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['SubstituteTeacherResult'] = ResolversParentTypes['SubstituteTeacherResult']> = {
+  __resolveType: TypeResolveFn<'ClassSessionDisruptionError' | 'SubstituteTeacherSuccess', ParentType, ContextType>;
+};
+
+export type SubstituteTeacherSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['SubstituteTeacherSuccess'] = ResolversParentTypes['SubstituteTeacherSuccess']> = {
+  absenceRequest?: Resolver<ResolversTypes['AbsenceRequest'], ParentType, ContextType>;
+  classSession?: Resolver<ResolversTypes['ClassSession'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
@@ -2221,6 +2418,7 @@ export type WithdrawWaitlistSuccessResolvers<ContextType = any, ParentType exten
 };
 
 export type Resolvers<ContextType = any> = {
+  AbsenceRequest?: AbsenceRequestResolvers<ContextType>;
   AddAvailabilityExceptionResult?: AddAvailabilityExceptionResultResolvers<ContextType>;
   AddAvailabilityExceptionSuccess?: AddAvailabilityExceptionSuccessResolvers<ContextType>;
   AddLessonMaterialResult?: AddLessonMaterialResultResolvers<ContextType>;
@@ -2236,6 +2434,8 @@ export type Resolvers<ContextType = any> = {
   BookingError?: BookingErrorResolvers<ContextType>;
   CancelBookingResult?: CancelBookingResultResolvers<ContextType>;
   CancelBookingSuccess?: CancelBookingSuccessResolvers<ContextType>;
+  CancelClassSessionResult?: CancelClassSessionResultResolvers<ContextType>;
+  CancelClassSessionSuccess?: CancelClassSessionSuccessResolvers<ContextType>;
   ChangeClassSessionSeatCapacityResult?: ChangeClassSessionSeatCapacityResultResolvers<ContextType>;
   ChangeClassSessionSeatCapacitySuccess?: ChangeClassSessionSeatCapacitySuccessResolvers<ContextType>;
   ChangeTeacherQualificationSuccess?: ChangeTeacherQualificationSuccessResolvers<ContextType>;
@@ -2248,6 +2448,7 @@ export type Resolvers<ContextType = any> = {
   ClassSessionDiscoveryOptions?: ClassSessionDiscoveryOptionsResolvers<ContextType>;
   ClassSessionDiscoveryPageInfo?: ClassSessionDiscoveryPageInfoResolvers<ContextType>;
   ClassSessionDiscoveryTeacherOption?: ClassSessionDiscoveryTeacherOptionResolvers<ContextType>;
+  ClassSessionDisruptionError?: ClassSessionDisruptionErrorResolvers<ContextType>;
   ClassSessionPublicationError?: ClassSessionPublicationErrorResolvers<ContextType>;
   ClassSessionSeatCapacityError?: ClassSessionSeatCapacityErrorResolvers<ContextType>;
   Course?: CourseResolvers<ContextType>;
@@ -2279,6 +2480,8 @@ export type Resolvers<ContextType = any> = {
   RemoveTeacherQualificationResult?: RemoveTeacherQualificationResultResolvers<ContextType>;
   ReorderLessonUnitResult?: ReorderLessonUnitResultResolvers<ContextType>;
   ReorderLessonUnitSuccess?: ReorderLessonUnitSuccessResolvers<ContextType>;
+  ReportAbsenceResult?: ReportAbsenceResultResolvers<ContextType>;
+  ReportAbsenceSuccess?: ReportAbsenceSuccessResolvers<ContextType>;
   RescheduleBookingResult?: RescheduleBookingResultResolvers<ContextType>;
   RescheduleBookingSuccess?: RescheduleBookingSuccessResolvers<ContextType>;
   RetireLessonUnitResult?: RetireLessonUnitResultResolvers<ContextType>;
@@ -2297,6 +2500,8 @@ export type Resolvers<ContextType = any> = {
   StudentWorkspace?: StudentWorkspaceResolvers<ContextType>;
   Subscription?: SubscriptionResolvers<ContextType>;
   SubscriptionConflict?: SubscriptionConflictResolvers<ContextType>;
+  SubstituteTeacherResult?: SubstituteTeacherResultResolvers<ContextType>;
+  SubstituteTeacherSuccess?: SubstituteTeacherSuccessResolvers<ContextType>;
   TeacherAvailability?: TeacherAvailabilityResolvers<ContextType>;
   TeacherAvailabilityOccurrence?: TeacherAvailabilityOccurrenceResolvers<ContextType>;
   TeacherAvailabilityRange?: TeacherAvailabilityRangeResolvers<ContextType>;

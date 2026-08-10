@@ -4,6 +4,23 @@ query AdministrationClassSessions($locale: InterfaceLocale!) {
     teachers { id displayName taughtLanguages qualifiedCurriculumLevels }
   }
   administrationClassSessions { id lessonUnitId teacherUserId startsAt endsAt schedulingTimeZone seatCapacity occupiedSeats }
+  administrationAbsenceRequests { id state requestedAt classSessions { id lessonUnitId teacherUserId startsAt endsAt schedulingTimeZone seatCapacity occupiedSeats state cancellationReason } }
+}
+
+mutation SubstituteTeacher($input: SubstituteTeacherInput!) {
+  substituteTeacher(input: $input) {
+    __typename
+    ... on SubstituteTeacherSuccess { classSession { id lessonUnitId teacherUserId startsAt endsAt schedulingTimeZone seatCapacity occupiedSeats state cancellationReason } absenceRequest { id state } }
+    ... on ClassSessionDisruptionError { code message }
+  }
+}
+
+mutation CancelClassSession($input: CancelClassSessionInput!) {
+  cancelClassSession(input: $input) {
+    __typename
+    ... on CancelClassSessionSuccess { classSession { id lessonUnitId teacherUserId startsAt endsAt schedulingTimeZone seatCapacity occupiedSeats state cancellationReason } absenceRequest { id state } refundedBookingCount removedWaitlistEntryCount }
+    ... on ClassSessionDisruptionError { code message }
+  }
 }
 
 mutation PublishClassSession($input: PublishClassSessionInput!) {

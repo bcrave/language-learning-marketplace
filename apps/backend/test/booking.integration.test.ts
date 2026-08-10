@@ -1306,6 +1306,8 @@ describe("Student Booking GraphQL API", () => {
       seat_capacity: options.seatCapacity ?? 2,
       occupied_seats: 0,
       state: options.state ?? "PUBLISHED",
+      cancellation_reason: options.state === "CANCELLED" ? "Cancelled test fixture" : null,
+      cancelled_at: options.state === "CANCELLED" ? now : null,
     }).returning("id").executeTakeFirstOrThrow()).id;
   }
 

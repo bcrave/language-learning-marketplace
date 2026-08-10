@@ -10,6 +10,7 @@ import { resolveFixedDurationLocalInterval, type LocalTimeDisambiguation } from 
 import {
   ClassSessionPublicationErrorCode,
   ClassSessionSeatCapacityErrorCode,
+  ClassSessionState,
 } from "../api/generated/resolvers.js";
 import { notifyClassSessionTeacher } from "./class-session-notifications.js";
 
@@ -41,6 +42,8 @@ export function classSessionProjection(session: {
   scheduling_time_zone: string;
   seat_capacity: number;
   occupied_seats: number;
+  state: "PUBLISHED" | "CANCELLED";
+  cancellation_reason: string | null;
 }) {
   const startsAt = Temporal.Instant.fromEpochMilliseconds(session.starts_at.getTime());
   return {
@@ -52,6 +55,8 @@ export function classSessionProjection(session: {
     schedulingTimeZone: session.scheduling_time_zone,
     seatCapacity: session.seat_capacity,
     occupiedSeats: session.occupied_seats,
+    state: session.state === "PUBLISHED" ? ClassSessionState.Published : ClassSessionState.Cancelled,
+    cancellationReason: session.cancellation_reason,
   };
 }
 

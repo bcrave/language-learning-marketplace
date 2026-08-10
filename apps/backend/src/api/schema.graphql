@@ -56,9 +56,10 @@ union ProcessSubscriptionProviderEventResult = ProcessSubscriptionProviderEventS
 union ScheduleSubscriptionCancellationResult = ScheduleSubscriptionCancellationSuccess | SubscriptionConflict
 union UndoSubscriptionCancellationResult = UndoSubscriptionCancellationSuccess | SubscriptionConflict
 
-type ClassSession { id: ID!, lessonUnitId: ID!, teacherUserId: ID!, startsAt: String!, endsAt: String!, schedulingTimeZone: String!, seatCapacity: Int!, occupiedSeats: Int! }
+enum ClassSessionState { PUBLISHED CANCELLED }
+type ClassSession { id: ID!, lessonUnitId: ID!, teacherUserId: ID!, startsAt: String!, endsAt: String!, schedulingTimeZone: String!, seatCapacity: Int!, occupiedSeats: Int!, state: ClassSessionState!, cancellationReason: String }
 enum BookingState { ACTIVE ENDED }
-enum BookingTerminalReason { STUDENT_CANCELLATION RESCHEDULED }
+enum BookingTerminalReason { STUDENT_CANCELLATION RESCHEDULED CLASS_SESSION_CANCELLATION }
 type Booking { id: ID!, state: BookingState!, terminalReason: BookingTerminalReason, classCreditRefunded: Boolean!, bookedAt: String!, endedAt: String, classSession: ClassSession! }
 input BookClassSessionInput { idempotencyKey: ID!, classSessionId: ID! }
 input CancelBookingInput { idempotencyKey: ID!, bookingId: ID! }
@@ -93,6 +94,19 @@ type ChangeClassSessionSeatCapacitySuccess { classSession: ClassSession! }
 enum ClassSessionSeatCapacityErrorCode { INVALID_SEAT_CAPACITY CLASS_SESSION_NOT_FOUND SEAT_CAPACITY_BELOW_OCCUPIED_SEATS }
 type ClassSessionSeatCapacityError { code: ClassSessionSeatCapacityErrorCode!, message: String! }
 union ChangeClassSessionSeatCapacityResult = ChangeClassSessionSeatCapacitySuccess | ClassSessionSeatCapacityError | CurriculumConflict
+enum AbsenceRequestState { OPEN RESOLVED }
+type AbsenceRequest { id: ID!, state: AbsenceRequestState!, requestedAt: String!, classSessions: [ClassSession!]! }
+input ReportAbsenceInput { idempotencyKey: ID!, classSessionIds: [ID!]! }
+type ReportAbsenceSuccess { absenceRequest: AbsenceRequest! }
+input SubstituteTeacherInput { idempotencyKey: ID!, absenceRequestId: ID!, classSessionId: ID!, replacementTeacherUserId: ID! }
+type SubstituteTeacherSuccess { classSession: ClassSession!, absenceRequest: AbsenceRequest! }
+input CancelClassSessionInput { idempotencyKey: ID!, absenceRequestId: ID!, classSessionId: ID!, reason: String! }
+type CancelClassSessionSuccess { classSession: ClassSession!, absenceRequest: AbsenceRequest!, refundedBookingCount: Int!, removedWaitlistEntryCount: Int! }
+enum ClassSessionDisruptionErrorCode { INVALID_CLASS_SESSIONS INVALID_REASON CLASS_SESSION_NOT_FOUND CLASS_SESSION_NOT_ASSIGNED ABSENCE_ALREADY_REPORTED ABSENCE_REQUEST_NOT_FOUND DISRUPTION_ALREADY_RESOLVED CLASS_SESSION_ALREADY_STARTED REPLACEMENT_TEACHER_REQUIRED TEACHER_QUALIFICATION_REQUIRED TEACHER_SCHEDULE_CONFLICT ATTENDANCE_ALREADY_SUBMITTED IDEMPOTENCY_KEY_REUSED }
+type ClassSessionDisruptionError { code: ClassSessionDisruptionErrorCode!, message: String! }
+union ReportAbsenceResult = ReportAbsenceSuccess | ClassSessionDisruptionError
+union SubstituteTeacherResult = SubstituteTeacherSuccess | ClassSessionDisruptionError
+union CancelClassSessionResult = CancelClassSessionSuccess | ClassSessionDisruptionError
 
 type TeacherAvailabilityRange { id: ID!, weekday: Weekday!, startLocalTime: String!, endLocalTime: String!, effectiveFrom: String!, effectiveUntil: String, timeZone: String! }
 type AvailabilityException { id: ID!, startsAtLocal: String!, endsAtLocal: String!, startsAt: String!, endsAt: String!, timeZone: String! }
@@ -256,6 +270,9 @@ type Query {
   studentWaitlistEntries: [WaitlistEntry!]!
   administrationClassCredits(studentUserId: ID!): ClassCreditAccount
   administrationClassSessions: [ClassSession!]!
+  teacherClassSessions: [ClassSession!]!
+  teacherAbsenceRequests: [AbsenceRequest!]!
+  administrationAbsenceRequests: [AbsenceRequest!]!
   teacherAvailability: TeacherAvailability!
   teacherAvailabilityPreview(localDates: [String!]!): [TeacherAvailabilityOccurrence!]!
   administrationCurriculum(locale: InterfaceLocale!): AdministrationCurriculum!
@@ -277,6 +294,9 @@ type Mutation {
   withdrawWaitlist(input: WithdrawWaitlistInput!): WithdrawWaitlistResult!
   publishClassSession(input: PublishClassSessionInput!): PublishClassSessionResult!
   changeClassSessionSeatCapacity(input: ChangeClassSessionSeatCapacityInput!): ChangeClassSessionSeatCapacityResult!
+  reportAbsence(input: ReportAbsenceInput!): ReportAbsenceResult!
+  substituteTeacher(input: SubstituteTeacherInput!): SubstituteTeacherResult!
+  cancelClassSession(input: CancelClassSessionInput!): CancelClassSessionResult!
   saveTeacherAvailabilityRange(input: SaveTeacherAvailabilityRangeInput!): SaveTeacherAvailabilityRangeResult!
   addAvailabilityException(input: AddAvailabilityExceptionInput!): AddAvailabilityExceptionResult!
   endTeacherAvailabilityRange(input: EndTeacherAvailabilityRangeInput!): EndTeacherAvailabilityRangeResult!

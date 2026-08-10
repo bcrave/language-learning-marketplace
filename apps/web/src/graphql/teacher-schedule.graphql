@@ -1,0 +1,12 @@
+query TeacherSchedule {
+  teacherClassSessions { id lessonUnitId teacherUserId startsAt endsAt schedulingTimeZone seatCapacity occupiedSeats state cancellationReason }
+  teacherAbsenceRequests { id state requestedAt classSessions { id startsAt state } }
+}
+
+mutation ReportAbsence($input: ReportAbsenceInput!) {
+  reportAbsence(input: $input) {
+    __typename
+    ... on ReportAbsenceSuccess { absenceRequest { id state requestedAt classSessions { id lessonUnitId teacherUserId startsAt endsAt schedulingTimeZone seatCapacity occupiedSeats state cancellationReason } } }
+    ... on ClassSessionDisruptionError { code message }
+  }
+}

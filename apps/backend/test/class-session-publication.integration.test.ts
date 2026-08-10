@@ -183,7 +183,7 @@ describe("Class Session publication GraphQL API", () => {
 
   it("treats a Student commitment held by the Teacher User as a Schedule Conflict", async () => {
     const lessonUnitId = (await db.selectFrom("lesson_units").select("id").where("stable_key", "=", "en-a1-01").executeTakeFirstOrThrow()).id;
-    const studentSession = await db.insertInto("class_sessions").values({ lesson_unit_id: lessonUnitId, teacher_user_id: teacherId, starts_at: new Date("2026-08-24T16:00:00Z"), scheduling_time_zone: "America/Denver", state: "CANCELLED" }).returning("id").executeTakeFirstOrThrow();
+    const studentSession = await db.insertInto("class_sessions").values({ lesson_unit_id: lessonUnitId, teacher_user_id: teacherId, starts_at: new Date("2026-08-24T16:00:00Z"), scheduling_time_zone: "America/Denver", state: "CANCELLED", cancellation_reason: "Cancelled test fixture", cancelled_at: new Date("2026-08-01T00:00:00Z") }).returning("id").executeTakeFirstOrThrow();
     await db.insertInto("schedule_commitments").values({ user_id: teacherId, class_session_id: studentSession.id, commitment_role: "STUDENT", starts_at: new Date("2026-08-24T16:00:00Z"), ends_at: new Date("2026-08-24T17:00:00Z"), active: true }).execute();
     await db.insertInto("schedule_commitments").values({ user_id: secondStudentId, class_session_id: studentSession.id, commitment_role: "STUDENT", starts_at: new Date("2026-08-24T16:00:00Z"), ends_at: new Date("2026-08-24T17:00:00Z"), active: true }).execute();
     expect(await db.selectFrom("schedule_commitments").select("id").where("class_session_id", "=", studentSession.id).where("commitment_role", "=", "STUDENT").execute()).toHaveLength(2);

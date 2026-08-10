@@ -29,6 +29,7 @@ import { AdminCurriculum } from "./admin-curriculum.js";
 import { AdminClassSessions } from "./admin-class-sessions.js";
 import { AdminClassCredits, StudentClassCredits, StudentSubscription } from "./class-credits.js";
 import { TeacherAvailabilityPanel } from "./teacher-availability.js";
+import { TeacherSchedulePanel } from "./teacher-schedule.js";
 import { StudentDiscoveryPanel } from "./student-discovery.js";
 
 const graphQLInterfaceLocales: Record<InterfaceLocale, GraphQLInterfaceLocale> = {
@@ -414,6 +415,9 @@ function WorkspaceContent({
         )}
         {currentPlace === "TEACHER_AVAILABILITY" && (
           <TeacherAvailabilityPanel />
+        )}
+        {currentPlace === "TEACHER_SCHEDULE" && (
+          <TeacherSchedulePanel />
         )}
         <section className="workspace-card" id="settings" aria-labelledby="preferences-title">
           <h2 id="preferences-title">

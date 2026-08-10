@@ -76,6 +76,7 @@ export async function projectBooking(db: Database, bookingId: string) {
       "class_sessions.teacher_user_id", "class_sessions.starts_at",
       "class_sessions.scheduling_time_zone", "class_sessions.seat_capacity",
       "class_sessions.occupied_seats",
+      "class_sessions.state as class_session_state", "class_sessions.cancellation_reason",
     ])
     .where("bookings.id", "=", bookingId)
     .executeTakeFirstOrThrow();
@@ -94,6 +95,8 @@ export async function projectBooking(db: Database, bookingId: string) {
       scheduling_time_zone: row.scheduling_time_zone,
       seat_capacity: row.seat_capacity,
       occupied_seats: row.occupied_seats,
+      state: row.class_session_state,
+      cancellation_reason: row.cancellation_reason,
     }),
   };
 }

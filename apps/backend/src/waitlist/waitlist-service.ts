@@ -89,6 +89,8 @@ export async function projectWaitlistEntry(db: Database, entryId: string) {
       "class_sessions.scheduling_time_zone",
       "class_sessions.seat_capacity",
       "class_sessions.occupied_seats",
+      "class_sessions.state as class_session_state",
+      "class_sessions.cancellation_reason",
     ])
     .where("waitlist_entries.id", "=", entryId)
     .executeTakeFirstOrThrow();
@@ -107,6 +109,8 @@ export async function projectWaitlistEntry(db: Database, entryId: string) {
       scheduling_time_zone: row.scheduling_time_zone,
       seat_capacity: row.seat_capacity,
       occupied_seats: row.occupied_seats,
+      state: row.class_session_state,
+      cancellation_reason: row.cancellation_reason,
     }),
     resultingBooking: row.promoted_booking_id
       ? await projectBooking(db, row.promoted_booking_id)

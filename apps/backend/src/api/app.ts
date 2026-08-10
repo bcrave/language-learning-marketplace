@@ -27,6 +27,7 @@ import {
   classCreditsForStudent,
 } from "../class-credit/class-credit-service.js";
 import { administrationClassSessions, changeClassSessionSeatCapacity, publishClassSession } from "../class-session/class-session-service.js";
+import { administrationAbsenceRequests, cancelClassSession, reportAbsence, substituteTeacher, teacherAbsenceRequests, teacherClassSessions } from "../class-session/class-session-disruption-service.js";
 import type { AppConfig } from "../config.js";
 import type { Database } from "../database/database.js";
 import type { WorkspacePlace } from "../database/types.js";
@@ -247,6 +248,18 @@ export function createApi(options: {
         administrationClassSessions: async (_parent, _arguments, context) => {
           await authenticateAdministrator(context, "class-session-administration.read");
           return graphQLResult(await administrationClassSessions(context.db));
+        },
+        teacherClassSessions: async (_parent, _arguments, context) => {
+          const teacher = await authenticateTeacher(context, "teacher-class-sessions.read");
+          return graphQLResult(await teacherClassSessions(context.db, teacher, options.now?.() ?? new Date()));
+        },
+        teacherAbsenceRequests: async (_parent, _arguments, context) => {
+          const teacher = await authenticateTeacher(context, "absence-request.read");
+          return graphQLResult(await teacherAbsenceRequests(context.db, teacher));
+        },
+        administrationAbsenceRequests: async (_parent, _arguments, context) => {
+          await authenticateAdministrator(context, "absence-request-administration.read");
+          return graphQLResult(await administrationAbsenceRequests(context.db));
         },
         teacherAvailability: async (_parent, _arguments, context) => {
           const teacher = await authenticateTeacher(context, "teacher-availability.read");
@@ -544,6 +557,42 @@ export function createApi(options: {
         changeClassSessionSeatCapacity: async (_parent, { input }, context) => {
           const administrator = await authenticateAdministrator(context, "class-session.seat-capacity-changed");
           return idempotentAdministrationMutation(context, administrator, "class-session.seat-capacity-changed", input.idempotencyKey, input, (transaction) => changeClassSessionSeatCapacity(transaction, administrator, input, context.correlationId));
+        },
+        reportAbsence: async (_parent, { input }, context) => {
+          const teacher = await authenticateTeacher(context, "absence-request.created");
+          return graphQLResult(await idempotentTeacherMutation(
+            context,
+            teacher,
+            "absence-request.created",
+            input.idempotencyKey,
+            input,
+            (transaction) => reportAbsence(transaction, teacher, input, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "ClassSessionDisruptionError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+          ));
+        },
+        substituteTeacher: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "class-session.teacher-substituted");
+          return graphQLResult(await idempotentAdministrationMutation(
+            context,
+            administrator,
+            "class-session.teacher-substituted",
+            input.idempotencyKey,
+            input,
+            (transaction) => substituteTeacher(transaction, administrator, input, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "ClassSessionDisruptionError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+          ));
+        },
+        cancelClassSession: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "class-session.cancelled");
+          return graphQLResult(await idempotentAdministrationMutation(
+            context,
+            administrator,
+            "class-session.cancelled",
+            input.idempotencyKey,
+            input,
+            (transaction) => cancelClassSession(transaction, administrator, input, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "ClassSessionDisruptionError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+          ));
         },
         saveTeacherAvailabilityRange: async (_parent, { input }, context) => {
           const teacher = await authenticateTeacher(context, "teacher-availability.changed");
@@ -850,6 +899,40 @@ export function createApi(options: {
         reason_code: "UNEXPECTED_MUTATION_FAILURE",
         correlation_id: context.correlationId,
       }).execute();
+      throw error;
+    }
+  }
+
+  async function idempotentTeacherMutation<T, C extends { __typename: string; code: string; message: string }>(
+    context: ApiContext,
+    teacher: { id: string },
+    operation: string,
+    idempotencyKey: string,
+    input: object,
+    perform: (transaction: Database) => Promise<T>,
+    idempotencyConflict: C,
+  ): Promise<T | C> {
+    const inputFingerprint = JSON.stringify(input);
+    try {
+      return await context.db.transaction().execute(async (transaction) => {
+        await sql`select pg_advisory_xact_lock(hashtextextended(${`${teacher.id}:${operation}:${idempotencyKey}`}, 0))`.execute(transaction);
+        await transaction.deleteFrom("mutation_idempotency_records").where("actor_user_id", "=", teacher.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).where("created_at", "<=", sql<Date>`now() - interval '7 days'`).execute();
+        const existing = await transaction.selectFrom("mutation_idempotency_records").select(["input_fingerprint", "outcome"]).where("actor_user_id", "=", teacher.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).executeTakeFirst();
+        if (existing) {
+          if (existing.input_fingerprint !== inputFingerprint) {
+            await transaction.insertInto("audit_entries").values({ actor_user_id: teacher.id, acting_role: "TEACHER", operation, target_type: "IdempotencyKey", target_id: teacher.id, outcome: "DENIED", reason_code: "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_INPUT", correlation_id: context.correlationId }).execute();
+            return idempotencyConflict;
+          }
+          const replaySucceeded = typeof existing.outcome === "object" && existing.outcome !== null && "__typename" in existing.outcome && typeof existing.outcome.__typename === "string" && existing.outcome.__typename.endsWith("Success");
+          await transaction.insertInto("audit_entries").values({ actor_user_id: teacher.id, acting_role: "TEACHER", operation, target_type: "IdempotencyKey", target_id: teacher.id, outcome: replaySucceeded ? "SUCCEEDED" : "DENIED", reason_code: replaySucceeded ? "IDEMPOTENT_REPLAY_SUCCEEDED" : "IDEMPOTENT_REPLAY_DENIED", correlation_id: context.correlationId }).execute();
+          return existing.outcome as T;
+        }
+        const outcome = await perform(transaction as Database);
+        await transaction.insertInto("mutation_idempotency_records").values({ actor_user_id: teacher.id, operation, idempotency_key: idempotencyKey, input_fingerprint: inputFingerprint, outcome: JSON.stringify(outcome as Record<string, unknown>) }).execute();
+        return outcome;
+      });
+    } catch (error) {
+      await context.db.insertInto("audit_entries").values({ actor_user_id: teacher.id, acting_role: "TEACHER", operation, target_type: "AbsenceRequest", target_id: teacher.id, outcome: "FAILED", reason_code: "UNEXPECTED_MUTATION_FAILURE", correlation_id: context.correlationId }).execute();
       throw error;
     }
   }
