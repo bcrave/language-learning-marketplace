@@ -67,6 +67,7 @@ import {
 } from "../subscription/subscription-service.js";
 import { joinWaitlist, waitlistEntriesForStudent, withdrawWaitlist } from "../waitlist/waitlist-service.js";
 import { notificationsForUser, openAdministratorTasks, resolveAdministratorTask, updateNotificationState, userForNotificationAccess } from "../notification/notification-service.js";
+import { createSimulatedClassroomProvider, enterClassroom, learningAccessClassSessionsForViewer, learningAccessLessonUnitsForViewer, lessonMaterialsForViewer, type ClassroomProvider } from "../learning-access/learning-access-service.js";
 import {
   InterfaceLocale,
   type Resolvers,
@@ -169,6 +170,7 @@ export function createApi(options: {
   auth0Audience?: string;
   auth0Issuer?: string;
   now?: () => Date;
+  classroomProvider?: ClassroomProvider;
 }) {
   const authenticatorPromise = createAuthenticator({
     AUTH_MODE: options.authMode,
@@ -176,6 +178,7 @@ export function createApi(options: {
     AUTH0_ISSUER: options.auth0Issuer,
     NODE_ENV: options.nodeEnv,
   });
+  const classroomProvider = options.classroomProvider ?? createSimulatedClassroomProvider();
 
   const resolvers: Resolvers<ApiContext> = {
       CreateCourseResult: { __resolveType: (value) => value.__typename! },
@@ -205,6 +208,7 @@ export function createApi(options: {
       WithdrawWaitlistResult: { __resolveType: (value) => value.__typename! },
       ResolveAdministratorTaskResult: { __resolveType: (value) => value.__typename! },
       RecordAttendanceResult: { __resolveType: (value) => value.__typename! },
+      EnterClassroomResult: { __resolveType: (value) => value.__typename! },
       Query: {
         notifications: async (_parent, _arguments, context) => {
           const user = await authenticateNotificationUser(context);
@@ -267,6 +271,31 @@ export function createApi(options: {
         studentCourseProgress: async (_parent, _arguments, context) => {
           const student = await authenticateStudent(context, "course-progress.read", "CourseProgress");
           return graphQLResult(await courseProgressForStudent(context.db, student.id));
+        },
+        lessonMaterials: async (_parent, { lessonUnitId, actingRole: requestedRole }, context) => {
+          const identity = await context.authenticator.authenticate(context.request);
+          if (!identity) throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+          const result = await lessonMaterialsForViewer(context.db, identity, userRolesByGraphQL[requestedRole], lessonUnitId, context.correlationId, options.now?.() ?? new Date());
+          if (result.status === "UNKNOWN_USER") throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+          if (result.status === "ROLE_REQUIRED") throw createGraphQLError("The selected Role Assignment is required", { extensions: { code: "FORBIDDEN" } });
+          if (result.status === "NOT_FOUND") throw createGraphQLError("The Lesson Materials were not found", { extensions: { code: "NOT_FOUND" } });
+          return graphQLResult(result.materials);
+        },
+        learningAccessClassSessions: async (_parent, { actingRole: requestedRole }, context) => {
+          const identity = await context.authenticator.authenticate(context.request);
+          if (!identity) throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+          const result = await learningAccessClassSessionsForViewer(context.db, identity, userRolesByGraphQL[requestedRole], context.correlationId, options.now?.() ?? new Date());
+          if (result.status === "UNKNOWN_USER") throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+          if (result.status === "ROLE_REQUIRED") throw createGraphQLError("The selected Role Assignment is required", { extensions: { code: "FORBIDDEN" } });
+          return graphQLResult(result.sessions);
+        },
+        learningAccessLessonUnits: async (_parent, { actingRole: requestedRole }, context) => {
+          const identity = await context.authenticator.authenticate(context.request);
+          if (!identity) throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+          const result = await learningAccessLessonUnitsForViewer(context.db, identity, userRolesByGraphQL[requestedRole], context.correlationId, options.now?.() ?? new Date());
+          if (result.status === "UNKNOWN_USER") throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+          if (result.status === "ROLE_REQUIRED") throw createGraphQLError("The selected Role Assignment is required", { extensions: { code: "FORBIDDEN" } });
+          return graphQLResult(result.lessonUnits);
         },
         administrationClassCredits: async (_parent, { studentUserId }, context) => {
           await authenticateAdministrator(context, "class-credit-administration.read");
@@ -449,6 +478,22 @@ export function createApi(options: {
         },
       },
       Mutation: {
+        enterClassroom: async (_parent, { input }, context) => {
+          const identity = await context.authenticator.authenticate(context.request);
+          if (!identity) throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+          const access = await enterClassroom(
+            context.db,
+            classroomProvider,
+            identity,
+            userRolesByGraphQL[input.actingRole],
+            input.classSessionId,
+            context.correlationId,
+            options.now?.() ?? new Date(),
+          );
+          if (access.status === "UNKNOWN_USER") throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+          if (access.status === "ROLE_REQUIRED") throw createGraphQLError("The selected Role Assignment is required", { extensions: { code: "FORBIDDEN" } });
+          return graphQLResult(access.result);
+        },
         markNotificationRead: async (_parent, { id }, context) => {
           const user = await authenticateNotificationUser(context);
           const updated = await updateNotificationState(context.db, { notificationId: id, userId: user.id, action: "READ", correlationId: context.correlationId, now: options.now?.() ?? new Date() });

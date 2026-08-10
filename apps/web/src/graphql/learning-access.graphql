@@ -1,0 +1,31 @@
+query LearningAccessClassSessions($actingRole: UserRole!) {
+  learningAccessLessonUnits(actingRole: $actingRole) { id title }
+  learningAccessClassSessions(actingRole: $actingRole) {
+    id
+    lessonUnitId
+    startsAt
+    endsAt
+    schedulingTimeZone
+  }
+}
+
+query LessonMaterials($lessonUnitId: ID!, $actingRole: UserRole!) {
+  lessonMaterials(lessonUnitId: $lessonUnitId, actingRole: $actingRole) {
+    id
+    kind
+    title
+    structuredContent
+    httpsUrl
+    publisher
+  }
+}
+
+mutation EnterClassroom($input: EnterClassroomInput!) {
+  enterClassroom(input: $input) {
+    __typename
+    ... on EnterClassroomSuccess {
+      classroom { classSessionId lessonUnitId teacherUserId simulationStatus }
+    }
+    ... on ClassroomAccessError { code message }
+  }
+}

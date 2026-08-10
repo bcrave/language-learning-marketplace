@@ -440,6 +440,30 @@ export enum ClassSessionState {
   Published = 'PUBLISHED'
 }
 
+export type Classroom = {
+  __typename?: 'Classroom';
+  classSessionId: Scalars['ID']['output'];
+  lessonUnitId: Scalars['ID']['output'];
+  simulationStatus: ClassroomSimulationStatus;
+  teacherUserId: Scalars['ID']['output'];
+};
+
+export type ClassroomAccessError = {
+  __typename?: 'ClassroomAccessError';
+  code: ClassroomAccessErrorCode;
+  message: Scalars['String']['output'];
+};
+
+export enum ClassroomAccessErrorCode {
+  ClassroomClosed = 'CLASSROOM_CLOSED',
+  ClassroomNotOpen = 'CLASSROOM_NOT_OPEN',
+  ClassSessionNotFound = 'CLASS_SESSION_NOT_FOUND'
+}
+
+export enum ClassroomSimulationStatus {
+  Simulated = 'SIMULATED'
+}
+
 export type Course = {
   __typename?: 'Course';
   curriculumLevel: CurriculumLevel;
@@ -552,6 +576,18 @@ export type EndTeacherAvailabilityRangeSuccess = {
   range: TeacherAvailabilityRange;
 };
 
+export type EnterClassroomInput = {
+  actingRole: UserRole;
+  classSessionId: Scalars['ID']['input'];
+};
+
+export type EnterClassroomResult = ClassroomAccessError | EnterClassroomSuccess;
+
+export type EnterClassroomSuccess = {
+  __typename?: 'EnterClassroomSuccess';
+  classroom: Classroom;
+};
+
 export type GrantTeacherQualificationResult = ChangeTeacherQualificationSuccess | CurriculumConflict;
 
 export type InAppNotification = {
@@ -591,6 +627,12 @@ export type JoinWaitlistResult = JoinWaitlistSuccess | WaitlistError;
 export type JoinWaitlistSuccess = {
   __typename?: 'JoinWaitlistSuccess';
   entry: WaitlistEntry;
+};
+
+export type LearningAccessLessonUnit = {
+  __typename?: 'LearningAccessLessonUnit';
+  id: Scalars['ID']['output'];
+  title: Scalars['String']['output'];
 };
 
 export type LessonMaterial = {
@@ -647,6 +689,7 @@ export type Mutation = {
   createCourse: CreateCourseResult;
   createLessonUnit: CreateLessonUnitResult;
   endTeacherAvailabilityRange: EndTeacherAvailabilityRangeResult;
+  enterClassroom: EnterClassroomResult;
   grantTeacherQualification: GrantTeacherQualificationResult;
   joinWaitlist: JoinWaitlistResult;
   markNotificationRead: InAppNotification;
@@ -733,6 +776,11 @@ export type MutationCreateLessonUnitArgs = {
 
 export type MutationEndTeacherAvailabilityRangeArgs = {
   input: EndTeacherAvailabilityRangeInput;
+};
+
+
+export type MutationEnterClassroomArgs = {
+  input: EnterClassroomInput;
 };
 
 
@@ -927,6 +975,9 @@ export type Query = {
   classRoster?: Maybe<ClassRoster>;
   classSessionDiscoveryOptions: ClassSessionDiscoveryOptions;
   discoverClassSessions: ClassSessionDiscoveryConnection;
+  learningAccessClassSessions: Array<ClassSession>;
+  learningAccessLessonUnits: Array<LearningAccessLessonUnit>;
+  lessonMaterials?: Maybe<Array<LessonMaterial>>;
   notifications: Array<InAppNotification>;
   publicTeacherProfile?: Maybe<PublicTeacherProfile>;
   roleWorkspace: RoleWorkspace;
@@ -963,6 +1014,22 @@ export type QueryClassRosterArgs = {
 
 export type QueryDiscoverClassSessionsArgs = {
   input: ClassSessionDiscoveryInput;
+};
+
+
+export type QueryLearningAccessClassSessionsArgs = {
+  actingRole: UserRole;
+};
+
+
+export type QueryLearningAccessLessonUnitsArgs = {
+  actingRole: UserRole;
+};
+
+
+export type QueryLessonMaterialsArgs = {
+  actingRole: UserRole;
+  lessonUnitId: Scalars['ID']['input'];
 };
 
 
@@ -1556,6 +1623,10 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( EndTeacherAvailabilityRangeSuccess )
     | ( TeacherAvailabilityValidationError )
   ;
+  EnterClassroomResult:
+    | ( ClassroomAccessError )
+    | ( EnterClassroomSuccess )
+  ;
   GrantTeacherQualificationResult:
     | ( ChangeTeacherQualificationSuccess )
     | ( CurriculumConflict )
@@ -1711,6 +1782,10 @@ export type ResolversTypes = {
   ClassSessionSeatCapacityError: ResolverTypeWrapper<ClassSessionSeatCapacityError>;
   ClassSessionSeatCapacityErrorCode: ClassSessionSeatCapacityErrorCode;
   ClassSessionState: ClassSessionState;
+  Classroom: ResolverTypeWrapper<Classroom>;
+  ClassroomAccessError: ResolverTypeWrapper<ClassroomAccessError>;
+  ClassroomAccessErrorCode: ClassroomAccessErrorCode;
+  ClassroomSimulationStatus: ClassroomSimulationStatus;
   Course: ResolverTypeWrapper<Course>;
   CourseProgress: ResolverTypeWrapper<CourseProgress>;
   CourseProgressLearningHistory: ResolverTypeWrapper<CourseProgressLearningHistory>;
@@ -1727,6 +1802,9 @@ export type ResolversTypes = {
   EndTeacherAvailabilityRangeInput: EndTeacherAvailabilityRangeInput;
   EndTeacherAvailabilityRangeResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['EndTeacherAvailabilityRangeResult']>;
   EndTeacherAvailabilityRangeSuccess: ResolverTypeWrapper<EndTeacherAvailabilityRangeSuccess>;
+  EnterClassroomInput: EnterClassroomInput;
+  EnterClassroomResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['EnterClassroomResult']>;
+  EnterClassroomSuccess: ResolverTypeWrapper<EnterClassroomSuccess>;
   GrantTeacherQualificationResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['GrantTeacherQualificationResult']>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
   InAppNotification: ResolverTypeWrapper<InAppNotification>;
@@ -1737,6 +1815,7 @@ export type ResolversTypes = {
   JoinWaitlistInput: JoinWaitlistInput;
   JoinWaitlistResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['JoinWaitlistResult']>;
   JoinWaitlistSuccess: ResolverTypeWrapper<JoinWaitlistSuccess>;
+  LearningAccessLessonUnit: ResolverTypeWrapper<LearningAccessLessonUnit>;
   LessonMaterial: ResolverTypeWrapper<LessonMaterial>;
   LessonMaterialKind: LessonMaterialKind;
   LessonUnit: ResolverTypeWrapper<LessonUnit>;
@@ -1888,6 +1967,8 @@ export type ResolversParentTypes = {
   ClassSessionDisruptionError: ClassSessionDisruptionError;
   ClassSessionPublicationError: ClassSessionPublicationError;
   ClassSessionSeatCapacityError: ClassSessionSeatCapacityError;
+  Classroom: Classroom;
+  ClassroomAccessError: ClassroomAccessError;
   Course: Course;
   CourseProgress: CourseProgress;
   CourseProgressLearningHistory: CourseProgressLearningHistory;
@@ -1903,6 +1984,9 @@ export type ResolversParentTypes = {
   EndTeacherAvailabilityRangeInput: EndTeacherAvailabilityRangeInput;
   EndTeacherAvailabilityRangeResult: ResolversUnionTypes<ResolversParentTypes>['EndTeacherAvailabilityRangeResult'];
   EndTeacherAvailabilityRangeSuccess: EndTeacherAvailabilityRangeSuccess;
+  EnterClassroomInput: EnterClassroomInput;
+  EnterClassroomResult: ResolversUnionTypes<ResolversParentTypes>['EnterClassroomResult'];
+  EnterClassroomSuccess: EnterClassroomSuccess;
   GrantTeacherQualificationResult: ResolversUnionTypes<ResolversParentTypes>['GrantTeacherQualificationResult'];
   ID: Scalars['ID']['output'];
   InAppNotification: InAppNotification;
@@ -1912,6 +1996,7 @@ export type ResolversParentTypes = {
   JoinWaitlistInput: JoinWaitlistInput;
   JoinWaitlistResult: ResolversUnionTypes<ResolversParentTypes>['JoinWaitlistResult'];
   JoinWaitlistSuccess: JoinWaitlistSuccess;
+  LearningAccessLessonUnit: LearningAccessLessonUnit;
   LessonMaterial: LessonMaterial;
   LessonUnit: LessonUnit;
   Mutation: Record<PropertyKey, never>;
@@ -2245,6 +2330,19 @@ export type ClassSessionSeatCapacityErrorResolvers<ContextType = any, ParentType
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
+export type ClassroomResolvers<ContextType = any, ParentType extends ResolversParentTypes['Classroom'] = ResolversParentTypes['Classroom']> = {
+  classSessionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  lessonUnitId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  simulationStatus?: Resolver<ResolversTypes['ClassroomSimulationStatus'], ParentType, ContextType>;
+  teacherUserId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+};
+
+export type ClassroomAccessErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassroomAccessError'] = ResolversParentTypes['ClassroomAccessError']> = {
+  code?: Resolver<ResolversTypes['ClassroomAccessErrorCode'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
 export type CourseResolvers<ContextType = any, ParentType extends ResolversParentTypes['Course'] = ResolversParentTypes['Course']> = {
   curriculumLevel?: Resolver<ResolversTypes['CurriculumLevel'], ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
@@ -2326,6 +2424,15 @@ export type EndTeacherAvailabilityRangeSuccessResolvers<ContextType = any, Paren
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
+export type EnterClassroomResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['EnterClassroomResult'] = ResolversParentTypes['EnterClassroomResult']> = {
+  __resolveType: TypeResolveFn<'ClassroomAccessError' | 'EnterClassroomSuccess', ParentType, ContextType>;
+};
+
+export type EnterClassroomSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['EnterClassroomSuccess'] = ResolversParentTypes['EnterClassroomSuccess']> = {
+  classroom?: Resolver<ResolversTypes['Classroom'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
 export type GrantTeacherQualificationResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['GrantTeacherQualificationResult'] = ResolversParentTypes['GrantTeacherQualificationResult']> = {
   __resolveType: TypeResolveFn<'ChangeTeacherQualificationSuccess' | 'CurriculumConflict', ParentType, ContextType>;
 };
@@ -2358,6 +2465,11 @@ export type JoinWaitlistResultResolvers<ContextType = any, ParentType extends Re
 export type JoinWaitlistSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['JoinWaitlistSuccess'] = ResolversParentTypes['JoinWaitlistSuccess']> = {
   entry?: Resolver<ResolversTypes['WaitlistEntry'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type LearningAccessLessonUnitResolvers<ContextType = any, ParentType extends ResolversParentTypes['LearningAccessLessonUnit'] = ResolversParentTypes['LearningAccessLessonUnit']> = {
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
 };
 
 export type LessonMaterialResolvers<ContextType = any, ParentType extends ResolversParentTypes['LessonMaterial'] = ResolversParentTypes['LessonMaterial']> = {
@@ -2395,6 +2507,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   createCourse?: Resolver<ResolversTypes['CreateCourseResult'], ParentType, ContextType, RequireFields<MutationCreateCourseArgs, 'input'>>;
   createLessonUnit?: Resolver<ResolversTypes['CreateLessonUnitResult'], ParentType, ContextType, RequireFields<MutationCreateLessonUnitArgs, 'input'>>;
   endTeacherAvailabilityRange?: Resolver<ResolversTypes['EndTeacherAvailabilityRangeResult'], ParentType, ContextType, RequireFields<MutationEndTeacherAvailabilityRangeArgs, 'input'>>;
+  enterClassroom?: Resolver<ResolversTypes['EnterClassroomResult'], ParentType, ContextType, RequireFields<MutationEnterClassroomArgs, 'input'>>;
   grantTeacherQualification?: Resolver<ResolversTypes['GrantTeacherQualificationResult'], ParentType, ContextType, RequireFields<MutationGrantTeacherQualificationArgs, 'input'>>;
   joinWaitlist?: Resolver<ResolversTypes['JoinWaitlistResult'], ParentType, ContextType, RequireFields<MutationJoinWaitlistArgs, 'input'>>;
   markNotificationRead?: Resolver<ResolversTypes['InAppNotification'], ParentType, ContextType, RequireFields<MutationMarkNotificationReadArgs, 'id'>>;
@@ -2463,6 +2576,9 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   classRoster?: Resolver<Maybe<ResolversTypes['ClassRoster']>, ParentType, ContextType, RequireFields<QueryClassRosterArgs, 'actingRole' | 'classSessionId'>>;
   classSessionDiscoveryOptions?: Resolver<ResolversTypes['ClassSessionDiscoveryOptions'], ParentType, ContextType>;
   discoverClassSessions?: Resolver<ResolversTypes['ClassSessionDiscoveryConnection'], ParentType, ContextType, RequireFields<QueryDiscoverClassSessionsArgs, 'input'>>;
+  learningAccessClassSessions?: Resolver<Array<ResolversTypes['ClassSession']>, ParentType, ContextType, RequireFields<QueryLearningAccessClassSessionsArgs, 'actingRole'>>;
+  learningAccessLessonUnits?: Resolver<Array<ResolversTypes['LearningAccessLessonUnit']>, ParentType, ContextType, RequireFields<QueryLearningAccessLessonUnitsArgs, 'actingRole'>>;
+  lessonMaterials?: Resolver<Maybe<Array<ResolversTypes['LessonMaterial']>>, ParentType, ContextType, RequireFields<QueryLessonMaterialsArgs, 'actingRole' | 'lessonUnitId'>>;
   notifications?: Resolver<Array<ResolversTypes['InAppNotification']>, ParentType, ContextType>;
   publicTeacherProfile?: Resolver<Maybe<ResolversTypes['PublicTeacherProfile']>, ParentType, ContextType, RequireFields<QueryPublicTeacherProfileArgs, 'locale' | 'teacherUserId'>>;
   roleWorkspace?: Resolver<ResolversTypes['RoleWorkspace'], ParentType, ContextType, RequireFields<QueryRoleWorkspaceArgs, 'actingRole'>>;
@@ -2792,6 +2908,8 @@ export type Resolvers<ContextType = any> = {
   ClassSessionDisruptionError?: ClassSessionDisruptionErrorResolvers<ContextType>;
   ClassSessionPublicationError?: ClassSessionPublicationErrorResolvers<ContextType>;
   ClassSessionSeatCapacityError?: ClassSessionSeatCapacityErrorResolvers<ContextType>;
+  Classroom?: ClassroomResolvers<ContextType>;
+  ClassroomAccessError?: ClassroomAccessErrorResolvers<ContextType>;
   Course?: CourseResolvers<ContextType>;
   CourseProgress?: CourseProgressResolvers<ContextType>;
   CourseProgressLearningHistory?: CourseProgressLearningHistoryResolvers<ContextType>;
@@ -2804,12 +2922,15 @@ export type Resolvers<ContextType = any> = {
   DiscoveryLessonUnit?: DiscoveryLessonUnitResolvers<ContextType>;
   EndTeacherAvailabilityRangeResult?: EndTeacherAvailabilityRangeResultResolvers<ContextType>;
   EndTeacherAvailabilityRangeSuccess?: EndTeacherAvailabilityRangeSuccessResolvers<ContextType>;
+  EnterClassroomResult?: EnterClassroomResultResolvers<ContextType>;
+  EnterClassroomSuccess?: EnterClassroomSuccessResolvers<ContextType>;
   GrantTeacherQualificationResult?: GrantTeacherQualificationResultResolvers<ContextType>;
   InAppNotification?: InAppNotificationResolvers<ContextType>;
   InstructionalIdentityLocked?: InstructionalIdentityLockedResolvers<ContextType>;
   InvalidLessonMaterial?: InvalidLessonMaterialResolvers<ContextType>;
   JoinWaitlistResult?: JoinWaitlistResultResolvers<ContextType>;
   JoinWaitlistSuccess?: JoinWaitlistSuccessResolvers<ContextType>;
+  LearningAccessLessonUnit?: LearningAccessLessonUnitResolvers<ContextType>;
   LessonMaterial?: LessonMaterialResolvers<ContextType>;
   LessonUnit?: LessonUnitResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;

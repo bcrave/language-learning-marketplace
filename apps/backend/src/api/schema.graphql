@@ -143,6 +143,14 @@ type Topic { key: String!, label: String!, labelEn: String!, labelEs: String! }
 type Course { id: ID!, key: String!, targetLanguage: String!, curriculumLevel: CurriculumLevel!, title: String!, summary: String!, lessonUnits: [LessonUnit!]! }
 type LessonUnit { id: ID!, key: String!, courseId: ID!, title: String!, summary: String!, objectives: [String!]!, order: Int!, state: LessonUnitState!, topics: [Topic!]!, materials: [LessonMaterial!]! }
 type LessonMaterial { id: ID!, kind: LessonMaterialKind!, title: String!, structuredContent: String, httpsUrl: String, publisher: String }
+enum ClassroomSimulationStatus { SIMULATED }
+type Classroom { classSessionId: ID!, lessonUnitId: ID!, teacherUserId: ID!, simulationStatus: ClassroomSimulationStatus! }
+input EnterClassroomInput { classSessionId: ID!, actingRole: UserRole! }
+type EnterClassroomSuccess { classroom: Classroom! }
+enum ClassroomAccessErrorCode { CLASS_SESSION_NOT_FOUND CLASSROOM_NOT_OPEN CLASSROOM_CLOSED }
+type ClassroomAccessError { code: ClassroomAccessErrorCode!, message: String! }
+union EnterClassroomResult = EnterClassroomSuccess | ClassroomAccessError
+type LearningAccessLessonUnit { id: ID!, title: String! }
 type TeacherQualification { targetLanguage: String!, curriculumLevel: CurriculumLevel! }
 type PublicTeacherProfile { id: ID!, displayName: String!, pronouns: String, profileImageUrl: String, professionalBiography: String!, taughtLanguages: [String!]!, qualifiedCurriculumLevels: [CurriculumLevel!]!, teachingTopics: [Topic!]!, completedSessionCount: Int! }
 type AdministrationCurriculum { courses: [Course!]!, topics: [Topic!]!, teachers: [PublicTeacherProfile!]! }
@@ -322,6 +330,9 @@ type Query {
   studentClassCredits: ClassCreditAccount!
   studentBookings: [Booking!]!
   studentCourseProgress: [CourseProgress!]!
+  lessonMaterials(lessonUnitId: ID!, actingRole: UserRole!): [LessonMaterial!]
+  learningAccessClassSessions(actingRole: UserRole!): [ClassSession!]!
+  learningAccessLessonUnits(actingRole: UserRole!): [LearningAccessLessonUnit!]!
   studentWaitlistEntries: [WaitlistEntry!]!
   administrationClassCredits(studentUserId: ID!): ClassCreditAccount
   administrationClassSessions: [ClassSession!]!
@@ -359,6 +370,7 @@ type Mutation {
   cancelClassSession(input: CancelClassSessionInput!): CancelClassSessionResult!
   recordAttendance(input: RecordAttendanceInput!): RecordAttendanceResult!
   administerAttendance(input: RecordAttendanceInput!): RecordAttendanceResult!
+  enterClassroom(input: EnterClassroomInput!): EnterClassroomResult!
   saveTeacherAvailabilityRange(input: SaveTeacherAvailabilityRangeInput!): SaveTeacherAvailabilityRangeResult!
   addAvailabilityException(input: AddAvailabilityExceptionInput!): AddAvailabilityExceptionResult!
   endTeacherAvailabilityRange(input: EndTeacherAvailabilityRangeInput!): EndTeacherAvailabilityRangeResult!
