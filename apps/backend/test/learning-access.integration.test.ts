@@ -19,6 +19,7 @@ describe("Lesson Material and Classroom Access GraphQL API", () => {
   const administratorId = randomUUID();
   const teacherId = randomUUID();
   const teacherSubject = randomUUID();
+  const replacementTeacherId = randomUUID();
   const studentId = randomUUID();
   const studentSubject = randomUUID();
   const unrelatedStudentId = randomUUID();
@@ -48,12 +49,14 @@ describe("Lesson Material and Classroom Access GraphQL API", () => {
     await db.insertInto("users").values([
       { id: administratorId, identity_issuer: "https://fake.local/", identity_subject: randomUUID(), display_name: "Alex Administrator", interface_locale: "en", display_time_zone: "America/Denver" },
       { id: teacherId, identity_issuer: "https://fake.local/", identity_subject: teacherSubject, display_name: "Taylor Teacher", interface_locale: "en", display_time_zone: "America/Denver" },
+      { id: replacementTeacherId, identity_issuer: "https://fake.local/", identity_subject: randomUUID(), display_name: "Riley Teacher", interface_locale: "en", display_time_zone: "America/Denver" },
       { id: studentId, identity_issuer: "https://fake.local/", identity_subject: studentSubject, display_name: "Sam Student", interface_locale: "en", display_time_zone: "America/Denver" },
       { id: unrelatedStudentId, identity_issuer: "https://fake.local/", identity_subject: unrelatedStudentSubject, display_name: "Uma Student", interface_locale: "en", display_time_zone: "America/Denver" },
     ]).execute();
     await db.insertInto("role_assignments").values([
       { user_id: administratorId, role: "PLATFORM_ADMINISTRATOR" },
       { user_id: teacherId, role: "TEACHER" },
+      { user_id: replacementTeacherId, role: "TEACHER" },
       { user_id: studentId, role: "STUDENT" },
       { user_id: unrelatedStudentId, role: "STUDENT" },
     ]).execute();
@@ -65,6 +68,7 @@ describe("Lesson Material and Classroom Access GraphQL API", () => {
     }));
     materialId = (await db.insertInto("lesson_materials").values({ lesson_unit_id: lessonUnitId, kind: "STRUCTURED_TEXT", title: "Visit planning guide", structured_content: JSON.stringify([{ type: "heading", text: "Meet-up phrases" }, { type: "paragraph", text: "Choose a time and place." }]), https_url: null, publisher: null }).returning("id").executeTakeFirstOrThrow()).id;
     await db.insertInto("teacher_qualifications").values({ teacher_user_id: teacherId, target_language: "fr", curriculum_level: "A2", granted_by_user_id: administratorId }).execute();
+    await db.insertInto("teacher_qualifications").values({ teacher_user_id: replacementTeacherId, target_language: "fr", curriculum_level: "A2", granted_by_user_id: administratorId }).execute();
 
     classroomLessonUnitId = await db.transaction().execute(async (transaction) => {
       const unit = await transaction.insertInto("lesson_units").values({ stable_key: "fr-a2-98", course_id: course.id, title: "Share directions", summary: "Guide someone through town", objectives: JSON.stringify(["Give clear directions"]), sort_order: 2, state: "ACTIVE", replacement_lesson_unit_id: null, retired_at: null }).returning("id").executeTakeFirstOrThrow();
@@ -124,6 +128,10 @@ describe("Lesson Material and Classroom Access GraphQL API", () => {
     completionSessionId = (await db.insertInto("class_sessions").values({ lesson_unit_id: lessonUnitId, teacher_user_id: teacherId, starts_at: new Date("2026-08-08T16:00:00.000Z"), scheduling_time_zone: "America/Denver", seat_capacity: 5, occupied_seats: 1, state: "PUBLISHED" }).returning("id").executeTakeFirstOrThrow()).id;
     const completionBookingId = (await db.insertInto("bookings").values({ student_user_id: studentId, class_session_id: completionSessionId, teacher_user_id_at_booking: teacherId, state: "ACTIVE", terminal_reason: null, class_credit_refunded: false, late_cancellation_refund_until: null, booked_at: new Date("2026-08-01T12:00:00.000Z"), ended_at: null }).returning("id").executeTakeFirstOrThrow()).id;
     await db.insertInto("lesson_unit_completions").values({ student_user_id: studentId, lesson_unit_id: lessonUnitId, established_by_booking_id: completionBookingId, earned_at: new Date("2026-08-08T17:00:00.000Z") }).execute();
+    await db.transaction().execute(async (transaction) => {
+      await transaction.updateTable("bookings").set({ state: "ENDED", terminal_reason: "RESCHEDULED", ended_at: new Date("2026-08-08T15:00:00.000Z") }).where("id", "=", completionBookingId).execute();
+      await transaction.updateTable("class_sessions").set({ occupied_seats: 0 }).where("id", "=", completionSessionId).execute();
+    });
     const completed = await graphqlAs(studentSubject, query, { lessonUnitId, actingRole: "STUDENT" });
     expect(completed).toEqual(studentResult);
     expect(await db.selectFrom("lesson_unit_completions").select("established_by_booking_id").where("student_user_id", "=", studentId).where("lesson_unit_id", "=", lessonUnitId).executeTakeFirstOrThrow()).toEqual({ established_by_booking_id: completionBookingId });
@@ -137,10 +145,7 @@ describe("Lesson Material and Classroom Access GraphQL API", () => {
         learningAccessClassSessions(actingRole: $actingRole) { id lessonUnitId startsAt endsAt }
       }
     `, { actingRole: "STUDENT" });
-    expect(accessSessions).toEqual({ data: { learningAccessClassSessions: [
-      { id: completionSessionId, lessonUnitId, startsAt: "2026-08-08T16:00:00Z", endsAt: "2026-08-08T17:00:00Z" },
-      { id: classroomSessionId, lessonUnitId: classroomLessonUnitId, startsAt: "2026-08-11T16:00:00Z", endsAt: "2026-08-11T17:00:00Z" },
-    ] } });
+    expect(accessSessions).toEqual({ data: { learningAccessClassSessions: [{ id: classroomSessionId, lessonUnitId: classroomLessonUnitId, startsAt: "2026-08-11T16:00:00Z", endsAt: "2026-08-11T17:00:00Z" }] } });
 
     const mutation = `
       mutation EnterClassroom($input: EnterClassroomInput!) {
@@ -184,6 +189,27 @@ describe("Lesson Material and Classroom Access GraphQL API", () => {
     const malformedCorrelationId = randomUUID();
     expect(await graphqlAs(studentSubject, mutation, { input: { classSessionId: "not-a-uuid", actingRole: "STUDENT" } }, malformedCorrelationId)).toMatchObject({ data: { enterClassroom: { code: "CLASS_SESSION_NOT_FOUND" } } });
     expect(await db.selectFrom("audit_entries").select(["target_type", "target_id", "outcome"]).where("correlation_id", "=", malformedCorrelationId).executeTakeFirstOrThrow()).toEqual({ target_type: "User", target_id: studentId, outcome: "DENIED" });
+
+    let releaseTeacherProvider!: () => void;
+    let teacherProviderStarted!: () => void;
+    const teacherProviderStartedPromise = new Promise<void>((resolve) => { teacherProviderStarted = resolve; });
+    const teacherProviderReleasePromise = new Promise<void>((resolve) => { releaseTeacherProvider = resolve; });
+    const teacherRaceApi = createApi({ db, authMode: "fake", nodeEnv: "test", now: () => currentNow, classroomProvider: { enterClassroom: async (input) => {
+      teacherProviderStarted();
+      await teacherProviderReleasePromise;
+      return { ...input, simulationStatus: "SIMULATED" };
+    } } });
+    const teacherEntry = graphqlThrough(teacherRaceApi, teacherSubject, mutation, variables("TEACHER"));
+    await teacherProviderStartedPromise;
+    let substitutionCompleted = false;
+    const substitution = db.updateTable("class_sessions").set({ teacher_user_id: replacementTeacherId }).where("id", "=", classroomSessionId).execute().then(() => { substitutionCompleted = true; });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(substitutionCompleted).toBe(false);
+    releaseTeacherProvider();
+    expect(await teacherEntry).toEqual(teacher);
+    await substitution;
+    expect(await graphqlAs(teacherSubject, mutation, variables("TEACHER"))).toMatchObject({ data: { enterClassroom: { code: "CLASS_SESSION_NOT_FOUND" } } });
+    await db.updateTable("class_sessions").set({ teacher_user_id: teacherId }).where("id", "=", classroomSessionId).execute();
 
     currentNow = new Date("2026-08-11T17:00:00.000Z");
     expect(await graphqlAs(teacherSubject, mutation, variables("TEACHER"))).toEqual(teacher);

@@ -214,6 +214,7 @@ export async function enterClassroom(
       const session = await transaction.selectFrom("class_sessions")
         .select(["id", "lesson_unit_id", "teacher_user_id", "starts_at", "state"])
         .where("id", "=", classSessionId)
+        .forShare()
         .executeTakeFirst();
       const studentBooking = actingRole === "STUDENT" && session
         ? await transaction.selectFrom("bookings")
