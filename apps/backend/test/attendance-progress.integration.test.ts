@@ -112,6 +112,7 @@ describe("Attendance and Course Progress GraphQL API", () => {
       attendance: { outcome: "ATTENDED", submittedAt: "2026-08-10T11:01:00.000Z" },
     }] } } } });
     expect(await db.selectFrom("in_app_notifications").select("message_id").where("recipient_user_id", "=", studentId).execute()).toContainEqual({ message_id: "attendance.published.student" });
+    expect(await db.selectFrom("in_app_notifications").select("variables").where("recipient_user_id", "=", studentId).where("message_id", "=", "attendance.published.student").executeTakeFirstOrThrow()).toMatchObject({ variables: expect.objectContaining({ ratingDeadline: "2026-08-17T11:00:00.000Z" }) });
     expect(await db.selectFrom("email_notification_intents").select("rendered_content").where("recipient_user_id", "=", studentId).where("message_id", "=", "attendance.published.student").executeTakeFirstOrThrow()).toMatchObject({ rendered_content: expect.stringContaining("Attended") });
     expect(await db.selectFrom("audit_entries").select(["outcome", "reason_code"]).where("correlation_id", "=", correlationId).executeTakeFirstOrThrow()).toEqual({ outcome: "SUCCEEDED", reason_code: "ATTENDANCE_PUBLISHED" });
   });

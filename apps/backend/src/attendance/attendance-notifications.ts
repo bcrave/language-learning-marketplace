@@ -1,4 +1,4 @@
-import { interfaceMessages } from "@marketplace/core";
+import { interfaceMessages, sessionRatingDeadline } from "@marketplace/core";
 import IntlMessageFormat from "intl-messageformat";
 
 import type { Database } from "../database/database.js";
@@ -40,10 +40,11 @@ export async function notifyAttendanceCorrected(db: Database, studentUserId: str
 
 export async function notifyAttendancePublished(db: Database, studentUserId: string, classSessionId: string, bookingId: string, outcome: "ATTENDED" | "NO_SHOW", publishedAt: Date) {
   const student = await db.selectFrom("users").select(["interface_locale", "display_time_zone"]).where("id", "=", studentUserId).executeTakeFirstOrThrow();
+  const classSession = await db.selectFrom("class_sessions").select("starts_at").where("id", "=", classSessionId).executeTakeFirstOrThrow();
   const locale = student.interface_locale ?? "en";
   const timeZone = student.display_time_zone ?? "UTC";
   const reviewDeadline = new Date(publishedAt.getTime() + 7 * 24 * 60 * 60_000);
-  const ratingDeadline = outcome === "ATTENDED" ? reviewDeadline : null;
+  const ratingDeadline = outcome === "ATTENDED" ? sessionRatingDeadline(new Date(classSession.starts_at.getTime() + 60 * 60_000)) : null;
   const variables = { classSessionId, outcome, reviewDeadline: reviewDeadline.toISOString(), ratingDeadline: ratingDeadline?.toISOString() ?? "", timeZone };
   const renderedContent = String(new IntlMessageFormat(interfaceMessages[locale]["attendance.published.student"], locale, {
     date: { long: { ...IntlMessageFormat.formats.date.long, timeZone } },

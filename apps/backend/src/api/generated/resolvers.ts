@@ -588,6 +588,30 @@ export type EnterClassroomSuccess = {
   classroom: Classroom;
 };
 
+export type FeedbackAndRatingItem = {
+  __typename?: 'FeedbackAndRatingItem';
+  bookingId: Scalars['ID']['output'];
+  classSessionEndsAt: Scalars['String']['output'];
+  classSessionId: Scalars['ID']['output'];
+  feedbackDeadline: Scalars['String']['output'];
+  learningFeedback?: Maybe<LearningFeedback>;
+  ratingDeadline: Scalars['String']['output'];
+  sessionRating?: Maybe<SessionRating>;
+  studentDisplayName: Scalars['String']['output'];
+  teacherDisplayName: Scalars['String']['output'];
+};
+
+export enum FeedbackSkill {
+  Grammar = 'GRAMMAR',
+  Listening = 'LISTENING',
+  Pronunciation = 'PRONUNCIATION',
+  Reading = 'READING',
+  SpokenInteraction = 'SPOKEN_INTERACTION',
+  SpokenProduction = 'SPOKEN_PRODUCTION',
+  Vocabulary = 'VOCABULARY',
+  Writing = 'WRITING'
+}
+
 export type GrantTeacherQualificationResult = ChangeTeacherQualificationSuccess | CurriculumConflict;
 
 export type InAppNotification = {
@@ -634,6 +658,36 @@ export type LearningAccessLessonUnit = {
   id: Scalars['ID']['output'];
   title: Scalars['String']['output'];
 };
+
+export type LearningFeedback = {
+  __typename?: 'LearningFeedback';
+  bookingId: Scalars['ID']['output'];
+  nextPractice: Scalars['String']['output'];
+  observations: Scalars['String']['output'];
+  observedStrengths: Array<FeedbackSkill>;
+  state: LearningFeedbackState;
+  submittedAt?: Maybe<Scalars['String']['output']>;
+  suggestedFocuses: Array<FeedbackSkill>;
+  updatedAt: Scalars['String']['output'];
+};
+
+export type LearningFeedbackError = {
+  __typename?: 'LearningFeedbackError';
+  code: LearningFeedbackErrorCode;
+  message: Scalars['String']['output'];
+};
+
+export enum LearningFeedbackErrorCode {
+  BookingNotFound = 'BOOKING_NOT_FOUND',
+  FeedbackWindowClosed = 'FEEDBACK_WINDOW_CLOSED',
+  IdempotencyKeyReused = 'IDEMPOTENCY_KEY_REUSED',
+  InvalidFeedback = 'INVALID_FEEDBACK'
+}
+
+export enum LearningFeedbackState {
+  Draft = 'DRAFT',
+  Submitted = 'SUBMITTED'
+}
 
 export type LessonMaterial = {
   __typename?: 'LessonMaterial';
@@ -707,7 +761,9 @@ export type Mutation = {
   reviseCourseDetails: UpdateCourseResult;
   reviseLessonMaterial: ReviseLessonMaterialResult;
   reviseLessonUnitIdentity: UpdateLessonUnitResult;
+  saveLearningFeedback: SaveLearningFeedbackResult;
   saveLocalizedTopic: UpsertTopicSuccess;
+  saveSessionRating: SaveSessionRatingResult;
   saveTeacherAvailabilityRange: SaveTeacherAvailabilityRangeResult;
   saveTeacherProfile: SaveTeacherProfileSuccess;
   saveUserPreferences: SaveUserPreferencesPayload;
@@ -869,8 +925,18 @@ export type MutationReviseLessonUnitIdentityArgs = {
 };
 
 
+export type MutationSaveLearningFeedbackArgs = {
+  input: SaveLearningFeedbackInput;
+};
+
+
 export type MutationSaveLocalizedTopicArgs = {
   input: UpsertTopicInput;
+};
+
+
+export type MutationSaveSessionRatingArgs = {
+  input: SaveSessionRatingInput;
 };
 
 
@@ -971,6 +1037,7 @@ export type Query = {
   administrationClassCredits?: Maybe<ClassCreditAccount>;
   administrationClassSessions: Array<ClassSession>;
   administrationCurriculum: AdministrationCurriculum;
+  administratorFeedbackAndRatings: Array<FeedbackAndRatingItem>;
   administratorTasks: Array<AdministratorTaskItem>;
   classRoster?: Maybe<ClassRoster>;
   classSessionDiscoveryOptions: ClassSessionDiscoveryOptions;
@@ -984,6 +1051,7 @@ export type Query = {
   studentBookings: Array<Booking>;
   studentClassCredits: ClassCreditAccount;
   studentCourseProgress: Array<CourseProgress>;
+  studentFeedbackAndRatings: Array<FeedbackAndRatingItem>;
   studentPlacements: Array<StudentPlacement>;
   studentSubscription?: Maybe<Subscription>;
   studentWaitlistEntries: Array<WaitlistEntry>;
@@ -993,6 +1061,7 @@ export type Query = {
   teacherAvailability: TeacherAvailability;
   teacherAvailabilityPreview: Array<TeacherAvailabilityOccurrence>;
   teacherClassSessions: Array<ClassSession>;
+  teacherFeedbackWork: Array<FeedbackAndRatingItem>;
 };
 
 
@@ -1176,6 +1245,39 @@ export type RoleWorkspace = {
   user: User;
 };
 
+export type SaveLearningFeedbackInput = {
+  bookingId: Scalars['ID']['input'];
+  idempotencyKey: Scalars['ID']['input'];
+  nextPractice?: InputMaybe<Scalars['String']['input']>;
+  observations?: InputMaybe<Scalars['String']['input']>;
+  observedStrengths: Array<FeedbackSkill>;
+  submit: Scalars['Boolean']['input'];
+  suggestedFocuses: Array<FeedbackSkill>;
+};
+
+export type SaveLearningFeedbackResult = LearningFeedbackError | SaveLearningFeedbackSuccess;
+
+export type SaveLearningFeedbackSuccess = {
+  __typename?: 'SaveLearningFeedbackSuccess';
+  feedback: LearningFeedback;
+};
+
+export type SaveSessionRatingInput = {
+  bookingId: Scalars['ID']['input'];
+  comment?: InputMaybe<Scalars['String']['input']>;
+  idempotencyKey: Scalars['ID']['input'];
+  improvementTags: Array<SessionRatingImprovementTag>;
+  overallRating: Scalars['Int']['input'];
+  positiveTags: Array<SessionRatingPositiveTag>;
+};
+
+export type SaveSessionRatingResult = SaveSessionRatingSuccess | SessionRatingError;
+
+export type SaveSessionRatingSuccess = {
+  __typename?: 'SaveSessionRatingSuccess';
+  rating: SessionRating;
+};
+
 export type SaveTeacherAvailabilityRangeInput = {
   effectiveFrom: Scalars['String']['input'];
   endLocalTime: Scalars['String']['input'];
@@ -1223,6 +1325,44 @@ export type ScheduleSubscriptionCancellationSuccess = {
   __typename?: 'ScheduleSubscriptionCancellationSuccess';
   subscription: Subscription;
 };
+
+export type SessionRating = {
+  __typename?: 'SessionRating';
+  bookingId: Scalars['ID']['output'];
+  comment: Scalars['String']['output'];
+  createdAt: Scalars['String']['output'];
+  improvementTags: Array<SessionRatingImprovementTag>;
+  overallRating: Scalars['Int']['output'];
+  positiveTags: Array<SessionRatingPositiveTag>;
+  updatedAt: Scalars['String']['output'];
+};
+
+export type SessionRatingError = {
+  __typename?: 'SessionRatingError';
+  code: SessionRatingErrorCode;
+  message: Scalars['String']['output'];
+};
+
+export enum SessionRatingErrorCode {
+  BookingNotFound = 'BOOKING_NOT_FOUND',
+  IdempotencyKeyReused = 'IDEMPOTENCY_KEY_REUSED',
+  InvalidRating = 'INVALID_RATING',
+  RatingWindowClosed = 'RATING_WINDOW_CLOSED'
+}
+
+export enum SessionRatingImprovementTag {
+  AudioQuality = 'AUDIO_QUALITY',
+  MoreCorrection = 'MORE_CORRECTION',
+  MoreSpeakingTime = 'MORE_SPEAKING_TIME',
+  Pacing = 'PACING'
+}
+
+export enum SessionRatingPositiveTag {
+  ClearExplanations = 'CLEAR_EXPLANATIONS',
+  Engaging = 'ENGAGING',
+  Supportive = 'SUPPORTIVE',
+  UsefulPractice = 'USEFUL_PRACTICE'
+}
 
 export type SetStudentPlacementInput = {
   curriculumLevel: CurriculumLevel;
@@ -1682,6 +1822,14 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( InvalidLessonMaterial )
     | ( ReviseLessonMaterialSuccess )
   ;
+  SaveLearningFeedbackResult:
+    | ( LearningFeedbackError )
+    | ( SaveLearningFeedbackSuccess )
+  ;
+  SaveSessionRatingResult:
+    | ( SaveSessionRatingSuccess )
+    | ( SessionRatingError )
+  ;
   SaveTeacherAvailabilityRangeResult:
     | ( SaveTeacherAvailabilityRangeSuccess )
     | ( TeacherAvailabilityValidationError )
@@ -1805,6 +1953,8 @@ export type ResolversTypes = {
   EnterClassroomInput: EnterClassroomInput;
   EnterClassroomResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['EnterClassroomResult']>;
   EnterClassroomSuccess: ResolverTypeWrapper<EnterClassroomSuccess>;
+  FeedbackAndRatingItem: ResolverTypeWrapper<FeedbackAndRatingItem>;
+  FeedbackSkill: FeedbackSkill;
   GrantTeacherQualificationResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['GrantTeacherQualificationResult']>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
   InAppNotification: ResolverTypeWrapper<InAppNotification>;
@@ -1816,6 +1966,10 @@ export type ResolversTypes = {
   JoinWaitlistResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['JoinWaitlistResult']>;
   JoinWaitlistSuccess: ResolverTypeWrapper<JoinWaitlistSuccess>;
   LearningAccessLessonUnit: ResolverTypeWrapper<LearningAccessLessonUnit>;
+  LearningFeedback: ResolverTypeWrapper<LearningFeedback>;
+  LearningFeedbackError: ResolverTypeWrapper<LearningFeedbackError>;
+  LearningFeedbackErrorCode: LearningFeedbackErrorCode;
+  LearningFeedbackState: LearningFeedbackState;
   LessonMaterial: ResolverTypeWrapper<LessonMaterial>;
   LessonMaterialKind: LessonMaterialKind;
   LessonUnit: ResolverTypeWrapper<LessonUnit>;
@@ -1859,6 +2013,12 @@ export type ResolversTypes = {
   ReviseLessonMaterialSuccess: ResolverTypeWrapper<ReviseLessonMaterialSuccess>;
   RolePlace: ResolverTypeWrapper<RolePlace>;
   RoleWorkspace: ResolverTypeWrapper<RoleWorkspace>;
+  SaveLearningFeedbackInput: SaveLearningFeedbackInput;
+  SaveLearningFeedbackResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['SaveLearningFeedbackResult']>;
+  SaveLearningFeedbackSuccess: ResolverTypeWrapper<SaveLearningFeedbackSuccess>;
+  SaveSessionRatingInput: SaveSessionRatingInput;
+  SaveSessionRatingResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['SaveSessionRatingResult']>;
+  SaveSessionRatingSuccess: ResolverTypeWrapper<SaveSessionRatingSuccess>;
   SaveTeacherAvailabilityRangeInput: SaveTeacherAvailabilityRangeInput;
   SaveTeacherAvailabilityRangeResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['SaveTeacherAvailabilityRangeResult']>;
   SaveTeacherAvailabilityRangeSuccess: ResolverTypeWrapper<SaveTeacherAvailabilityRangeSuccess>;
@@ -1868,6 +2028,11 @@ export type ResolversTypes = {
   SaveUserPreferencesPayload: ResolverTypeWrapper<SaveUserPreferencesPayload>;
   ScheduleSubscriptionCancellationResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ScheduleSubscriptionCancellationResult']>;
   ScheduleSubscriptionCancellationSuccess: ResolverTypeWrapper<ScheduleSubscriptionCancellationSuccess>;
+  SessionRating: ResolverTypeWrapper<SessionRating>;
+  SessionRatingError: ResolverTypeWrapper<SessionRatingError>;
+  SessionRatingErrorCode: SessionRatingErrorCode;
+  SessionRatingImprovementTag: SessionRatingImprovementTag;
+  SessionRatingPositiveTag: SessionRatingPositiveTag;
   SetStudentPlacementInput: SetStudentPlacementInput;
   String: ResolverTypeWrapper<Scalars['String']['output']>;
   StructuredTextBlockInput: StructuredTextBlockInput;
@@ -1987,6 +2152,7 @@ export type ResolversParentTypes = {
   EnterClassroomInput: EnterClassroomInput;
   EnterClassroomResult: ResolversUnionTypes<ResolversParentTypes>['EnterClassroomResult'];
   EnterClassroomSuccess: EnterClassroomSuccess;
+  FeedbackAndRatingItem: FeedbackAndRatingItem;
   GrantTeacherQualificationResult: ResolversUnionTypes<ResolversParentTypes>['GrantTeacherQualificationResult'];
   ID: Scalars['ID']['output'];
   InAppNotification: InAppNotification;
@@ -1997,6 +2163,8 @@ export type ResolversParentTypes = {
   JoinWaitlistResult: ResolversUnionTypes<ResolversParentTypes>['JoinWaitlistResult'];
   JoinWaitlistSuccess: JoinWaitlistSuccess;
   LearningAccessLessonUnit: LearningAccessLessonUnit;
+  LearningFeedback: LearningFeedback;
+  LearningFeedbackError: LearningFeedbackError;
   LessonMaterial: LessonMaterial;
   LessonUnit: LessonUnit;
   Mutation: Record<PropertyKey, never>;
@@ -2036,6 +2204,12 @@ export type ResolversParentTypes = {
   ReviseLessonMaterialSuccess: ReviseLessonMaterialSuccess;
   RolePlace: RolePlace;
   RoleWorkspace: RoleWorkspace;
+  SaveLearningFeedbackInput: SaveLearningFeedbackInput;
+  SaveLearningFeedbackResult: ResolversUnionTypes<ResolversParentTypes>['SaveLearningFeedbackResult'];
+  SaveLearningFeedbackSuccess: SaveLearningFeedbackSuccess;
+  SaveSessionRatingInput: SaveSessionRatingInput;
+  SaveSessionRatingResult: ResolversUnionTypes<ResolversParentTypes>['SaveSessionRatingResult'];
+  SaveSessionRatingSuccess: SaveSessionRatingSuccess;
   SaveTeacherAvailabilityRangeInput: SaveTeacherAvailabilityRangeInput;
   SaveTeacherAvailabilityRangeResult: ResolversUnionTypes<ResolversParentTypes>['SaveTeacherAvailabilityRangeResult'];
   SaveTeacherAvailabilityRangeSuccess: SaveTeacherAvailabilityRangeSuccess;
@@ -2045,6 +2219,8 @@ export type ResolversParentTypes = {
   SaveUserPreferencesPayload: SaveUserPreferencesPayload;
   ScheduleSubscriptionCancellationResult: ResolversUnionTypes<ResolversParentTypes>['ScheduleSubscriptionCancellationResult'];
   ScheduleSubscriptionCancellationSuccess: ScheduleSubscriptionCancellationSuccess;
+  SessionRating: SessionRating;
+  SessionRatingError: SessionRatingError;
   SetStudentPlacementInput: SetStudentPlacementInput;
   String: Scalars['String']['output'];
   StructuredTextBlockInput: StructuredTextBlockInput;
@@ -2433,6 +2609,18 @@ export type EnterClassroomSuccessResolvers<ContextType = any, ParentType extends
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
+export type FeedbackAndRatingItemResolvers<ContextType = any, ParentType extends ResolversParentTypes['FeedbackAndRatingItem'] = ResolversParentTypes['FeedbackAndRatingItem']> = {
+  bookingId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  classSessionEndsAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  classSessionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  feedbackDeadline?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  learningFeedback?: Resolver<Maybe<ResolversTypes['LearningFeedback']>, ParentType, ContextType>;
+  ratingDeadline?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  sessionRating?: Resolver<Maybe<ResolversTypes['SessionRating']>, ParentType, ContextType>;
+  studentDisplayName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  teacherDisplayName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
 export type GrantTeacherQualificationResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['GrantTeacherQualificationResult'] = ResolversParentTypes['GrantTeacherQualificationResult']> = {
   __resolveType: TypeResolveFn<'ChangeTeacherQualificationSuccess' | 'CurriculumConflict', ParentType, ContextType>;
 };
@@ -2470,6 +2658,23 @@ export type JoinWaitlistSuccessResolvers<ContextType = any, ParentType extends R
 export type LearningAccessLessonUnitResolvers<ContextType = any, ParentType extends ResolversParentTypes['LearningAccessLessonUnit'] = ResolversParentTypes['LearningAccessLessonUnit']> = {
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
+export type LearningFeedbackResolvers<ContextType = any, ParentType extends ResolversParentTypes['LearningFeedback'] = ResolversParentTypes['LearningFeedback']> = {
+  bookingId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  nextPractice?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  observations?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  observedStrengths?: Resolver<Array<ResolversTypes['FeedbackSkill']>, ParentType, ContextType>;
+  state?: Resolver<ResolversTypes['LearningFeedbackState'], ParentType, ContextType>;
+  submittedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  suggestedFocuses?: Resolver<Array<ResolversTypes['FeedbackSkill']>, ParentType, ContextType>;
+  updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
+export type LearningFeedbackErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['LearningFeedbackError'] = ResolversParentTypes['LearningFeedbackError']> = {
+  code?: Resolver<ResolversTypes['LearningFeedbackErrorCode'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
 export type LessonMaterialResolvers<ContextType = any, ParentType extends ResolversParentTypes['LessonMaterial'] = ResolversParentTypes['LessonMaterial']> = {
@@ -2525,7 +2730,9 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   reviseCourseDetails?: Resolver<ResolversTypes['UpdateCourseResult'], ParentType, ContextType, RequireFields<MutationReviseCourseDetailsArgs, 'input'>>;
   reviseLessonMaterial?: Resolver<ResolversTypes['ReviseLessonMaterialResult'], ParentType, ContextType, RequireFields<MutationReviseLessonMaterialArgs, 'input'>>;
   reviseLessonUnitIdentity?: Resolver<ResolversTypes['UpdateLessonUnitResult'], ParentType, ContextType, RequireFields<MutationReviseLessonUnitIdentityArgs, 'input'>>;
+  saveLearningFeedback?: Resolver<ResolversTypes['SaveLearningFeedbackResult'], ParentType, ContextType, RequireFields<MutationSaveLearningFeedbackArgs, 'input'>>;
   saveLocalizedTopic?: Resolver<ResolversTypes['UpsertTopicSuccess'], ParentType, ContextType, RequireFields<MutationSaveLocalizedTopicArgs, 'input'>>;
+  saveSessionRating?: Resolver<ResolversTypes['SaveSessionRatingResult'], ParentType, ContextType, RequireFields<MutationSaveSessionRatingArgs, 'input'>>;
   saveTeacherAvailabilityRange?: Resolver<ResolversTypes['SaveTeacherAvailabilityRangeResult'], ParentType, ContextType, RequireFields<MutationSaveTeacherAvailabilityRangeArgs, 'input'>>;
   saveTeacherProfile?: Resolver<ResolversTypes['SaveTeacherProfileSuccess'], ParentType, ContextType, RequireFields<MutationSaveTeacherProfileArgs, 'input'>>;
   saveUserPreferences?: Resolver<ResolversTypes['SaveUserPreferencesPayload'], ParentType, ContextType, RequireFields<MutationSaveUserPreferencesArgs, 'input'>>;
@@ -2572,6 +2779,7 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   administrationClassCredits?: Resolver<Maybe<ResolversTypes['ClassCreditAccount']>, ParentType, ContextType, RequireFields<QueryAdministrationClassCreditsArgs, 'studentUserId'>>;
   administrationClassSessions?: Resolver<Array<ResolversTypes['ClassSession']>, ParentType, ContextType>;
   administrationCurriculum?: Resolver<ResolversTypes['AdministrationCurriculum'], ParentType, ContextType, RequireFields<QueryAdministrationCurriculumArgs, 'locale'>>;
+  administratorFeedbackAndRatings?: Resolver<Array<ResolversTypes['FeedbackAndRatingItem']>, ParentType, ContextType>;
   administratorTasks?: Resolver<Array<ResolversTypes['AdministratorTaskItem']>, ParentType, ContextType>;
   classRoster?: Resolver<Maybe<ResolversTypes['ClassRoster']>, ParentType, ContextType, RequireFields<QueryClassRosterArgs, 'actingRole' | 'classSessionId'>>;
   classSessionDiscoveryOptions?: Resolver<ResolversTypes['ClassSessionDiscoveryOptions'], ParentType, ContextType>;
@@ -2585,6 +2793,7 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   studentBookings?: Resolver<Array<ResolversTypes['Booking']>, ParentType, ContextType>;
   studentClassCredits?: Resolver<ResolversTypes['ClassCreditAccount'], ParentType, ContextType>;
   studentCourseProgress?: Resolver<Array<ResolversTypes['CourseProgress']>, ParentType, ContextType>;
+  studentFeedbackAndRatings?: Resolver<Array<ResolversTypes['FeedbackAndRatingItem']>, ParentType, ContextType>;
   studentPlacements?: Resolver<Array<ResolversTypes['StudentPlacement']>, ParentType, ContextType>;
   studentSubscription?: Resolver<Maybe<ResolversTypes['Subscription']>, ParentType, ContextType>;
   studentWaitlistEntries?: Resolver<Array<ResolversTypes['WaitlistEntry']>, ParentType, ContextType>;
@@ -2594,6 +2803,7 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   teacherAvailability?: Resolver<ResolversTypes['TeacherAvailability'], ParentType, ContextType>;
   teacherAvailabilityPreview?: Resolver<Array<ResolversTypes['TeacherAvailabilityOccurrence']>, ParentType, ContextType, RequireFields<QueryTeacherAvailabilityPreviewArgs, 'localDates'>>;
   teacherClassSessions?: Resolver<Array<ResolversTypes['ClassSession']>, ParentType, ContextType>;
+  teacherFeedbackWork?: Resolver<Array<ResolversTypes['FeedbackAndRatingItem']>, ParentType, ContextType>;
 };
 
 export type RecordAttendanceResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['RecordAttendanceResult'] = ResolversParentTypes['RecordAttendanceResult']> = {
@@ -2686,6 +2896,24 @@ export type RoleWorkspaceResolvers<ContextType = any, ParentType extends Resolve
   user?: Resolver<ResolversTypes['User'], ParentType, ContextType>;
 };
 
+export type SaveLearningFeedbackResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['SaveLearningFeedbackResult'] = ResolversParentTypes['SaveLearningFeedbackResult']> = {
+  __resolveType: TypeResolveFn<'LearningFeedbackError' | 'SaveLearningFeedbackSuccess', ParentType, ContextType>;
+};
+
+export type SaveLearningFeedbackSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['SaveLearningFeedbackSuccess'] = ResolversParentTypes['SaveLearningFeedbackSuccess']> = {
+  feedback?: Resolver<ResolversTypes['LearningFeedback'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type SaveSessionRatingResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['SaveSessionRatingResult'] = ResolversParentTypes['SaveSessionRatingResult']> = {
+  __resolveType: TypeResolveFn<'SaveSessionRatingSuccess' | 'SessionRatingError', ParentType, ContextType>;
+};
+
+export type SaveSessionRatingSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['SaveSessionRatingSuccess'] = ResolversParentTypes['SaveSessionRatingSuccess']> = {
+  rating?: Resolver<ResolversTypes['SessionRating'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
 export type SaveTeacherAvailabilityRangeResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['SaveTeacherAvailabilityRangeResult'] = ResolversParentTypes['SaveTeacherAvailabilityRangeResult']> = {
   __resolveType: TypeResolveFn<'SaveTeacherAvailabilityRangeSuccess' | 'TeacherAvailabilityValidationError', ParentType, ContextType>;
 };
@@ -2709,6 +2937,22 @@ export type ScheduleSubscriptionCancellationResultResolvers<ContextType = any, P
 
 export type ScheduleSubscriptionCancellationSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['ScheduleSubscriptionCancellationSuccess'] = ResolversParentTypes['ScheduleSubscriptionCancellationSuccess']> = {
   subscription?: Resolver<ResolversTypes['Subscription'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type SessionRatingResolvers<ContextType = any, ParentType extends ResolversParentTypes['SessionRating'] = ResolversParentTypes['SessionRating']> = {
+  bookingId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  comment?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  improvementTags?: Resolver<Array<ResolversTypes['SessionRatingImprovementTag']>, ParentType, ContextType>;
+  overallRating?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  positiveTags?: Resolver<Array<ResolversTypes['SessionRatingPositiveTag']>, ParentType, ContextType>;
+  updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
+export type SessionRatingErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['SessionRatingError'] = ResolversParentTypes['SessionRatingError']> = {
+  code?: Resolver<ResolversTypes['SessionRatingErrorCode'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
@@ -2924,6 +3168,7 @@ export type Resolvers<ContextType = any> = {
   EndTeacherAvailabilityRangeSuccess?: EndTeacherAvailabilityRangeSuccessResolvers<ContextType>;
   EnterClassroomResult?: EnterClassroomResultResolvers<ContextType>;
   EnterClassroomSuccess?: EnterClassroomSuccessResolvers<ContextType>;
+  FeedbackAndRatingItem?: FeedbackAndRatingItemResolvers<ContextType>;
   GrantTeacherQualificationResult?: GrantTeacherQualificationResultResolvers<ContextType>;
   InAppNotification?: InAppNotificationResolvers<ContextType>;
   InstructionalIdentityLocked?: InstructionalIdentityLockedResolvers<ContextType>;
@@ -2931,6 +3176,8 @@ export type Resolvers<ContextType = any> = {
   JoinWaitlistResult?: JoinWaitlistResultResolvers<ContextType>;
   JoinWaitlistSuccess?: JoinWaitlistSuccessResolvers<ContextType>;
   LearningAccessLessonUnit?: LearningAccessLessonUnitResolvers<ContextType>;
+  LearningFeedback?: LearningFeedbackResolvers<ContextType>;
+  LearningFeedbackError?: LearningFeedbackErrorResolvers<ContextType>;
   LessonMaterial?: LessonMaterialResolvers<ContextType>;
   LessonUnit?: LessonUnitResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
@@ -2959,12 +3206,18 @@ export type Resolvers<ContextType = any> = {
   ReviseLessonMaterialSuccess?: ReviseLessonMaterialSuccessResolvers<ContextType>;
   RolePlace?: RolePlaceResolvers<ContextType>;
   RoleWorkspace?: RoleWorkspaceResolvers<ContextType>;
+  SaveLearningFeedbackResult?: SaveLearningFeedbackResultResolvers<ContextType>;
+  SaveLearningFeedbackSuccess?: SaveLearningFeedbackSuccessResolvers<ContextType>;
+  SaveSessionRatingResult?: SaveSessionRatingResultResolvers<ContextType>;
+  SaveSessionRatingSuccess?: SaveSessionRatingSuccessResolvers<ContextType>;
   SaveTeacherAvailabilityRangeResult?: SaveTeacherAvailabilityRangeResultResolvers<ContextType>;
   SaveTeacherAvailabilityRangeSuccess?: SaveTeacherAvailabilityRangeSuccessResolvers<ContextType>;
   SaveTeacherProfileSuccess?: SaveTeacherProfileSuccessResolvers<ContextType>;
   SaveUserPreferencesPayload?: SaveUserPreferencesPayloadResolvers<ContextType>;
   ScheduleSubscriptionCancellationResult?: ScheduleSubscriptionCancellationResultResolvers<ContextType>;
   ScheduleSubscriptionCancellationSuccess?: ScheduleSubscriptionCancellationSuccessResolvers<ContextType>;
+  SessionRating?: SessionRatingResolvers<ContextType>;
+  SessionRatingError?: SessionRatingErrorResolvers<ContextType>;
   StudentPlacement?: StudentPlacementResolvers<ContextType>;
   StudentWorkspace?: StudentWorkspaceResolvers<ContextType>;
   Subscription?: SubscriptionResolvers<ContextType>;

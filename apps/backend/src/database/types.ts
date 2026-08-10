@@ -93,6 +93,11 @@ export interface AbsenceRequestSessionsTable { absence_request_id: string; class
 export interface AttendanceRecordsTable { id: Generated<string>; booking_id: string; outcome: "ATTENDED" | "NO_SHOW"; submitted_by_user_id: string | null; submitted_at: Generated<Date>; updated_at: Generated<Date> }
 export interface LessonUnitCompletionsTable { id: Generated<string>; student_user_id: string; lesson_unit_id: string; established_by_booking_id: string; earned_at: Date }
 export interface AttendanceRecordCorrectionsTable { id: Generated<string>; booking_id: string; prior_outcome: "ATTENDED" | "NO_SHOW"; corrected_outcome: "ATTENDED" | "NO_SHOW"; corrected_by_user_id: string; reason: string; corrected_at: Date }
+export type FeedbackSkill = "LISTENING" | "READING" | "SPOKEN_INTERACTION" | "SPOKEN_PRODUCTION" | "WRITING" | "VOCABULARY" | "GRAMMAR" | "PRONUNCIATION";
+export type SessionRatingPositiveTag = "CLEAR_EXPLANATIONS" | "SUPPORTIVE" | "ENGAGING" | "USEFUL_PRACTICE";
+export type SessionRatingImprovementTag = "PACING" | "AUDIO_QUALITY" | "MORE_CORRECTION" | "MORE_SPEAKING_TIME";
+export interface LearningFeedbackTable { id: Generated<string>; booking_id: string; teacher_user_id: string; observed_strengths: FeedbackSkill[]; suggested_focuses: FeedbackSkill[]; observations: string; next_practice: string; state: "DRAFT" | "SUBMITTED"; submitted_at: Date | null; created_at: Date; updated_at: Date }
+export interface SessionRatingsTable { id: Generated<string>; booking_id: string; student_user_id: string; overall_rating: number; positive_tags: SessionRatingPositiveTag[]; improvement_tags: SessionRatingImprovementTag[]; comment: string; created_at: Date; updated_at: Date }
 
 export interface DatabaseSchema {
   users: UsersTable;
@@ -135,4 +140,6 @@ export interface DatabaseSchema {
   attendance_records: AttendanceRecordsTable;
   lesson_unit_completions: LessonUnitCompletionsTable;
   attendance_record_corrections: AttendanceRecordCorrectionsTable;
+  learning_feedback: LearningFeedbackTable;
+  session_ratings: SessionRatingsTable;
 }

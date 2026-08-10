@@ -1,0 +1,15 @@
+query TeacherFeedbackWork {
+  teacherFeedbackWork { bookingId classSessionId feedbackDeadline studentDisplayName learningFeedback { bookingId observedStrengths suggestedFocuses observations nextPractice state submittedAt updatedAt } }
+}
+mutation SaveLearningFeedback($input: SaveLearningFeedbackInput!) {
+  saveLearningFeedback(input: $input) { __typename ... on SaveLearningFeedbackSuccess { feedback { bookingId observedStrengths suggestedFocuses observations nextPractice state submittedAt updatedAt } } ... on LearningFeedbackError { code message } }
+}
+query StudentFeedbackAndRatings {
+  studentFeedbackAndRatings { bookingId classSessionId classSessionEndsAt feedbackDeadline ratingDeadline teacherDisplayName learningFeedback { bookingId observedStrengths suggestedFocuses observations nextPractice state submittedAt updatedAt } sessionRating { bookingId overallRating positiveTags improvementTags comment createdAt updatedAt } }
+}
+mutation SaveSessionRating($input: SaveSessionRatingInput!) {
+  saveSessionRating(input: $input) { __typename ... on SaveSessionRatingSuccess { rating { bookingId overallRating positiveTags improvementTags comment createdAt updatedAt } } ... on SessionRatingError { code message } }
+}
+query AdministratorFeedbackAndRatings {
+  administratorFeedbackAndRatings { bookingId classSessionId studentDisplayName teacherDisplayName learningFeedback { state observedStrengths suggestedFocuses observations nextPractice updatedAt } sessionRating { overallRating positiveTags improvementTags comment updatedAt } }
+}

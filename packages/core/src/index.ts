@@ -8,6 +8,29 @@ export const USER_ROLES = [
 export type UserRole = (typeof USER_ROLES)[number];
 export type AttendanceOutcome = "ATTENDED" | "NO_SHOW";
 
+export const FEEDBACK_SKILLS = ["LISTENING", "READING", "SPOKEN_INTERACTION", "SPOKEN_PRODUCTION", "WRITING", "VOCABULARY", "GRAMMAR", "PRONUNCIATION"] as const;
+export type FeedbackSkill = (typeof FEEDBACK_SKILLS)[number];
+export const SESSION_RATING_POSITIVE_TAGS = ["CLEAR_EXPLANATIONS", "SUPPORTIVE", "ENGAGING", "USEFUL_PRACTICE"] as const;
+export type SessionRatingPositiveTag = (typeof SESSION_RATING_POSITIVE_TAGS)[number];
+export const SESSION_RATING_IMPROVEMENT_TAGS = ["PACING", "AUDIO_QUALITY", "MORE_CORRECTION", "MORE_SPEAKING_TIME"] as const;
+export type SessionRatingImprovementTag = (typeof SESSION_RATING_IMPROVEMENT_TAGS)[number];
+
+export function feedbackWindowIsOpen(now: Date, eligibleFrom: Date) {
+  return now <= feedbackDeadline(eligibleFrom);
+}
+
+export function sessionRatingWindowIsOpen(now: Date, eligibleFrom: Date) {
+  return now <= sessionRatingDeadline(eligibleFrom);
+}
+
+export function feedbackDeadline(eligibleFrom: Date) {
+  return new Date(eligibleFrom.getTime() + 48 * 60 * 60_000);
+}
+
+export function sessionRatingDeadline(eligibleFrom: Date) {
+  return new Date(eligibleFrom.getTime() + 7 * 24 * 60 * 60_000);
+}
+
 export function establishesLessonUnitCompletion(outcomes: readonly AttendanceOutcome[]) {
   return outcomes.reduce((attended, outcome) => attended || outcome === "ATTENDED", false);
 }
@@ -338,6 +361,58 @@ export const interfaceMessages = {
     "attendance.error.rosterMismatch": "Reload the Class Roster before publishing Attendance.",
     "attendance.error.notFound": "This Class Session is not available for Attendance recording.",
     "attendance.error.idempotency": "This request identifier was already used for different Attendance input.",
+    "learning-feedback.submitted.student": "Learning Feedback is available for Class Session {classSessionId}.",
+    "feedback.title": "Learning Feedback",
+    "feedback.studentTitle": "Feedback and Session Ratings",
+    "feedback.loading": "Loading feedback…",
+    "feedback.loadError": "We couldn't load feedback. Try again.",
+    "feedback.empty": "There are no Attended Bookings open for Learning Feedback.",
+    "feedback.studentEmpty": "There are no Attended Class Sessions to review yet.",
+    "feedback.notSubmitted": "Learning Feedback has not been submitted.",
+    "feedback.deadline": "Submit or revise by {deadline}.",
+    "feedback.strengths": "Observed strengths (up to three)",
+    "feedback.focuses": "Suggested focus (up to three)",
+    "feedback.observations": "Observations",
+    "feedback.nextPractice": "Next practice",
+    "feedback.saveDraft": "Save private draft",
+    "feedback.submit": "Submit Learning Feedback",
+    "feedback.revise": "Revise Learning Feedback",
+    "feedback.saved": "Learning Feedback saved.",
+    "feedback.error": "We couldn't save Learning Feedback. Review the content and deadline.",
+    "feedback.skill.LISTENING": "Listening",
+    "feedback.skill.READING": "Reading",
+    "feedback.skill.SPOKEN_INTERACTION": "Spoken interaction",
+    "feedback.skill.SPOKEN_PRODUCTION": "Spoken production",
+    "feedback.skill.WRITING": "Writing",
+    "feedback.skill.VOCABULARY": "Vocabulary",
+    "feedback.skill.GRAMMAR": "Grammar",
+    "feedback.skill.PRONUNCIATION": "Pronunciation",
+    "rating.deadline": "Submit or edit your private Session Rating by {deadline}.",
+    "rating.overall": "Overall Session Rating",
+    "rating.positiveTags": "What worked well",
+    "rating.improvementTags": "What could improve",
+    "rating.comment": "Private comment for Platform Administrators",
+    "rating.submit": "Submit Session Rating",
+    "rating.edit": "Save edited Session Rating",
+    "rating.saved": "Session Rating saved privately.",
+    "rating.error": "We couldn't save your Session Rating. Review the rating and deadline.",
+    "rating.closed": "The Session Rating editing window has closed.",
+    "rating.tag.CLEAR_EXPLANATIONS": "Clear explanations",
+    "rating.tag.SUPPORTIVE": "Supportive",
+    "rating.tag.ENGAGING": "Engaging",
+    "rating.tag.USEFUL_PRACTICE": "Useful practice",
+    "rating.tag.PACING": "Pacing",
+    "rating.tag.AUDIO_QUALITY": "Audio quality",
+    "rating.tag.MORE_CORRECTION": "More correction",
+    "rating.tag.MORE_SPEAKING_TIME": "More speaking time",
+    "quality.title": "Learning quality",
+    "quality.loading": "Loading private quality records…",
+    "quality.error": "We couldn't load private quality records. Try again.",
+    "quality.empty": "There are no private feedback or rating records.",
+    "quality.feedbackState": "Learning Feedback state: {state}",
+    "quality.feedbackState.DRAFT": "Private draft",
+    "quality.feedbackState.SUBMITTED": "Submitted",
+    "quality.rating": "Session Rating: {rating} of 5.",
     "progress.loading": "Loading Course Progress…",
     "progress.loadError": "We couldn't load Course Progress. Try again.",
     "progress.title": "Course Progress",
@@ -776,6 +851,58 @@ export const interfaceMessages = {
     "attendance.error.rosterMismatch": "Vuelve a cargar la lista de clase antes de publicar la asistencia.",
     "attendance.error.notFound": "Esta sesión de clase no está disponible para registrar asistencia.",
     "attendance.error.idempotency": "Este identificador de solicitud ya se usó con otros datos de asistencia.",
+    "learning-feedback.submitted.student": "Los comentarios de aprendizaje están disponibles para la sesión de clase {classSessionId}.",
+    "feedback.title": "Comentarios de aprendizaje",
+    "feedback.studentTitle": "Comentarios y valoraciones de sesiones",
+    "feedback.loading": "Cargando comentarios…",
+    "feedback.loadError": "No pudimos cargar los comentarios. Inténtalo de nuevo.",
+    "feedback.empty": "No hay reservas con asistencia abiertas para comentarios de aprendizaje.",
+    "feedback.studentEmpty": "Aún no hay sesiones con asistencia para valorar.",
+    "feedback.notSubmitted": "Los comentarios de aprendizaje aún no se han enviado.",
+    "feedback.deadline": "Envía o revisa antes de {deadline}.",
+    "feedback.strengths": "Fortalezas observadas (hasta tres)",
+    "feedback.focuses": "Enfoque sugerido (hasta tres)",
+    "feedback.observations": "Observaciones",
+    "feedback.nextPractice": "Próxima práctica",
+    "feedback.saveDraft": "Guardar borrador privado",
+    "feedback.submit": "Enviar comentarios de aprendizaje",
+    "feedback.revise": "Revisar comentarios de aprendizaje",
+    "feedback.saved": "Comentarios de aprendizaje guardados.",
+    "feedback.error": "No pudimos guardar los comentarios de aprendizaje. Revisa el contenido y el plazo.",
+    "feedback.skill.LISTENING": "Comprensión auditiva",
+    "feedback.skill.READING": "Lectura",
+    "feedback.skill.SPOKEN_INTERACTION": "Interacción oral",
+    "feedback.skill.SPOKEN_PRODUCTION": "Producción oral",
+    "feedback.skill.WRITING": "Escritura",
+    "feedback.skill.VOCABULARY": "Vocabulario",
+    "feedback.skill.GRAMMAR": "Gramática",
+    "feedback.skill.PRONUNCIATION": "Pronunciación",
+    "rating.deadline": "Envía o edita tu valoración privada antes de {deadline}.",
+    "rating.overall": "Valoración general de la sesión",
+    "rating.positiveTags": "Lo que funcionó bien",
+    "rating.improvementTags": "Lo que podría mejorar",
+    "rating.comment": "Comentario privado para administradores de la plataforma",
+    "rating.submit": "Enviar valoración de la sesión",
+    "rating.edit": "Guardar valoración editada",
+    "rating.saved": "Valoración guardada de forma privada.",
+    "rating.error": "No pudimos guardar tu valoración. Revisa la puntuación y el plazo.",
+    "rating.closed": "El plazo para editar la valoración de la sesión ha terminado.",
+    "rating.tag.CLEAR_EXPLANATIONS": "Explicaciones claras",
+    "rating.tag.SUPPORTIVE": "Apoyo",
+    "rating.tag.ENGAGING": "Atractiva",
+    "rating.tag.USEFUL_PRACTICE": "Práctica útil",
+    "rating.tag.PACING": "Ritmo",
+    "rating.tag.AUDIO_QUALITY": "Calidad del audio",
+    "rating.tag.MORE_CORRECTION": "Más correcciones",
+    "rating.tag.MORE_SPEAKING_TIME": "Más tiempo para hablar",
+    "quality.title": "Calidad del aprendizaje",
+    "quality.loading": "Cargando registros privados de calidad…",
+    "quality.error": "No pudimos cargar los registros privados de calidad. Inténtalo de nuevo.",
+    "quality.empty": "No hay comentarios ni valoraciones privadas.",
+    "quality.feedbackState": "Estado de los comentarios de aprendizaje: {state}",
+    "quality.feedbackState.DRAFT": "Borrador privado",
+    "quality.feedbackState.SUBMITTED": "Enviados",
+    "quality.rating": "Valoración de la sesión: {rating} de 5.",
     "progress.loading": "Cargando el progreso del curso…",
     "progress.loadError": "No pudimos cargar el progreso del curso. Inténtalo de nuevo.",
     "progress.title": "Progreso del curso",

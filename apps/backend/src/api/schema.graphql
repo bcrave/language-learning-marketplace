@@ -68,6 +68,24 @@ type RecordAttendanceSuccess { classRoster: ClassRoster! }
 enum AttendanceErrorCode { CLASS_SESSION_NOT_FOUND ATTENDANCE_RECORDING_NOT_OPEN ATTENDANCE_RECORDING_WINDOW_CLOSED ATTENDANCE_ROSTER_MISMATCH ATTENDANCE_CORRECTION_REASON_REQUIRED IDEMPOTENCY_KEY_REUSED }
 type AttendanceError { code: AttendanceErrorCode!, message: String! }
 union RecordAttendanceResult = RecordAttendanceSuccess | AttendanceError
+
+enum FeedbackSkill { LISTENING READING SPOKEN_INTERACTION SPOKEN_PRODUCTION WRITING VOCABULARY GRAMMAR PRONUNCIATION }
+enum LearningFeedbackState { DRAFT SUBMITTED }
+type LearningFeedback { bookingId: ID!, observedStrengths: [FeedbackSkill!]!, suggestedFocuses: [FeedbackSkill!]!, observations: String!, nextPractice: String!, state: LearningFeedbackState!, submittedAt: String, updatedAt: String! }
+enum SessionRatingPositiveTag { CLEAR_EXPLANATIONS SUPPORTIVE ENGAGING USEFUL_PRACTICE }
+enum SessionRatingImprovementTag { PACING AUDIO_QUALITY MORE_CORRECTION MORE_SPEAKING_TIME }
+type SessionRating { bookingId: ID!, overallRating: Int!, positiveTags: [SessionRatingPositiveTag!]!, improvementTags: [SessionRatingImprovementTag!]!, comment: String!, createdAt: String!, updatedAt: String! }
+type FeedbackAndRatingItem { bookingId: ID!, classSessionId: ID!, classSessionEndsAt: String!, feedbackDeadline: String!, ratingDeadline: String!, studentDisplayName: String!, teacherDisplayName: String!, learningFeedback: LearningFeedback, sessionRating: SessionRating }
+input SaveLearningFeedbackInput { idempotencyKey: ID!, bookingId: ID!, observedStrengths: [FeedbackSkill!]!, suggestedFocuses: [FeedbackSkill!]!, observations: String, nextPractice: String, submit: Boolean! }
+enum LearningFeedbackErrorCode { BOOKING_NOT_FOUND FEEDBACK_WINDOW_CLOSED INVALID_FEEDBACK IDEMPOTENCY_KEY_REUSED }
+type LearningFeedbackError { code: LearningFeedbackErrorCode!, message: String! }
+type SaveLearningFeedbackSuccess { feedback: LearningFeedback! }
+union SaveLearningFeedbackResult = SaveLearningFeedbackSuccess | LearningFeedbackError
+input SaveSessionRatingInput { idempotencyKey: ID!, bookingId: ID!, overallRating: Int!, positiveTags: [SessionRatingPositiveTag!]!, improvementTags: [SessionRatingImprovementTag!]!, comment: String }
+enum SessionRatingErrorCode { BOOKING_NOT_FOUND RATING_WINDOW_CLOSED INVALID_RATING IDEMPOTENCY_KEY_REUSED }
+type SessionRatingError { code: SessionRatingErrorCode!, message: String! }
+type SaveSessionRatingSuccess { rating: SessionRating! }
+union SaveSessionRatingResult = SaveSessionRatingSuccess | SessionRatingError
 type CourseProgressLearningHistory { lessonUnitId: ID!, title: String!, state: LessonUnitState!, earnedAt: String!, countsTowardProgress: Boolean! }
 type CourseProgress { courseId: ID!, title: String!, targetLanguage: String!, curriculumLevel: CurriculumLevel!, activeLessonUnitCount: Int!, completedActiveLessonUnitCount: Int!, percentage: Int!, learningHistory: [CourseProgressLearningHistory!]! }
 enum BookingState { ACTIVE ENDED }
@@ -339,6 +357,9 @@ type Query {
   classRoster(classSessionId: ID!, actingRole: UserRole!): ClassRoster
   teacherClassSessions: [ClassSession!]!
   teacherAttendanceClassSessions: [ClassSession!]!
+  teacherFeedbackWork: [FeedbackAndRatingItem!]!
+  studentFeedbackAndRatings: [FeedbackAndRatingItem!]!
+  administratorFeedbackAndRatings: [FeedbackAndRatingItem!]!
   teacherAbsenceRequests: [AbsenceRequest!]!
   administrationAbsenceRequests: [AbsenceRequest!]!
   teacherAvailability: TeacherAvailability!
@@ -370,6 +391,8 @@ type Mutation {
   cancelClassSession(input: CancelClassSessionInput!): CancelClassSessionResult!
   recordAttendance(input: RecordAttendanceInput!): RecordAttendanceResult!
   administerAttendance(input: RecordAttendanceInput!): RecordAttendanceResult!
+  saveLearningFeedback(input: SaveLearningFeedbackInput!): SaveLearningFeedbackResult!
+  saveSessionRating(input: SaveSessionRatingInput!): SaveSessionRatingResult!
   enterClassroom(input: EnterClassroomInput!): EnterClassroomResult!
   saveTeacherAvailabilityRange(input: SaveTeacherAvailabilityRangeInput!): SaveTeacherAvailabilityRangeResult!
   addAvailabilityException(input: AddAvailabilityExceptionInput!): AddAvailabilityExceptionResult!

@@ -212,6 +212,16 @@ export type EnterClassroomInput = {
   classSessionId: string | number;
 };
 
+export type FeedbackSkill =
+  | 'GRAMMAR'
+  | 'LISTENING'
+  | 'PRONUNCIATION'
+  | 'READING'
+  | 'SPOKEN_INTERACTION'
+  | 'SPOKEN_PRODUCTION'
+  | 'VOCABULARY'
+  | 'WRITING';
+
 export type InterfaceLocale =
   | 'EN'
   | 'ES';
@@ -220,6 +230,16 @@ export type JoinWaitlistInput = {
   classSessionId: string | number;
   idempotencyKey: string | number;
 };
+
+export type LearningFeedbackErrorCode =
+  | 'BOOKING_NOT_FOUND'
+  | 'FEEDBACK_WINDOW_CLOSED'
+  | 'IDEMPOTENCY_KEY_REUSED'
+  | 'INVALID_FEEDBACK';
+
+export type LearningFeedbackState =
+  | 'DRAFT'
+  | 'SUBMITTED';
 
 export type LessonMaterialKind =
   | 'HTTPS_REFERENCE'
@@ -302,6 +322,25 @@ export type ReviseLessonMaterialInput = {
   title: string;
 };
 
+export type SaveLearningFeedbackInput = {
+  bookingId: string | number;
+  idempotencyKey: string | number;
+  nextPractice?: string | null | undefined;
+  observations?: string | null | undefined;
+  observedStrengths: Array<FeedbackSkill>;
+  submit: boolean;
+  suggestedFocuses: Array<FeedbackSkill>;
+};
+
+export type SaveSessionRatingInput = {
+  bookingId: string | number;
+  comment?: string | null | undefined;
+  idempotencyKey: string | number;
+  improvementTags: Array<SessionRatingImprovementTag>;
+  overallRating: number;
+  positiveTags: Array<SessionRatingPositiveTag>;
+};
+
 export type SaveTeacherAvailabilityRangeInput = {
   effectiveFrom: string;
   endLocalTime: string;
@@ -325,6 +364,24 @@ export type SaveUserPreferencesInput = {
   displayTimeZone: string;
   interfaceLocale: InterfaceLocale;
 };
+
+export type SessionRatingErrorCode =
+  | 'BOOKING_NOT_FOUND'
+  | 'IDEMPOTENCY_KEY_REUSED'
+  | 'INVALID_RATING'
+  | 'RATING_WINDOW_CLOSED';
+
+export type SessionRatingImprovementTag =
+  | 'AUDIO_QUALITY'
+  | 'MORE_CORRECTION'
+  | 'MORE_SPEAKING_TIME'
+  | 'PACING';
+
+export type SessionRatingPositiveTag =
+  | 'CLEAR_EXPLANATIONS'
+  | 'ENGAGING'
+  | 'SUPPORTIVE'
+  | 'USEFUL_PRACTICE';
 
 export type SetStudentPlacementInput = {
   curriculumLevel: CurriculumLevel;
@@ -681,6 +738,41 @@ export type StudentCourseProgressQueryVariables = Exact<{ [key: string]: never; 
 
 export type StudentCourseProgressQuery = { studentCourseProgress: Array<{ courseId: string, title: string, targetLanguage: string, curriculumLevel: CurriculumLevel, activeLessonUnitCount: number, completedActiveLessonUnitCount: number, percentage: number, learningHistory: Array<{ lessonUnitId: string, title: string, state: LessonUnitState, earnedAt: string, countsTowardProgress: boolean }> }> };
 
+export type TeacherFeedbackWorkQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type TeacherFeedbackWorkQuery = { teacherFeedbackWork: Array<{ bookingId: string, classSessionId: string, feedbackDeadline: string, studentDisplayName: string, learningFeedback: { bookingId: string, observedStrengths: Array<FeedbackSkill>, suggestedFocuses: Array<FeedbackSkill>, observations: string, nextPractice: string, state: LearningFeedbackState, submittedAt: string | null, updatedAt: string } | null }> };
+
+export type SaveLearningFeedbackMutationVariables = Exact<{
+  input: SaveLearningFeedbackInput;
+}>;
+
+
+export type SaveLearningFeedbackMutation = { saveLearningFeedback:
+    | { __typename: 'LearningFeedbackError', code: LearningFeedbackErrorCode, message: string }
+    | { __typename: 'SaveLearningFeedbackSuccess', feedback: { bookingId: string, observedStrengths: Array<FeedbackSkill>, suggestedFocuses: Array<FeedbackSkill>, observations: string, nextPractice: string, state: LearningFeedbackState, submittedAt: string | null, updatedAt: string } }
+   };
+
+export type StudentFeedbackAndRatingsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type StudentFeedbackAndRatingsQuery = { studentFeedbackAndRatings: Array<{ bookingId: string, classSessionId: string, classSessionEndsAt: string, feedbackDeadline: string, ratingDeadline: string, teacherDisplayName: string, learningFeedback: { bookingId: string, observedStrengths: Array<FeedbackSkill>, suggestedFocuses: Array<FeedbackSkill>, observations: string, nextPractice: string, state: LearningFeedbackState, submittedAt: string | null, updatedAt: string } | null, sessionRating: { bookingId: string, overallRating: number, positiveTags: Array<SessionRatingPositiveTag>, improvementTags: Array<SessionRatingImprovementTag>, comment: string, createdAt: string, updatedAt: string } | null }> };
+
+export type SaveSessionRatingMutationVariables = Exact<{
+  input: SaveSessionRatingInput;
+}>;
+
+
+export type SaveSessionRatingMutation = { saveSessionRating:
+    | { __typename: 'SaveSessionRatingSuccess', rating: { bookingId: string, overallRating: number, positiveTags: Array<SessionRatingPositiveTag>, improvementTags: Array<SessionRatingImprovementTag>, comment: string, createdAt: string, updatedAt: string } }
+    | { __typename: 'SessionRatingError', code: SessionRatingErrorCode, message: string }
+   };
+
+export type AdministratorFeedbackAndRatingsQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type AdministratorFeedbackAndRatingsQuery = { administratorFeedbackAndRatings: Array<{ bookingId: string, classSessionId: string, studentDisplayName: string, teacherDisplayName: string, learningFeedback: { state: LearningFeedbackState, observedStrengths: Array<FeedbackSkill>, suggestedFocuses: Array<FeedbackSkill>, observations: string, nextPractice: string, updatedAt: string } | null, sessionRating: { overallRating: number, positiveTags: Array<SessionRatingPositiveTag>, improvementTags: Array<SessionRatingImprovementTag>, comment: string, updatedAt: string } | null }> };
+
 export type LearningAccessClassSessionsQueryVariables = Exact<{
   actingRole: UserRole;
 }>;
@@ -952,6 +1044,11 @@ export const StudentSubscriptionDocument = {"kind":"Document","definitions":[{"k
 export const ScheduleSubscriptionCancellationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"ScheduleSubscriptionCancellation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SubscriptionLifecycleInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"scheduleSubscriptionCancellation"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"ScheduleSubscriptionCancellationSuccess"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"subscription"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"state"}},{"kind":"Field","name":{"kind":"Name","value":"anchorDay"}},{"kind":"Field","name":{"kind":"Name","value":"accountingTimeUtc"}},{"kind":"Field","name":{"kind":"Name","value":"activatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"nextAnniversaryAt"}},{"kind":"Field","name":{"kind":"Name","value":"cancellationEffectiveAt"}}]}}]}},{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SubscriptionConflict"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]}}]} as unknown as DocumentNode<ScheduleSubscriptionCancellationMutation, ScheduleSubscriptionCancellationMutationVariables>;
 export const UndoSubscriptionCancellationDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UndoSubscriptionCancellation"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SubscriptionLifecycleInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"undoSubscriptionCancellation"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"UndoSubscriptionCancellationSuccess"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"subscription"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"state"}},{"kind":"Field","name":{"kind":"Name","value":"anchorDay"}},{"kind":"Field","name":{"kind":"Name","value":"accountingTimeUtc"}},{"kind":"Field","name":{"kind":"Name","value":"activatedAt"}},{"kind":"Field","name":{"kind":"Name","value":"nextAnniversaryAt"}},{"kind":"Field","name":{"kind":"Name","value":"cancellationEffectiveAt"}}]}}]}},{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SubscriptionConflict"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]}}]} as unknown as DocumentNode<UndoSubscriptionCancellationMutation, UndoSubscriptionCancellationMutationVariables>;
 export const StudentCourseProgressDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"StudentCourseProgress"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"studentCourseProgress"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"courseId"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"targetLanguage"}},{"kind":"Field","name":{"kind":"Name","value":"curriculumLevel"}},{"kind":"Field","name":{"kind":"Name","value":"activeLessonUnitCount"}},{"kind":"Field","name":{"kind":"Name","value":"completedActiveLessonUnitCount"}},{"kind":"Field","name":{"kind":"Name","value":"percentage"}},{"kind":"Field","name":{"kind":"Name","value":"learningHistory"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"lessonUnitId"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"state"}},{"kind":"Field","name":{"kind":"Name","value":"earnedAt"}},{"kind":"Field","name":{"kind":"Name","value":"countsTowardProgress"}}]}}]}}]}}]} as unknown as DocumentNode<StudentCourseProgressQuery, StudentCourseProgressQueryVariables>;
+export const TeacherFeedbackWorkDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"TeacherFeedbackWork"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"teacherFeedbackWork"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bookingId"}},{"kind":"Field","name":{"kind":"Name","value":"classSessionId"}},{"kind":"Field","name":{"kind":"Name","value":"feedbackDeadline"}},{"kind":"Field","name":{"kind":"Name","value":"studentDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"learningFeedback"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bookingId"}},{"kind":"Field","name":{"kind":"Name","value":"observedStrengths"}},{"kind":"Field","name":{"kind":"Name","value":"suggestedFocuses"}},{"kind":"Field","name":{"kind":"Name","value":"observations"}},{"kind":"Field","name":{"kind":"Name","value":"nextPractice"}},{"kind":"Field","name":{"kind":"Name","value":"state"}},{"kind":"Field","name":{"kind":"Name","value":"submittedAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}}]}}]} as unknown as DocumentNode<TeacherFeedbackWorkQuery, TeacherFeedbackWorkQueryVariables>;
+export const SaveLearningFeedbackDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SaveLearningFeedback"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SaveLearningFeedbackInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"saveLearningFeedback"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"__typename"}},{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SaveLearningFeedbackSuccess"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"feedback"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bookingId"}},{"kind":"Field","name":{"kind":"Name","value":"observedStrengths"}},{"kind":"Field","name":{"kind":"Name","value":"suggestedFocuses"}},{"kind":"Field","name":{"kind":"Name","value":"observations"}},{"kind":"Field","name":{"kind":"Name","value":"nextPractice"}},{"kind":"Field","name":{"kind":"Name","value":"state"}},{"kind":"Field","name":{"kind":"Name","value":"submittedAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}},{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"LearningFeedbackError"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]}}]} as unknown as DocumentNode<SaveLearningFeedbackMutation, SaveLearningFeedbackMutationVariables>;
+export const StudentFeedbackAndRatingsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"StudentFeedbackAndRatings"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"studentFeedbackAndRatings"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bookingId"}},{"kind":"Field","name":{"kind":"Name","value":"classSessionId"}},{"kind":"Field","name":{"kind":"Name","value":"classSessionEndsAt"}},{"kind":"Field","name":{"kind":"Name","value":"feedbackDeadline"}},{"kind":"Field","name":{"kind":"Name","value":"ratingDeadline"}},{"kind":"Field","name":{"kind":"Name","value":"teacherDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"learningFeedback"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bookingId"}},{"kind":"Field","name":{"kind":"Name","value":"observedStrengths"}},{"kind":"Field","name":{"kind":"Name","value":"suggestedFocuses"}},{"kind":"Field","name":{"kind":"Name","value":"observations"}},{"kind":"Field","name":{"kind":"Name","value":"nextPractice"}},{"kind":"Field","name":{"kind":"Name","value":"state"}},{"kind":"Field","name":{"kind":"Name","value":"submittedAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}},{"kind":"Field","name":{"kind":"Name","value":"sessionRating"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bookingId"}},{"kind":"Field","name":{"kind":"Name","value":"overallRating"}},{"kind":"Field","name":{"kind":"Name","value":"positiveTags"}},{"kind":"Field","name":{"kind":"Name","value":"improvementTags"}},{"kind":"Field","name":{"kind":"Name","value":"comment"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}}]}}]} as unknown as DocumentNode<StudentFeedbackAndRatingsQuery, StudentFeedbackAndRatingsQueryVariables>;
+export const SaveSessionRatingDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"SaveSessionRating"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"SaveSessionRatingInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"saveSessionRating"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"__typename"}},{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SaveSessionRatingSuccess"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"rating"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bookingId"}},{"kind":"Field","name":{"kind":"Name","value":"overallRating"}},{"kind":"Field","name":{"kind":"Name","value":"positiveTags"}},{"kind":"Field","name":{"kind":"Name","value":"improvementTags"}},{"kind":"Field","name":{"kind":"Name","value":"comment"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}},{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"SessionRatingError"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]}}]} as unknown as DocumentNode<SaveSessionRatingMutation, SaveSessionRatingMutationVariables>;
+export const AdministratorFeedbackAndRatingsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"AdministratorFeedbackAndRatings"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"administratorFeedbackAndRatings"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bookingId"}},{"kind":"Field","name":{"kind":"Name","value":"classSessionId"}},{"kind":"Field","name":{"kind":"Name","value":"studentDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"teacherDisplayName"}},{"kind":"Field","name":{"kind":"Name","value":"learningFeedback"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"state"}},{"kind":"Field","name":{"kind":"Name","value":"observedStrengths"}},{"kind":"Field","name":{"kind":"Name","value":"suggestedFocuses"}},{"kind":"Field","name":{"kind":"Name","value":"observations"}},{"kind":"Field","name":{"kind":"Name","value":"nextPractice"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}},{"kind":"Field","name":{"kind":"Name","value":"sessionRating"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"overallRating"}},{"kind":"Field","name":{"kind":"Name","value":"positiveTags"}},{"kind":"Field","name":{"kind":"Name","value":"improvementTags"}},{"kind":"Field","name":{"kind":"Name","value":"comment"}},{"kind":"Field","name":{"kind":"Name","value":"updatedAt"}}]}}]}}]}}]} as unknown as DocumentNode<AdministratorFeedbackAndRatingsQuery, AdministratorFeedbackAndRatingsQueryVariables>;
 export const LearningAccessClassSessionsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"LearningAccessClassSessions"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"actingRole"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UserRole"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"learningAccessLessonUnits"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"actingRole"},"value":{"kind":"Variable","name":{"kind":"Name","value":"actingRole"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}}]}},{"kind":"Field","name":{"kind":"Name","value":"learningAccessClassSessions"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"actingRole"},"value":{"kind":"Variable","name":{"kind":"Name","value":"actingRole"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"lessonUnitId"}},{"kind":"Field","name":{"kind":"Name","value":"startsAt"}},{"kind":"Field","name":{"kind":"Name","value":"endsAt"}},{"kind":"Field","name":{"kind":"Name","value":"schedulingTimeZone"}}]}}]}}]} as unknown as DocumentNode<LearningAccessClassSessionsQuery, LearningAccessClassSessionsQueryVariables>;
 export const LessonMaterialsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"LessonMaterials"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"lessonUnitId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"actingRole"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UserRole"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"lessonMaterials"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"lessonUnitId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"lessonUnitId"}}},{"kind":"Argument","name":{"kind":"Name","value":"actingRole"},"value":{"kind":"Variable","name":{"kind":"Name","value":"actingRole"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"kind"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"structuredContent"}},{"kind":"Field","name":{"kind":"Name","value":"httpsUrl"}},{"kind":"Field","name":{"kind":"Name","value":"publisher"}}]}}]}}]} as unknown as DocumentNode<LessonMaterialsQuery, LessonMaterialsQueryVariables>;
 export const EnterClassroomDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"EnterClassroom"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"EnterClassroomInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"enterClassroom"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"__typename"}},{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"EnterClassroomSuccess"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"classroom"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"classSessionId"}},{"kind":"Field","name":{"kind":"Name","value":"lessonUnitId"}},{"kind":"Field","name":{"kind":"Name","value":"teacherUserId"}},{"kind":"Field","name":{"kind":"Name","value":"simulationStatus"}}]}}]}},{"kind":"InlineFragment","typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"ClassroomAccessError"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]}}]} as unknown as DocumentNode<EnterClassroomMutation, EnterClassroomMutationVariables>;

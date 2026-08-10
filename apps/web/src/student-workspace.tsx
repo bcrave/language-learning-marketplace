@@ -36,6 +36,7 @@ import { AdministratorTaskQueue } from "./administrator-task-queue.js";
 import { CourseProgressPanel } from "./course-progress.js";
 import { TeacherAttendancePanel } from "./teacher-attendance.js";
 import { LearningAccessPanel } from "./learning-access.js";
+import { AdministratorQualityPanel, StudentFeedbackRatingsPanel, TeacherFeedbackPanel } from "./feedback-rating.js";
 
 const graphQLInterfaceLocales: Record<InterfaceLocale, GraphQLInterfaceLocale> = {
   en: "EN",
@@ -409,6 +410,7 @@ function WorkspaceContent({
         {currentPlace === "ADMINISTRATION_OPERATIONS" && (
           <>
             <AdministratorTaskQueue />
+            <AdministratorQualityPanel />
             <AdminClassCredits />
             <AdminClassSessions locale={locale} />
             <AdminCurriculum locale={locale} />
@@ -417,6 +419,7 @@ function WorkspaceContent({
         {currentPlace === "STUDENT_LEARNING" && <>
           <LearningAccessPanel actingRole="STUDENT" />
           <CourseProgressPanel />
+          <StudentFeedbackRatingsPanel />
           <StudentSubscription />
           <StudentClassCredits />
         </>}
@@ -427,7 +430,7 @@ function WorkspaceContent({
           <TeacherAvailabilityPanel />
         )}
         {currentPlace === "TEACHER_SCHEDULE" && (
-          <><LearningAccessPanel actingRole="TEACHER" /><TeacherSchedulePanel /><TeacherAttendancePanel /></>
+          <><LearningAccessPanel actingRole="TEACHER" /><TeacherSchedulePanel /><TeacherAttendancePanel /><TeacherFeedbackPanel /></>
         )}
         <section className="workspace-card" id="settings" aria-labelledby="preferences-title">
           <h2 id="preferences-title">
