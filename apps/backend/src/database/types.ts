@@ -90,7 +90,9 @@ export interface TeacherAvailabilityRangesTable { id: Generated<string>; teacher
 export interface AvailabilityExceptionsTable { id: Generated<string>; teacher_user_id: string; starts_at_local: string; ends_at_local: string; starts_at: Date; ends_at: Date; time_zone: string; removed_at: Date | null; created_at: Generated<Date> }
 export interface AbsenceRequestsTable { id: Generated<string>; teacher_user_id: string; state: Generated<"OPEN" | "RESOLVED">; requested_at: Generated<Date>; resolved_at: Date | null }
 export interface AbsenceRequestSessionsTable { absence_request_id: string; class_session_id: string; original_teacher_user_id: string; resolution: "TEACHER_SUBSTITUTION" | "CLASS_SESSION_CANCELLATION" | null; replacement_teacher_user_id: string | null; resolution_reason: string | null; resolved_at: Date | null }
-export interface AttendanceRecordsTable { id: Generated<string>; booking_id: string; outcome: "ATTENDED" | "NO_SHOW"; submitted_at: Generated<Date> }
+export interface AttendanceRecordsTable { id: Generated<string>; booking_id: string; outcome: "ATTENDED" | "NO_SHOW"; submitted_by_user_id: string | null; submitted_at: Generated<Date>; updated_at: Generated<Date> }
+export interface LessonUnitCompletionsTable { id: Generated<string>; student_user_id: string; lesson_unit_id: string; established_by_booking_id: string; earned_at: Date }
+export interface AttendanceRecordCorrectionsTable { id: Generated<string>; booking_id: string; prior_outcome: "ATTENDED" | "NO_SHOW"; corrected_outcome: "ATTENDED" | "NO_SHOW"; corrected_by_user_id: string; reason: string; corrected_at: Date }
 
 export interface DatabaseSchema {
   users: UsersTable;
@@ -131,4 +133,6 @@ export interface DatabaseSchema {
   absence_requests: AbsenceRequestsTable;
   absence_request_sessions: AbsenceRequestSessionsTable;
   attendance_records: AttendanceRecordsTable;
+  lesson_unit_completions: LessonUnitCompletionsTable;
+  attendance_record_corrections: AttendanceRecordCorrectionsTable;
 }

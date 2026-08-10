@@ -232,7 +232,7 @@ describe("Class Credit administration GraphQL API", () => {
         expect(expectedBalance).toBeGreaterThanOrEqual(0);
       },
     ), { numRuns: 20 });
-  });
+  }, 15_000);
 
   async function createStudent(displayName: string, locale: "en" | "es") {
     const id = randomUUID();

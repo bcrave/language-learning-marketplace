@@ -19,6 +19,8 @@ import {
 import { administratorFor } from "../authorization/administrator-policy.js";
 import { studentFor } from "../authorization/student-policy.js";
 import { recordAdministrationAudit } from "../audit/administration-audit.js";
+import { administerAttendance, classRosterForViewer, recordAttendance } from "../attendance/attendance-service.js";
+import { courseProgressForStudent } from "../attendance/course-progress-service.js";
 import { createAuthenticator } from "../auth/create-authenticator.js";
 import { bookClassSession, bookingsForStudent, cancelBooking, rescheduleBooking } from "../booking/booking-service.js";
 import {
@@ -27,7 +29,7 @@ import {
   classCreditsForStudent,
 } from "../class-credit/class-credit-service.js";
 import { administrationClassSessions, changeClassSessionSeatCapacity, publishClassSession } from "../class-session/class-session-service.js";
-import { administrationAbsenceRequests, cancelClassSession, reportAbsence, substituteTeacher, teacherAbsenceRequests, teacherClassSessions } from "../class-session/class-session-disruption-service.js";
+import { administrationAbsenceRequests, cancelClassSession, reportAbsence, substituteTeacher, teacherAbsenceRequests, teacherAttendanceClassSessions, teacherClassSessions } from "../class-session/class-session-disruption-service.js";
 import type { AppConfig } from "../config.js";
 import type { Database } from "../database/database.js";
 import type { WorkspacePlace } from "../database/types.js";
@@ -202,6 +204,7 @@ export function createApi(options: {
       JoinWaitlistResult: { __resolveType: (value) => value.__typename! },
       WithdrawWaitlistResult: { __resolveType: (value) => value.__typename! },
       ResolveAdministratorTaskResult: { __resolveType: (value) => value.__typename! },
+      RecordAttendanceResult: { __resolveType: (value) => value.__typename! },
       Query: {
         notifications: async (_parent, _arguments, context) => {
           const user = await authenticateNotificationUser(context);
@@ -261,6 +264,10 @@ export function createApi(options: {
           const student = await authenticateStudent(context, "booking-history.read", "Booking");
           return graphQLResult(await bookingsForStudent(context.db, student.id));
         },
+        studentCourseProgress: async (_parent, _arguments, context) => {
+          const student = await authenticateStudent(context, "course-progress.read", "CourseProgress");
+          return graphQLResult(await courseProgressForStudent(context.db, student.id));
+        },
         administrationClassCredits: async (_parent, { studentUserId }, context) => {
           await authenticateAdministrator(context, "class-credit-administration.read");
           return graphQLResult(await administrationClassCredits(context.db, studentUserId));
@@ -269,9 +276,28 @@ export function createApi(options: {
           await authenticateAdministrator(context, "class-session-administration.read");
           return graphQLResult(await administrationClassSessions(context.db));
         },
+        classRoster: async (_parent, { classSessionId, actingRole: requestedRole }, context) => {
+          const identity = await context.authenticator.authenticate(context.request);
+          if (!identity) throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+          const result = await classRosterForViewer(
+            context.db,
+            identity,
+            userRolesByGraphQL[requestedRole],
+            classSessionId,
+            context.correlationId,
+            options.now?.() ?? new Date(),
+          );
+          if (result.status === "UNKNOWN_USER") throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+          if (result.status === "NOT_FOUND") throw createGraphQLError("The Class Roster was not found", { extensions: { code: "NOT_FOUND" } });
+          return graphQLResult(result.roster);
+        },
         teacherClassSessions: async (_parent, _arguments, context) => {
           const teacher = await authenticateTeacher(context, "teacher-class-sessions.read");
           return graphQLResult(await teacherClassSessions(context.db, teacher, options.now?.() ?? new Date()));
+        },
+        teacherAttendanceClassSessions: async (_parent, _arguments, context) => {
+          const teacher = await authenticateTeacher(context, "attendance-class-sessions.read");
+          return graphQLResult(await teacherAttendanceClassSessions(context.db, teacher, options.now?.() ?? new Date()));
         },
         teacherAbsenceRequests: async (_parent, _arguments, context) => {
           const teacher = await authenticateTeacher(context, "absence-request.read");
@@ -643,6 +669,32 @@ export function createApi(options: {
             { __typename: "ClassSessionDisruptionError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
           ));
         },
+        recordAttendance: async (_parent, { input }, context) => {
+          const teacher = await authenticateTeacher(context, "attendance.recorded");
+          return graphQLResult(await idempotentTeacherMutation(
+            context,
+            teacher,
+            "attendance.recorded",
+            input.idempotencyKey,
+            input,
+            (transaction) => recordAttendance(transaction, teacher, input, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "AttendanceError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "AttendanceRecord",
+          ));
+        },
+        administerAttendance: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "attendance.administered", "AttendanceRecord");
+          return graphQLResult(await idempotentAdministrationMutation(
+            context,
+            administrator,
+            "attendance.administered",
+            input.idempotencyKey,
+            input,
+            (transaction) => administerAttendance(transaction, administrator, input, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "AttendanceError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "AttendanceRecord",
+          ));
+        },
         saveTeacherAvailabilityRange: async (_parent, { input }, context) => {
           const teacher = await authenticateTeacher(context, "teacher-availability.changed");
           return graphQLResult(await auditedTeacherMutation(context, teacher, "teacher-availability.changed", () =>
@@ -968,6 +1020,7 @@ export function createApi(options: {
     input: object,
     perform: (transaction: Database) => Promise<T>,
     idempotencyConflict: C,
+    targetType = "AbsenceRequest",
   ): Promise<T | C> {
     const inputFingerprint = JSON.stringify(input);
     try {
@@ -989,14 +1042,15 @@ export function createApi(options: {
         return outcome;
       });
     } catch (error) {
-      await context.db.insertInto("audit_entries").values({ actor_user_id: teacher.id, acting_role: "TEACHER", operation, target_type: "AbsenceRequest", target_id: teacher.id, outcome: "FAILED", reason_code: "UNEXPECTED_MUTATION_FAILURE", correlation_id: context.correlationId }).execute();
+      await context.db.insertInto("audit_entries").values({ actor_user_id: teacher.id, acting_role: "TEACHER", operation, target_type: targetType, target_id: teacher.id, outcome: "FAILED", reason_code: "UNEXPECTED_MUTATION_FAILURE", correlation_id: context.correlationId }).execute();
       throw error;
     }
   }
 
   function idempotentAdministrationMutation<T>(context: ApiContext, administrator: { id: string }, operation: string, idempotencyKey: string, input: object, perform: (transaction: Database) => Promise<T>): Promise<T | { __typename: "CurriculumConflict"; code: string; message: string }>;
   function idempotentAdministrationMutation<T, C extends { __typename: string; code: string; message: string }>(context: ApiContext, administrator: { id: string }, operation: string, idempotencyKey: string, input: object, perform: (transaction: Database) => Promise<T>, idempotencyConflict: C): Promise<T | C>;
-  async function idempotentAdministrationMutation<T, C extends { __typename: string; code: string; message: string }>(context: ApiContext, administrator: { id: string }, operation: string, idempotencyKey: string, input: object, perform: (transaction: Database) => Promise<T>, idempotencyConflict?: C): Promise<T | C | { __typename: "CurriculumConflict"; code: string; message: string }> {
+  function idempotentAdministrationMutation<T, C extends { __typename: string; code: string; message: string }>(context: ApiContext, administrator: { id: string }, operation: string, idempotencyKey: string, input: object, perform: (transaction: Database) => Promise<T>, idempotencyConflict: C, targetType: string): Promise<T | C>;
+  async function idempotentAdministrationMutation<T, C extends { __typename: string; code: string; message: string }>(context: ApiContext, administrator: { id: string }, operation: string, idempotencyKey: string, input: object, perform: (transaction: Database) => Promise<T>, idempotencyConflict?: C, targetType = "CurriculumAdministration"): Promise<T | C | { __typename: "CurriculumConflict"; code: string; message: string }> {
     const inputFingerprint = JSON.stringify(input);
     try {
       return await context.db.transaction().execute(async (transaction) => {
@@ -1021,7 +1075,7 @@ export function createApi(options: {
         return outcome;
       });
     } catch (error) {
-      await recordAdministrationAudit(context.db, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType: "CurriculumAdministration", targetId: administrator.id, outcome: "FAILED", reasonCode: "UNEXPECTED_MUTATION_FAILURE" });
+      await recordAdministrationAudit(context.db, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType, targetId: administrator.id, outcome: "FAILED", reasonCode: "UNEXPECTED_MUTATION_FAILURE" });
       throw error;
     }
   }

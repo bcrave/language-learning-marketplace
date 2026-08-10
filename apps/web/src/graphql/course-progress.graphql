@@ -1,0 +1,6 @@
+query StudentCourseProgress {
+  studentCourseProgress {
+    courseId title targetLanguage curriculumLevel activeLessonUnitCount completedActiveLessonUnitCount percentage
+    learningHistory { lessonUnitId title state earnedAt countsTowardProgress }
+  }
+}

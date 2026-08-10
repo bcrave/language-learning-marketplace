@@ -58,6 +58,18 @@ union UndoSubscriptionCancellationResult = UndoSubscriptionCancellationSuccess |
 
 enum ClassSessionState { PUBLISHED CANCELLED }
 type ClassSession { id: ID!, lessonUnitId: ID!, teacherUserId: ID!, startsAt: String!, endsAt: String!, schedulingTimeZone: String!, seatCapacity: Int!, occupiedSeats: Int!, state: ClassSessionState!, cancellationReason: String }
+enum AttendanceOutcome { ATTENDED NO_SHOW }
+type AttendanceRecord { outcome: AttendanceOutcome!, submittedAt: String! }
+type ClassRosterStudent { bookingId: ID!, studentUserId: ID!, displayName: String!, placement: StudentPlacement, attendance: AttendanceRecord }
+type ClassRoster { classSession: ClassSession!, students: [ClassRosterStudent!]! }
+input AttendanceRecordInput { bookingId: ID!, outcome: AttendanceOutcome!, correctionReason: String }
+input RecordAttendanceInput { idempotencyKey: ID!, classSessionId: ID!, records: [AttendanceRecordInput!]! }
+type RecordAttendanceSuccess { classRoster: ClassRoster! }
+enum AttendanceErrorCode { CLASS_SESSION_NOT_FOUND ATTENDANCE_RECORDING_NOT_OPEN ATTENDANCE_RECORDING_WINDOW_CLOSED ATTENDANCE_ROSTER_MISMATCH ATTENDANCE_CORRECTION_REASON_REQUIRED IDEMPOTENCY_KEY_REUSED }
+type AttendanceError { code: AttendanceErrorCode!, message: String! }
+union RecordAttendanceResult = RecordAttendanceSuccess | AttendanceError
+type CourseProgressLearningHistory { lessonUnitId: ID!, title: String!, state: LessonUnitState!, earnedAt: String!, countsTowardProgress: Boolean! }
+type CourseProgress { courseId: ID!, title: String!, targetLanguage: String!, curriculumLevel: CurriculumLevel!, activeLessonUnitCount: Int!, completedActiveLessonUnitCount: Int!, percentage: Int!, learningHistory: [CourseProgressLearningHistory!]! }
 enum BookingState { ACTIVE ENDED }
 enum BookingTerminalReason { STUDENT_CANCELLATION RESCHEDULED CLASS_SESSION_CANCELLATION }
 type Booking { id: ID!, state: BookingState!, terminalReason: BookingTerminalReason, classCreditRefunded: Boolean!, bookedAt: String!, endedAt: String, classSession: ClassSession! }
@@ -309,10 +321,13 @@ type Query {
   discoverClassSessions(input: ClassSessionDiscoveryInput!): ClassSessionDiscoveryConnection!
   studentClassCredits: ClassCreditAccount!
   studentBookings: [Booking!]!
+  studentCourseProgress: [CourseProgress!]!
   studentWaitlistEntries: [WaitlistEntry!]!
   administrationClassCredits(studentUserId: ID!): ClassCreditAccount
   administrationClassSessions: [ClassSession!]!
+  classRoster(classSessionId: ID!, actingRole: UserRole!): ClassRoster
   teacherClassSessions: [ClassSession!]!
+  teacherAttendanceClassSessions: [ClassSession!]!
   teacherAbsenceRequests: [AbsenceRequest!]!
   administrationAbsenceRequests: [AbsenceRequest!]!
   teacherAvailability: TeacherAvailability!
@@ -342,6 +357,8 @@ type Mutation {
   reportAbsence(input: ReportAbsenceInput!): ReportAbsenceResult!
   substituteTeacher(input: SubstituteTeacherInput!): SubstituteTeacherResult!
   cancelClassSession(input: CancelClassSessionInput!): CancelClassSessionResult!
+  recordAttendance(input: RecordAttendanceInput!): RecordAttendanceResult!
+  administerAttendance(input: RecordAttendanceInput!): RecordAttendanceResult!
   saveTeacherAvailabilityRange(input: SaveTeacherAvailabilityRangeInput!): SaveTeacherAvailabilityRangeResult!
   addAvailabilityException(input: AddAvailabilityExceptionInput!): AddAvailabilityExceptionResult!
   endTeacherAvailabilityRange(input: EndTeacherAvailabilityRangeInput!): EndTeacherAvailabilityRangeResult!

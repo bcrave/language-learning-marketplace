@@ -58,6 +58,16 @@ export async function teacherClassSessions(db: Database, teacher: Teacher, now: 
   return sessions.map(classSessionProjection);
 }
 
+export async function teacherAttendanceClassSessions(db: Database, teacher: Teacher, now: Date) {
+  const sessions = await db.selectFrom("class_sessions").selectAll()
+    .where("teacher_user_id", "=", teacher.id)
+    .where("state", "=", "PUBLISHED")
+    .where("starts_at", "<=", new Date(now.getTime() - 60 * 60_000))
+    .where("starts_at", ">=", new Date(now.getTime() - 25 * 60 * 60_000))
+    .orderBy("starts_at", "desc").orderBy("id").execute();
+  return sessions.map(classSessionProjection);
+}
+
 async function projectAbsenceRequest(db: Database, absenceRequestId: string) {
   const request = await db.selectFrom("absence_requests").selectAll().where("id", "=", absenceRequestId).executeTakeFirstOrThrow();
   const sessions = await db.selectFrom("absence_request_sessions")

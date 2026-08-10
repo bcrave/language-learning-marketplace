@@ -1,0 +1,23 @@
+query TeacherAttendanceSessions {
+  teacherAttendanceClassSessions { id lessonUnitId teacherUserId startsAt endsAt schedulingTimeZone seatCapacity occupiedSeats state cancellationReason }
+}
+
+query ClassRoster($classSessionId: ID!) {
+  classRoster(classSessionId: $classSessionId, actingRole: TEACHER) {
+    classSession { id lessonUnitId teacherUserId startsAt endsAt schedulingTimeZone seatCapacity occupiedSeats state cancellationReason }
+    students { bookingId studentUserId displayName placement { targetLanguage curriculumLevel } attendance { outcome submittedAt } }
+  }
+}
+
+mutation RecordAttendance($input: RecordAttendanceInput!) {
+  recordAttendance(input: $input) {
+    __typename
+    ... on RecordAttendanceSuccess {
+      classRoster {
+        classSession { id lessonUnitId teacherUserId startsAt endsAt schedulingTimeZone seatCapacity occupiedSeats state cancellationReason }
+        students { bookingId studentUserId displayName placement { targetLanguage curriculumLevel } attendance { outcome submittedAt } }
+      }
+    }
+    ... on AttendanceError { code message }
+  }
+}

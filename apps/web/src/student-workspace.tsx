@@ -33,6 +33,8 @@ import { TeacherSchedulePanel } from "./teacher-schedule.js";
 import { StudentDiscoveryPanel } from "./student-discovery.js";
 import { NotificationInbox } from "./notification-inbox.js";
 import { AdministratorTaskQueue } from "./administrator-task-queue.js";
+import { CourseProgressPanel } from "./course-progress.js";
+import { TeacherAttendancePanel } from "./teacher-attendance.js";
 
 const graphQLInterfaceLocales: Record<InterfaceLocale, GraphQLInterfaceLocale> = {
   en: "EN",
@@ -412,6 +414,7 @@ function WorkspaceContent({
           </>
         )}
         {currentPlace === "STUDENT_LEARNING" && <>
+          <CourseProgressPanel />
           <StudentSubscription />
           <StudentClassCredits />
         </>}
@@ -422,7 +425,7 @@ function WorkspaceContent({
           <TeacherAvailabilityPanel />
         )}
         {currentPlace === "TEACHER_SCHEDULE" && (
-          <TeacherSchedulePanel />
+          <><TeacherSchedulePanel /><TeacherAttendancePanel /></>
         )}
         <section className="workspace-card" id="settings" aria-labelledby="preferences-title">
           <h2 id="preferences-title">

@@ -111,6 +111,38 @@ export enum AdministratorTaskState {
   Resolved = 'RESOLVED'
 }
 
+export type AttendanceError = {
+  __typename?: 'AttendanceError';
+  code: AttendanceErrorCode;
+  message: Scalars['String']['output'];
+};
+
+export enum AttendanceErrorCode {
+  AttendanceCorrectionReasonRequired = 'ATTENDANCE_CORRECTION_REASON_REQUIRED',
+  AttendanceRecordingNotOpen = 'ATTENDANCE_RECORDING_NOT_OPEN',
+  AttendanceRecordingWindowClosed = 'ATTENDANCE_RECORDING_WINDOW_CLOSED',
+  AttendanceRosterMismatch = 'ATTENDANCE_ROSTER_MISMATCH',
+  ClassSessionNotFound = 'CLASS_SESSION_NOT_FOUND',
+  IdempotencyKeyReused = 'IDEMPOTENCY_KEY_REUSED'
+}
+
+export enum AttendanceOutcome {
+  Attended = 'ATTENDED',
+  NoShow = 'NO_SHOW'
+}
+
+export type AttendanceRecord = {
+  __typename?: 'AttendanceRecord';
+  outcome: AttendanceOutcome;
+  submittedAt: Scalars['String']['output'];
+};
+
+export type AttendanceRecordInput = {
+  bookingId: Scalars['ID']['input'];
+  correctionReason?: InputMaybe<Scalars['String']['input']>;
+  outcome: AttendanceOutcome;
+};
+
 export type AvailabilityException = {
   __typename?: 'AvailabilityException';
   endsAt: Scalars['String']['output'];
@@ -277,6 +309,21 @@ export enum ClassCreditLedgerSource {
   SubscriptionGrant = 'SUBSCRIPTION_GRANT'
 }
 
+export type ClassRoster = {
+  __typename?: 'ClassRoster';
+  classSession: ClassSession;
+  students: Array<ClassRosterStudent>;
+};
+
+export type ClassRosterStudent = {
+  __typename?: 'ClassRosterStudent';
+  attendance?: Maybe<AttendanceRecord>;
+  bookingId: Scalars['ID']['output'];
+  displayName: Scalars['String']['output'];
+  placement?: Maybe<StudentPlacement>;
+  studentUserId: Scalars['ID']['output'];
+};
+
 export type ClassSession = {
   __typename?: 'ClassSession';
   cancellationReason?: Maybe<Scalars['String']['output']>;
@@ -401,6 +448,27 @@ export type Course = {
   lessonUnits: Array<LessonUnit>;
   summary: Scalars['String']['output'];
   targetLanguage: Scalars['String']['output'];
+  title: Scalars['String']['output'];
+};
+
+export type CourseProgress = {
+  __typename?: 'CourseProgress';
+  activeLessonUnitCount: Scalars['Int']['output'];
+  completedActiveLessonUnitCount: Scalars['Int']['output'];
+  courseId: Scalars['ID']['output'];
+  curriculumLevel: CurriculumLevel;
+  learningHistory: Array<CourseProgressLearningHistory>;
+  percentage: Scalars['Int']['output'];
+  targetLanguage: Scalars['String']['output'];
+  title: Scalars['String']['output'];
+};
+
+export type CourseProgressLearningHistory = {
+  __typename?: 'CourseProgressLearningHistory';
+  countsTowardProgress: Scalars['Boolean']['output'];
+  earnedAt: Scalars['String']['output'];
+  lessonUnitId: Scalars['ID']['output'];
+  state: LessonUnitState;
   title: Scalars['String']['output'];
 };
 
@@ -570,6 +638,7 @@ export type Mutation = {
   addAvailabilityException: AddAvailabilityExceptionResult;
   addLessonMaterial: AddLessonMaterialResult;
   adjustClassCredits: AdjustClassCreditsResult;
+  administerAttendance: RecordAttendanceResult;
   archiveNotification: InAppNotification;
   bookClassSession: BookClassSessionResult;
   cancelBooking: CancelBookingResult;
@@ -584,6 +653,7 @@ export type Mutation = {
   placeLessonUnitInCourse: ReorderLessonUnitResult;
   processSubscriptionProviderEvent: ProcessSubscriptionProviderEventResult;
   publishClassSession: PublishClassSessionResult;
+  recordAttendance: RecordAttendanceResult;
   rememberRoleWorkspacePlace: RolePlace;
   removeAvailabilityException: RemoveAvailabilityExceptionResult;
   removeTeacherQualification: RemoveTeacherQualificationResult;
@@ -618,6 +688,11 @@ export type MutationAddLessonMaterialArgs = {
 
 export type MutationAdjustClassCreditsArgs = {
   input: AdjustClassCreditsInput;
+};
+
+
+export type MutationAdministerAttendanceArgs = {
+  input: RecordAttendanceInput;
 };
 
 
@@ -688,6 +763,11 @@ export type MutationProcessSubscriptionProviderEventArgs = {
 
 export type MutationPublishClassSessionArgs = {
   input: PublishClassSessionInput;
+};
+
+
+export type MutationRecordAttendanceArgs = {
+  input: RecordAttendanceInput;
 };
 
 
@@ -844,6 +924,7 @@ export type Query = {
   administrationClassSessions: Array<ClassSession>;
   administrationCurriculum: AdministrationCurriculum;
   administratorTasks: Array<AdministratorTaskItem>;
+  classRoster?: Maybe<ClassRoster>;
   classSessionDiscoveryOptions: ClassSessionDiscoveryOptions;
   discoverClassSessions: ClassSessionDiscoveryConnection;
   notifications: Array<InAppNotification>;
@@ -851,11 +932,13 @@ export type Query = {
   roleWorkspace: RoleWorkspace;
   studentBookings: Array<Booking>;
   studentClassCredits: ClassCreditAccount;
+  studentCourseProgress: Array<CourseProgress>;
   studentPlacements: Array<StudentPlacement>;
   studentSubscription?: Maybe<Subscription>;
   studentWaitlistEntries: Array<WaitlistEntry>;
   studentWorkspace: StudentWorkspace;
   teacherAbsenceRequests: Array<AbsenceRequest>;
+  teacherAttendanceClassSessions: Array<ClassSession>;
   teacherAvailability: TeacherAvailability;
   teacherAvailabilityPreview: Array<TeacherAvailabilityOccurrence>;
   teacherClassSessions: Array<ClassSession>;
@@ -869,6 +952,12 @@ export type QueryAdministrationClassCreditsArgs = {
 
 export type QueryAdministrationCurriculumArgs = {
   locale: InterfaceLocale;
+};
+
+
+export type QueryClassRosterArgs = {
+  actingRole: UserRole;
+  classSessionId: Scalars['ID']['input'];
 };
 
 
@@ -890,6 +979,19 @@ export type QueryRoleWorkspaceArgs = {
 
 export type QueryTeacherAvailabilityPreviewArgs = {
   localDates: Array<Scalars['String']['input']>;
+};
+
+export type RecordAttendanceInput = {
+  classSessionId: Scalars['ID']['input'];
+  idempotencyKey: Scalars['ID']['input'];
+  records: Array<AttendanceRecordInput>;
+};
+
+export type RecordAttendanceResult = AttendanceError | RecordAttendanceSuccess;
+
+export type RecordAttendanceSuccess = {
+  __typename?: 'RecordAttendanceSuccess';
+  classRoster: ClassRoster;
 };
 
 export type RememberRoleWorkspacePlaceInput = {
@@ -1471,6 +1573,10 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( CurriculumConflict )
     | ( PublishClassSessionSuccess )
   ;
+  RecordAttendanceResult:
+    | ( AttendanceError )
+    | ( RecordAttendanceSuccess )
+  ;
   RemoveAvailabilityExceptionResult:
     | ( RemoveAvailabilityExceptionSuccess )
     | ( TeacherAvailabilityValidationError )
@@ -1557,6 +1663,11 @@ export type ResolversTypes = {
   AdministratorTaskKind: AdministratorTaskKind;
   AdministratorTaskSafeContext: ResolverTypeWrapper<AdministratorTaskSafeContext>;
   AdministratorTaskState: AdministratorTaskState;
+  AttendanceError: ResolverTypeWrapper<AttendanceError>;
+  AttendanceErrorCode: AttendanceErrorCode;
+  AttendanceOutcome: AttendanceOutcome;
+  AttendanceRecord: ResolverTypeWrapper<AttendanceRecord>;
+  AttendanceRecordInput: AttendanceRecordInput;
   AvailabilityException: ResolverTypeWrapper<AvailabilityException>;
   AvailabilityExceptionSessionConflict: ResolverTypeWrapper<AvailabilityExceptionSessionConflict>;
   BookClassSessionInput: BookClassSessionInput;
@@ -1584,6 +1695,8 @@ export type ResolversTypes = {
   ClassCreditAdjustmentErrorCode: ClassCreditAdjustmentErrorCode;
   ClassCreditLedgerEntry: ResolverTypeWrapper<ClassCreditLedgerEntry>;
   ClassCreditLedgerSource: ClassCreditLedgerSource;
+  ClassRoster: ResolverTypeWrapper<ClassRoster>;
+  ClassRosterStudent: ResolverTypeWrapper<ClassRosterStudent>;
   ClassSession: ResolverTypeWrapper<ClassSession>;
   ClassSessionDiscoveryConnection: ResolverTypeWrapper<ClassSessionDiscoveryConnection>;
   ClassSessionDiscoveryFilter: ResolverTypeWrapper<ClassSessionDiscoveryFilter>;
@@ -1599,6 +1712,8 @@ export type ResolversTypes = {
   ClassSessionSeatCapacityErrorCode: ClassSessionSeatCapacityErrorCode;
   ClassSessionState: ClassSessionState;
   Course: ResolverTypeWrapper<Course>;
+  CourseProgress: ResolverTypeWrapper<CourseProgress>;
+  CourseProgressLearningHistory: ResolverTypeWrapper<CourseProgressLearningHistory>;
   CreateCourseInput: CreateCourseInput;
   CreateCourseResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['CreateCourseResult']>;
   CreateCourseSuccess: ResolverTypeWrapper<CreateCourseSuccess>;
@@ -1637,6 +1752,9 @@ export type ResolversTypes = {
   PublishClassSessionResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['PublishClassSessionResult']>;
   PublishClassSessionSuccess: ResolverTypeWrapper<PublishClassSessionSuccess>;
   Query: ResolverTypeWrapper<Record<PropertyKey, never>>;
+  RecordAttendanceInput: RecordAttendanceInput;
+  RecordAttendanceResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RecordAttendanceResult']>;
+  RecordAttendanceSuccess: ResolverTypeWrapper<RecordAttendanceSuccess>;
   RememberRoleWorkspacePlaceInput: RememberRoleWorkspacePlaceInput;
   RemoveAvailabilityExceptionInput: RemoveAvailabilityExceptionInput;
   RemoveAvailabilityExceptionResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RemoveAvailabilityExceptionResult']>;
@@ -1733,6 +1851,9 @@ export type ResolversParentTypes = {
   AdministratorTaskError: AdministratorTaskError;
   AdministratorTaskItem: AdministratorTaskItem;
   AdministratorTaskSafeContext: AdministratorTaskSafeContext;
+  AttendanceError: AttendanceError;
+  AttendanceRecord: AttendanceRecord;
+  AttendanceRecordInput: AttendanceRecordInput;
   AvailabilityException: AvailabilityException;
   AvailabilityExceptionSessionConflict: AvailabilityExceptionSessionConflict;
   BookClassSessionInput: BookClassSessionInput;
@@ -1755,6 +1876,8 @@ export type ResolversParentTypes = {
   ClassCreditAccount: ClassCreditAccount;
   ClassCreditAdjustmentError: ClassCreditAdjustmentError;
   ClassCreditLedgerEntry: ClassCreditLedgerEntry;
+  ClassRoster: ClassRoster;
+  ClassRosterStudent: ClassRosterStudent;
   ClassSession: ClassSession;
   ClassSessionDiscoveryConnection: ClassSessionDiscoveryConnection;
   ClassSessionDiscoveryFilter: ClassSessionDiscoveryFilter;
@@ -1766,6 +1889,8 @@ export type ResolversParentTypes = {
   ClassSessionPublicationError: ClassSessionPublicationError;
   ClassSessionSeatCapacityError: ClassSessionSeatCapacityError;
   Course: Course;
+  CourseProgress: CourseProgress;
+  CourseProgressLearningHistory: CourseProgressLearningHistory;
   CreateCourseInput: CreateCourseInput;
   CreateCourseResult: ResolversUnionTypes<ResolversParentTypes>['CreateCourseResult'];
   CreateCourseSuccess: CreateCourseSuccess;
@@ -1798,6 +1923,9 @@ export type ResolversParentTypes = {
   PublishClassSessionResult: ResolversUnionTypes<ResolversParentTypes>['PublishClassSessionResult'];
   PublishClassSessionSuccess: PublishClassSessionSuccess;
   Query: Record<PropertyKey, never>;
+  RecordAttendanceInput: RecordAttendanceInput;
+  RecordAttendanceResult: ResolversUnionTypes<ResolversParentTypes>['RecordAttendanceResult'];
+  RecordAttendanceSuccess: RecordAttendanceSuccess;
   RememberRoleWorkspacePlaceInput: RememberRoleWorkspacePlaceInput;
   RemoveAvailabilityExceptionInput: RemoveAvailabilityExceptionInput;
   RemoveAvailabilityExceptionResult: ResolversUnionTypes<ResolversParentTypes>['RemoveAvailabilityExceptionResult'];
@@ -1932,6 +2060,17 @@ export type AdministratorTaskSafeContextResolvers<ContextType = any, ParentType 
   recipientReference?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
 };
 
+export type AttendanceErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['AttendanceError'] = ResolversParentTypes['AttendanceError']> = {
+  code?: Resolver<ResolversTypes['AttendanceErrorCode'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type AttendanceRecordResolvers<ContextType = any, ParentType extends ResolversParentTypes['AttendanceRecord'] = ResolversParentTypes['AttendanceRecord']> = {
+  outcome?: Resolver<ResolversTypes['AttendanceOutcome'], ParentType, ContextType>;
+  submittedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
 export type AvailabilityExceptionResolvers<ContextType = any, ParentType extends ResolversParentTypes['AvailabilityException'] = ResolversParentTypes['AvailabilityException']> = {
   endsAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   endsAtLocal?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -2032,6 +2171,19 @@ export type ClassCreditLedgerEntryResolvers<ContextType = any, ParentType extend
   sourceReference?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
 };
 
+export type ClassRosterResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassRoster'] = ResolversParentTypes['ClassRoster']> = {
+  classSession?: Resolver<ResolversTypes['ClassSession'], ParentType, ContextType>;
+  students?: Resolver<Array<ResolversTypes['ClassRosterStudent']>, ParentType, ContextType>;
+};
+
+export type ClassRosterStudentResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassRosterStudent'] = ResolversParentTypes['ClassRosterStudent']> = {
+  attendance?: Resolver<Maybe<ResolversTypes['AttendanceRecord']>, ParentType, ContextType>;
+  bookingId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  displayName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  placement?: Resolver<Maybe<ResolversTypes['StudentPlacement']>, ParentType, ContextType>;
+  studentUserId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+};
+
 export type ClassSessionResolvers<ContextType = any, ParentType extends ResolversParentTypes['ClassSession'] = ResolversParentTypes['ClassSession']> = {
   cancellationReason?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   endsAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -2100,6 +2252,25 @@ export type CourseResolvers<ContextType = any, ParentType extends ResolversParen
   lessonUnits?: Resolver<Array<ResolversTypes['LessonUnit']>, ParentType, ContextType>;
   summary?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   targetLanguage?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
+export type CourseProgressResolvers<ContextType = any, ParentType extends ResolversParentTypes['CourseProgress'] = ResolversParentTypes['CourseProgress']> = {
+  activeLessonUnitCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  completedActiveLessonUnitCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  courseId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  curriculumLevel?: Resolver<ResolversTypes['CurriculumLevel'], ParentType, ContextType>;
+  learningHistory?: Resolver<Array<ResolversTypes['CourseProgressLearningHistory']>, ParentType, ContextType>;
+  percentage?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  targetLanguage?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
+export type CourseProgressLearningHistoryResolvers<ContextType = any, ParentType extends ResolversParentTypes['CourseProgressLearningHistory'] = ResolversParentTypes['CourseProgressLearningHistory']> = {
+  countsTowardProgress?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  earnedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  lessonUnitId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  state?: Resolver<ResolversTypes['LessonUnitState'], ParentType, ContextType>;
   title?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
 };
 
@@ -2215,6 +2386,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   addAvailabilityException?: Resolver<ResolversTypes['AddAvailabilityExceptionResult'], ParentType, ContextType, RequireFields<MutationAddAvailabilityExceptionArgs, 'input'>>;
   addLessonMaterial?: Resolver<ResolversTypes['AddLessonMaterialResult'], ParentType, ContextType, RequireFields<MutationAddLessonMaterialArgs, 'input'>>;
   adjustClassCredits?: Resolver<ResolversTypes['AdjustClassCreditsResult'], ParentType, ContextType, RequireFields<MutationAdjustClassCreditsArgs, 'input'>>;
+  administerAttendance?: Resolver<ResolversTypes['RecordAttendanceResult'], ParentType, ContextType, RequireFields<MutationAdministerAttendanceArgs, 'input'>>;
   archiveNotification?: Resolver<ResolversTypes['InAppNotification'], ParentType, ContextType, RequireFields<MutationArchiveNotificationArgs, 'id'>>;
   bookClassSession?: Resolver<ResolversTypes['BookClassSessionResult'], ParentType, ContextType, RequireFields<MutationBookClassSessionArgs, 'input'>>;
   cancelBooking?: Resolver<ResolversTypes['CancelBookingResult'], ParentType, ContextType, RequireFields<MutationCancelBookingArgs, 'input'>>;
@@ -2229,6 +2401,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   placeLessonUnitInCourse?: Resolver<ResolversTypes['ReorderLessonUnitResult'], ParentType, ContextType, RequireFields<MutationPlaceLessonUnitInCourseArgs, 'input'>>;
   processSubscriptionProviderEvent?: Resolver<ResolversTypes['ProcessSubscriptionProviderEventResult'], ParentType, ContextType, RequireFields<MutationProcessSubscriptionProviderEventArgs, 'input'>>;
   publishClassSession?: Resolver<ResolversTypes['PublishClassSessionResult'], ParentType, ContextType, RequireFields<MutationPublishClassSessionArgs, 'input'>>;
+  recordAttendance?: Resolver<ResolversTypes['RecordAttendanceResult'], ParentType, ContextType, RequireFields<MutationRecordAttendanceArgs, 'input'>>;
   rememberRoleWorkspacePlace?: Resolver<ResolversTypes['RolePlace'], ParentType, ContextType, RequireFields<MutationRememberRoleWorkspacePlaceArgs, 'input'>>;
   removeAvailabilityException?: Resolver<ResolversTypes['RemoveAvailabilityExceptionResult'], ParentType, ContextType, RequireFields<MutationRemoveAvailabilityExceptionArgs, 'input'>>;
   removeTeacherQualification?: Resolver<ResolversTypes['RemoveTeacherQualificationResult'], ParentType, ContextType, RequireFields<MutationRemoveTeacherQualificationArgs, 'input'>>;
@@ -2287,6 +2460,7 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   administrationClassSessions?: Resolver<Array<ResolversTypes['ClassSession']>, ParentType, ContextType>;
   administrationCurriculum?: Resolver<ResolversTypes['AdministrationCurriculum'], ParentType, ContextType, RequireFields<QueryAdministrationCurriculumArgs, 'locale'>>;
   administratorTasks?: Resolver<Array<ResolversTypes['AdministratorTaskItem']>, ParentType, ContextType>;
+  classRoster?: Resolver<Maybe<ResolversTypes['ClassRoster']>, ParentType, ContextType, RequireFields<QueryClassRosterArgs, 'actingRole' | 'classSessionId'>>;
   classSessionDiscoveryOptions?: Resolver<ResolversTypes['ClassSessionDiscoveryOptions'], ParentType, ContextType>;
   discoverClassSessions?: Resolver<ResolversTypes['ClassSessionDiscoveryConnection'], ParentType, ContextType, RequireFields<QueryDiscoverClassSessionsArgs, 'input'>>;
   notifications?: Resolver<Array<ResolversTypes['InAppNotification']>, ParentType, ContextType>;
@@ -2294,14 +2468,25 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   roleWorkspace?: Resolver<ResolversTypes['RoleWorkspace'], ParentType, ContextType, RequireFields<QueryRoleWorkspaceArgs, 'actingRole'>>;
   studentBookings?: Resolver<Array<ResolversTypes['Booking']>, ParentType, ContextType>;
   studentClassCredits?: Resolver<ResolversTypes['ClassCreditAccount'], ParentType, ContextType>;
+  studentCourseProgress?: Resolver<Array<ResolversTypes['CourseProgress']>, ParentType, ContextType>;
   studentPlacements?: Resolver<Array<ResolversTypes['StudentPlacement']>, ParentType, ContextType>;
   studentSubscription?: Resolver<Maybe<ResolversTypes['Subscription']>, ParentType, ContextType>;
   studentWaitlistEntries?: Resolver<Array<ResolversTypes['WaitlistEntry']>, ParentType, ContextType>;
   studentWorkspace?: Resolver<ResolversTypes['StudentWorkspace'], ParentType, ContextType>;
   teacherAbsenceRequests?: Resolver<Array<ResolversTypes['AbsenceRequest']>, ParentType, ContextType>;
+  teacherAttendanceClassSessions?: Resolver<Array<ResolversTypes['ClassSession']>, ParentType, ContextType>;
   teacherAvailability?: Resolver<ResolversTypes['TeacherAvailability'], ParentType, ContextType>;
   teacherAvailabilityPreview?: Resolver<Array<ResolversTypes['TeacherAvailabilityOccurrence']>, ParentType, ContextType, RequireFields<QueryTeacherAvailabilityPreviewArgs, 'localDates'>>;
   teacherClassSessions?: Resolver<Array<ResolversTypes['ClassSession']>, ParentType, ContextType>;
+};
+
+export type RecordAttendanceResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['RecordAttendanceResult'] = ResolversParentTypes['RecordAttendanceResult']> = {
+  __resolveType: TypeResolveFn<'AttendanceError' | 'RecordAttendanceSuccess', ParentType, ContextType>;
+};
+
+export type RecordAttendanceSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['RecordAttendanceSuccess'] = ResolversParentTypes['RecordAttendanceSuccess']> = {
+  classRoster?: Resolver<ResolversTypes['ClassRoster'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
 export type RemoveAvailabilityExceptionResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['RemoveAvailabilityExceptionResult'] = ResolversParentTypes['RemoveAvailabilityExceptionResult']> = {
@@ -2578,6 +2763,8 @@ export type Resolvers<ContextType = any> = {
   AdministratorTaskError?: AdministratorTaskErrorResolvers<ContextType>;
   AdministratorTaskItem?: AdministratorTaskItemResolvers<ContextType>;
   AdministratorTaskSafeContext?: AdministratorTaskSafeContextResolvers<ContextType>;
+  AttendanceError?: AttendanceErrorResolvers<ContextType>;
+  AttendanceRecord?: AttendanceRecordResolvers<ContextType>;
   AvailabilityException?: AvailabilityExceptionResolvers<ContextType>;
   AvailabilityExceptionSessionConflict?: AvailabilityExceptionSessionConflictResolvers<ContextType>;
   BookClassSessionResult?: BookClassSessionResultResolvers<ContextType>;
@@ -2594,6 +2781,8 @@ export type Resolvers<ContextType = any> = {
   ClassCreditAccount?: ClassCreditAccountResolvers<ContextType>;
   ClassCreditAdjustmentError?: ClassCreditAdjustmentErrorResolvers<ContextType>;
   ClassCreditLedgerEntry?: ClassCreditLedgerEntryResolvers<ContextType>;
+  ClassRoster?: ClassRosterResolvers<ContextType>;
+  ClassRosterStudent?: ClassRosterStudentResolvers<ContextType>;
   ClassSession?: ClassSessionResolvers<ContextType>;
   ClassSessionDiscoveryConnection?: ClassSessionDiscoveryConnectionResolvers<ContextType>;
   ClassSessionDiscoveryFilter?: ClassSessionDiscoveryFilterResolvers<ContextType>;
@@ -2604,6 +2793,8 @@ export type Resolvers<ContextType = any> = {
   ClassSessionPublicationError?: ClassSessionPublicationErrorResolvers<ContextType>;
   ClassSessionSeatCapacityError?: ClassSessionSeatCapacityErrorResolvers<ContextType>;
   Course?: CourseResolvers<ContextType>;
+  CourseProgress?: CourseProgressResolvers<ContextType>;
+  CourseProgressLearningHistory?: CourseProgressLearningHistoryResolvers<ContextType>;
   CreateCourseResult?: CreateCourseResultResolvers<ContextType>;
   CreateCourseSuccess?: CreateCourseSuccessResolvers<ContextType>;
   CreateLessonUnitResult?: CreateLessonUnitResultResolvers<ContextType>;
@@ -2628,6 +2819,8 @@ export type Resolvers<ContextType = any> = {
   PublishClassSessionResult?: PublishClassSessionResultResolvers<ContextType>;
   PublishClassSessionSuccess?: PublishClassSessionSuccessResolvers<ContextType>;
   Query?: QueryResolvers<ContextType>;
+  RecordAttendanceResult?: RecordAttendanceResultResolvers<ContextType>;
+  RecordAttendanceSuccess?: RecordAttendanceSuccessResolvers<ContextType>;
   RemoveAvailabilityExceptionResult?: RemoveAvailabilityExceptionResultResolvers<ContextType>;
   RemoveAvailabilityExceptionSuccess?: RemoveAvailabilityExceptionSuccessResolvers<ContextType>;
   RemoveTeacherQualificationResult?: RemoveTeacherQualificationResultResolvers<ContextType>;
