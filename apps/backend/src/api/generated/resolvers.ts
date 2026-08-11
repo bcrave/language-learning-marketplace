@@ -24,6 +24,14 @@ export enum AbsenceRequestState {
   Resolved = 'RESOLVED'
 }
 
+export type AcceptSponsorshipInvitationResult = AcceptSponsorshipInvitationSuccess | SponsorshipInvitationResponseError;
+
+export type AcceptSponsorshipInvitationSuccess = {
+  __typename?: 'AcceptSponsorshipInvitationSuccess';
+  account: ClassCreditAccount;
+  sponsorship: Sponsorship;
+};
+
 export type AddAvailabilityExceptionInput = {
   endDisambiguation: LocalTimeDisambiguation;
   endsAtLocal: Scalars['String']['input'];
@@ -542,6 +550,13 @@ export enum CurriculumLevel {
   C2 = 'C2'
 }
 
+export type DeclineSponsorshipInvitationResult = DeclineSponsorshipInvitationSuccess | SponsorshipInvitationResponseError;
+
+export type DeclineSponsorshipInvitationSuccess = {
+  __typename?: 'DeclineSponsorshipInvitationSuccess';
+  invitation: SponsorshipInvitation;
+};
+
 export type DiscoverableClassSession = {
   __typename?: 'DiscoverableClassSession';
   endsAt: Scalars['String']['output'];
@@ -641,6 +656,18 @@ export type InvalidLessonMaterial = {
   message: Scalars['String']['output'];
 };
 
+export type InviteToSponsorshipInput = {
+  idempotencyKey: Scalars['ID']['input'];
+  studentUserId: Scalars['ID']['input'];
+};
+
+export type InviteToSponsorshipResult = InviteToSponsorshipSuccess | SponsorshipInvitationError;
+
+export type InviteToSponsorshipSuccess = {
+  __typename?: 'InviteToSponsorshipSuccess';
+  invitation: SponsorshipInvitation;
+};
+
 export type JoinWaitlistInput = {
   classSessionId: Scalars['ID']['input'];
   idempotencyKey: Scalars['ID']['input'];
@@ -731,6 +758,7 @@ export enum LocalTimeDisambiguation {
 
 export type Mutation = {
   __typename?: 'Mutation';
+  acceptSponsorshipInvitation: AcceptSponsorshipInvitationResult;
   addAvailabilityException: AddAvailabilityExceptionResult;
   addLessonMaterial: AddLessonMaterialResult;
   adjustClassCredits: AdjustClassCreditsResult;
@@ -742,9 +770,11 @@ export type Mutation = {
   changeClassSessionSeatCapacity: ChangeClassSessionSeatCapacityResult;
   createCourse: CreateCourseResult;
   createLessonUnit: CreateLessonUnitResult;
+  declineSponsorshipInvitation: DeclineSponsorshipInvitationResult;
   endTeacherAvailabilityRange: EndTeacherAvailabilityRangeResult;
   enterClassroom: EnterClassroomResult;
   grantTeacherQualification: GrantTeacherQualificationResult;
+  inviteToSponsorship: InviteToSponsorshipResult;
   joinWaitlist: JoinWaitlistResult;
   markNotificationRead: InAppNotification;
   placeLessonUnitInCourse: ReorderLessonUnitResult;
@@ -772,6 +802,11 @@ export type Mutation = {
   substituteTeacher: SubstituteTeacherResult;
   undoSubscriptionCancellation: UndoSubscriptionCancellationResult;
   withdrawWaitlist: WithdrawWaitlistResult;
+};
+
+
+export type MutationAcceptSponsorshipInvitationArgs = {
+  input: SponsorshipInvitationResponseInput;
 };
 
 
@@ -830,6 +865,11 @@ export type MutationCreateLessonUnitArgs = {
 };
 
 
+export type MutationDeclineSponsorshipInvitationArgs = {
+  input: SponsorshipInvitationResponseInput;
+};
+
+
 export type MutationEndTeacherAvailabilityRangeArgs = {
   input: EndTeacherAvailabilityRangeInput;
 };
@@ -842,6 +882,11 @@ export type MutationEnterClassroomArgs = {
 
 export type MutationGrantTeacherQualificationArgs = {
   input: ChangeTeacherQualificationInput;
+};
+
+
+export type MutationInviteToSponsorshipArgs = {
+  input: InviteToSponsorshipInput;
 };
 
 
@@ -984,6 +1029,12 @@ export enum NotificationChannel {
   InApp = 'IN_APP'
 }
 
+export type Organization = {
+  __typename?: 'Organization';
+  id: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+};
+
 export type ProcessSubscriptionProviderEventInput = {
   effectiveAt: Scalars['String']['input'];
   eventType: SubscriptionProviderEventType;
@@ -1046,6 +1097,8 @@ export type Query = {
   learningAccessLessonUnits: Array<LearningAccessLessonUnit>;
   lessonMaterials?: Maybe<Array<LessonMaterial>>;
   notifications: Array<InAppNotification>;
+  organizationSponsoredStudents: Array<Sponsorship>;
+  organizationSponsorshipInvitations: Array<SponsorshipInvitation>;
   publicTeacherProfile?: Maybe<PublicTeacherProfile>;
   roleWorkspace: RoleWorkspace;
   studentBookings: Array<Booking>;
@@ -1053,6 +1106,8 @@ export type Query = {
   studentCourseProgress: Array<CourseProgress>;
   studentFeedbackAndRatings: Array<FeedbackAndRatingItem>;
   studentPlacements: Array<StudentPlacement>;
+  studentSponsorship?: Maybe<Sponsorship>;
+  studentSponsorshipInvitations: Array<SponsorshipInvitation>;
   studentSubscription?: Maybe<Subscription>;
   studentWaitlistEntries: Array<WaitlistEntry>;
   studentWorkspace: StudentWorkspace;
@@ -1368,6 +1423,76 @@ export type SetStudentPlacementInput = {
   curriculumLevel: CurriculumLevel;
   targetLanguage: Scalars['String']['input'];
 };
+
+export type Sponsorship = {
+  __typename?: 'Sponsorship';
+  acceptedAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  nextAnniversaryAt: Scalars['String']['output'];
+  organization: Organization;
+  studentDisplayName: Scalars['String']['output'];
+  studentUserId: Scalars['ID']['output'];
+};
+
+export type SponsorshipDisclosure = {
+  __typename?: 'SponsorshipDisclosure';
+  benefitDescription: Scalars['String']['output'];
+  excludedPrivateDataDescription: Scalars['String']['output'];
+  organizationVisibleDataDescription: Scalars['String']['output'];
+  version: Scalars['String']['output'];
+};
+
+export type SponsorshipInvitation = {
+  __typename?: 'SponsorshipInvitation';
+  createdAt: Scalars['String']['output'];
+  decidedAt?: Maybe<Scalars['String']['output']>;
+  disclosure: SponsorshipDisclosure;
+  expiresAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  organization: Organization;
+  state: SponsorshipInvitationState;
+  studentDisplayName: Scalars['String']['output'];
+  studentUserId: Scalars['ID']['output'];
+};
+
+export type SponsorshipInvitationError = {
+  __typename?: 'SponsorshipInvitationError';
+  code: SponsorshipInvitationErrorCode;
+  message: Scalars['String']['output'];
+};
+
+export enum SponsorshipInvitationErrorCode {
+  IdempotencyKeyReused = 'IDEMPOTENCY_KEY_REUSED',
+  InvitationAlreadyPending = 'INVITATION_ALREADY_PENDING',
+  StudentAlreadySponsored = 'STUDENT_ALREADY_SPONSORED',
+  StudentNotFound = 'STUDENT_NOT_FOUND'
+}
+
+export type SponsorshipInvitationResponseError = {
+  __typename?: 'SponsorshipInvitationResponseError';
+  code: SponsorshipInvitationResponseErrorCode;
+  message: Scalars['String']['output'];
+};
+
+export enum SponsorshipInvitationResponseErrorCode {
+  IdempotencyKeyReused = 'IDEMPOTENCY_KEY_REUSED',
+  InvitationExpired = 'INVITATION_EXPIRED',
+  InvitationNotFound = 'INVITATION_NOT_FOUND',
+  InvitationNotPending = 'INVITATION_NOT_PENDING',
+  SponsorshipAlreadyActive = 'SPONSORSHIP_ALREADY_ACTIVE'
+}
+
+export type SponsorshipInvitationResponseInput = {
+  idempotencyKey: Scalars['ID']['input'];
+  invitationId: Scalars['ID']['input'];
+};
+
+export enum SponsorshipInvitationState {
+  Accepted = 'ACCEPTED',
+  Declined = 'DECLINED',
+  Expired = 'EXPIRED',
+  Pending = 'PENDING'
+}
 
 export type StructuredTextBlockInput = {
   items?: InputMaybe<Array<Scalars['String']['input']>>;
@@ -1719,6 +1844,10 @@ export type DirectiveResolverFn<TResult = Record<PropertyKey, never>, TParent = 
 
 /** Mapping of union types */
 export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
+  AcceptSponsorshipInvitationResult:
+    | ( AcceptSponsorshipInvitationSuccess )
+    | ( SponsorshipInvitationResponseError )
+  ;
   AddAvailabilityExceptionResult:
     | ( AddAvailabilityExceptionSuccess )
     | ( AvailabilityExceptionSessionConflict )
@@ -1759,6 +1888,10 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( CreateLessonUnitSuccess )
     | ( CurriculumConflict )
   ;
+  DeclineSponsorshipInvitationResult:
+    | ( DeclineSponsorshipInvitationSuccess )
+    | ( SponsorshipInvitationResponseError )
+  ;
   EndTeacherAvailabilityRangeResult:
     | ( EndTeacherAvailabilityRangeSuccess )
     | ( TeacherAvailabilityValidationError )
@@ -1770,6 +1903,10 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
   GrantTeacherQualificationResult:
     | ( ChangeTeacherQualificationSuccess )
     | ( CurriculumConflict )
+  ;
+  InviteToSponsorshipResult:
+    | ( InviteToSponsorshipSuccess )
+    | ( SponsorshipInvitationError )
   ;
   JoinWaitlistResult:
     | ( JoinWaitlistSuccess )
@@ -1867,6 +2004,8 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
 export type ResolversTypes = {
   AbsenceRequest: ResolverTypeWrapper<AbsenceRequest>;
   AbsenceRequestState: AbsenceRequestState;
+  AcceptSponsorshipInvitationResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['AcceptSponsorshipInvitationResult']>;
+  AcceptSponsorshipInvitationSuccess: ResolverTypeWrapper<AcceptSponsorshipInvitationSuccess>;
   AddAvailabilityExceptionInput: AddAvailabilityExceptionInput;
   AddAvailabilityExceptionResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['AddAvailabilityExceptionResult']>;
   AddAvailabilityExceptionSuccess: ResolverTypeWrapper<AddAvailabilityExceptionSuccess>;
@@ -1945,6 +2084,8 @@ export type ResolversTypes = {
   CreateLessonUnitSuccess: ResolverTypeWrapper<CreateLessonUnitSuccess>;
   CurriculumConflict: ResolverTypeWrapper<CurriculumConflict>;
   CurriculumLevel: CurriculumLevel;
+  DeclineSponsorshipInvitationResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['DeclineSponsorshipInvitationResult']>;
+  DeclineSponsorshipInvitationSuccess: ResolverTypeWrapper<DeclineSponsorshipInvitationSuccess>;
   DiscoverableClassSession: ResolverTypeWrapper<DiscoverableClassSession>;
   DiscoveryLessonUnit: ResolverTypeWrapper<DiscoveryLessonUnit>;
   EndTeacherAvailabilityRangeInput: EndTeacherAvailabilityRangeInput;
@@ -1962,6 +2103,9 @@ export type ResolversTypes = {
   Int: ResolverTypeWrapper<Scalars['Int']['output']>;
   InterfaceLocale: InterfaceLocale;
   InvalidLessonMaterial: ResolverTypeWrapper<InvalidLessonMaterial>;
+  InviteToSponsorshipInput: InviteToSponsorshipInput;
+  InviteToSponsorshipResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['InviteToSponsorshipResult']>;
+  InviteToSponsorshipSuccess: ResolverTypeWrapper<InviteToSponsorshipSuccess>;
   JoinWaitlistInput: JoinWaitlistInput;
   JoinWaitlistResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['JoinWaitlistResult']>;
   JoinWaitlistSuccess: ResolverTypeWrapper<JoinWaitlistSuccess>;
@@ -1977,6 +2121,7 @@ export type ResolversTypes = {
   LocalTimeDisambiguation: LocalTimeDisambiguation;
   Mutation: ResolverTypeWrapper<Record<PropertyKey, never>>;
   NotificationChannel: NotificationChannel;
+  Organization: ResolverTypeWrapper<Organization>;
   ProcessSubscriptionProviderEventInput: ProcessSubscriptionProviderEventInput;
   ProcessSubscriptionProviderEventResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ProcessSubscriptionProviderEventResult']>;
   ProcessSubscriptionProviderEventSuccess: ResolverTypeWrapper<ProcessSubscriptionProviderEventSuccess>;
@@ -2034,6 +2179,15 @@ export type ResolversTypes = {
   SessionRatingImprovementTag: SessionRatingImprovementTag;
   SessionRatingPositiveTag: SessionRatingPositiveTag;
   SetStudentPlacementInput: SetStudentPlacementInput;
+  Sponsorship: ResolverTypeWrapper<Sponsorship>;
+  SponsorshipDisclosure: ResolverTypeWrapper<SponsorshipDisclosure>;
+  SponsorshipInvitation: ResolverTypeWrapper<SponsorshipInvitation>;
+  SponsorshipInvitationError: ResolverTypeWrapper<SponsorshipInvitationError>;
+  SponsorshipInvitationErrorCode: SponsorshipInvitationErrorCode;
+  SponsorshipInvitationResponseError: ResolverTypeWrapper<SponsorshipInvitationResponseError>;
+  SponsorshipInvitationResponseErrorCode: SponsorshipInvitationResponseErrorCode;
+  SponsorshipInvitationResponseInput: SponsorshipInvitationResponseInput;
+  SponsorshipInvitationState: SponsorshipInvitationState;
   String: ResolverTypeWrapper<Scalars['String']['output']>;
   StructuredTextBlockInput: StructuredTextBlockInput;
   StudentPlacement: ResolverTypeWrapper<StudentPlacement>;
@@ -2082,6 +2236,8 @@ export type ResolversTypes = {
 /** Mapping between all available schema types and the resolvers parents */
 export type ResolversParentTypes = {
   AbsenceRequest: AbsenceRequest;
+  AcceptSponsorshipInvitationResult: ResolversUnionTypes<ResolversParentTypes>['AcceptSponsorshipInvitationResult'];
+  AcceptSponsorshipInvitationSuccess: AcceptSponsorshipInvitationSuccess;
   AddAvailabilityExceptionInput: AddAvailabilityExceptionInput;
   AddAvailabilityExceptionResult: ResolversUnionTypes<ResolversParentTypes>['AddAvailabilityExceptionResult'];
   AddAvailabilityExceptionSuccess: AddAvailabilityExceptionSuccess;
@@ -2144,6 +2300,8 @@ export type ResolversParentTypes = {
   CreateLessonUnitResult: ResolversUnionTypes<ResolversParentTypes>['CreateLessonUnitResult'];
   CreateLessonUnitSuccess: CreateLessonUnitSuccess;
   CurriculumConflict: CurriculumConflict;
+  DeclineSponsorshipInvitationResult: ResolversUnionTypes<ResolversParentTypes>['DeclineSponsorshipInvitationResult'];
+  DeclineSponsorshipInvitationSuccess: DeclineSponsorshipInvitationSuccess;
   DiscoverableClassSession: DiscoverableClassSession;
   DiscoveryLessonUnit: DiscoveryLessonUnit;
   EndTeacherAvailabilityRangeInput: EndTeacherAvailabilityRangeInput;
@@ -2159,6 +2317,9 @@ export type ResolversParentTypes = {
   InstructionalIdentityLocked: InstructionalIdentityLocked;
   Int: Scalars['Int']['output'];
   InvalidLessonMaterial: InvalidLessonMaterial;
+  InviteToSponsorshipInput: InviteToSponsorshipInput;
+  InviteToSponsorshipResult: ResolversUnionTypes<ResolversParentTypes>['InviteToSponsorshipResult'];
+  InviteToSponsorshipSuccess: InviteToSponsorshipSuccess;
   JoinWaitlistInput: JoinWaitlistInput;
   JoinWaitlistResult: ResolversUnionTypes<ResolversParentTypes>['JoinWaitlistResult'];
   JoinWaitlistSuccess: JoinWaitlistSuccess;
@@ -2168,6 +2329,7 @@ export type ResolversParentTypes = {
   LessonMaterial: LessonMaterial;
   LessonUnit: LessonUnit;
   Mutation: Record<PropertyKey, never>;
+  Organization: Organization;
   ProcessSubscriptionProviderEventInput: ProcessSubscriptionProviderEventInput;
   ProcessSubscriptionProviderEventResult: ResolversUnionTypes<ResolversParentTypes>['ProcessSubscriptionProviderEventResult'];
   ProcessSubscriptionProviderEventSuccess: ProcessSubscriptionProviderEventSuccess;
@@ -2222,6 +2384,12 @@ export type ResolversParentTypes = {
   SessionRating: SessionRating;
   SessionRatingError: SessionRatingError;
   SetStudentPlacementInput: SetStudentPlacementInput;
+  Sponsorship: Sponsorship;
+  SponsorshipDisclosure: SponsorshipDisclosure;
+  SponsorshipInvitation: SponsorshipInvitation;
+  SponsorshipInvitationError: SponsorshipInvitationError;
+  SponsorshipInvitationResponseError: SponsorshipInvitationResponseError;
+  SponsorshipInvitationResponseInput: SponsorshipInvitationResponseInput;
   String: Scalars['String']['output'];
   StructuredTextBlockInput: StructuredTextBlockInput;
   StudentPlacement: StudentPlacement;
@@ -2263,6 +2431,16 @@ export type AbsenceRequestResolvers<ContextType = any, ParentType extends Resolv
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   requestedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   state?: Resolver<ResolversTypes['AbsenceRequestState'], ParentType, ContextType>;
+};
+
+export type AcceptSponsorshipInvitationResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['AcceptSponsorshipInvitationResult'] = ResolversParentTypes['AcceptSponsorshipInvitationResult']> = {
+  __resolveType: TypeResolveFn<'AcceptSponsorshipInvitationSuccess' | 'SponsorshipInvitationResponseError', ParentType, ContextType>;
+};
+
+export type AcceptSponsorshipInvitationSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['AcceptSponsorshipInvitationSuccess'] = ResolversParentTypes['AcceptSponsorshipInvitationSuccess']> = {
+  account?: Resolver<ResolversTypes['ClassCreditAccount'], ParentType, ContextType>;
+  sponsorship?: Resolver<ResolversTypes['Sponsorship'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
 export type AddAvailabilityExceptionResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['AddAvailabilityExceptionResult'] = ResolversParentTypes['AddAvailabilityExceptionResult']> = {
@@ -2572,6 +2750,15 @@ export type CurriculumConflictResolvers<ContextType = any, ParentType extends Re
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
+export type DeclineSponsorshipInvitationResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['DeclineSponsorshipInvitationResult'] = ResolversParentTypes['DeclineSponsorshipInvitationResult']> = {
+  __resolveType: TypeResolveFn<'DeclineSponsorshipInvitationSuccess' | 'SponsorshipInvitationResponseError', ParentType, ContextType>;
+};
+
+export type DeclineSponsorshipInvitationSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['DeclineSponsorshipInvitationSuccess'] = ResolversParentTypes['DeclineSponsorshipInvitationSuccess']> = {
+  invitation?: Resolver<ResolversTypes['SponsorshipInvitation'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
 export type DiscoverableClassSessionResolvers<ContextType = any, ParentType extends ResolversParentTypes['DiscoverableClassSession'] = ResolversParentTypes['DiscoverableClassSession']> = {
   endsAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
@@ -2646,6 +2833,15 @@ export type InvalidLessonMaterialResolvers<ContextType = any, ParentType extends
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
+export type InviteToSponsorshipResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['InviteToSponsorshipResult'] = ResolversParentTypes['InviteToSponsorshipResult']> = {
+  __resolveType: TypeResolveFn<'InviteToSponsorshipSuccess' | 'SponsorshipInvitationError', ParentType, ContextType>;
+};
+
+export type InviteToSponsorshipSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['InviteToSponsorshipSuccess'] = ResolversParentTypes['InviteToSponsorshipSuccess']> = {
+  invitation?: Resolver<ResolversTypes['SponsorshipInvitation'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
 export type JoinWaitlistResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['JoinWaitlistResult'] = ResolversParentTypes['JoinWaitlistResult']> = {
   __resolveType: TypeResolveFn<'JoinWaitlistSuccess' | 'WaitlistError', ParentType, ContextType>;
 };
@@ -2700,6 +2896,7 @@ export type LessonUnitResolvers<ContextType = any, ParentType extends ResolversP
 };
 
 export type MutationResolvers<ContextType = any, ParentType extends ResolversParentTypes['Mutation'] = ResolversParentTypes['Mutation']> = {
+  acceptSponsorshipInvitation?: Resolver<ResolversTypes['AcceptSponsorshipInvitationResult'], ParentType, ContextType, RequireFields<MutationAcceptSponsorshipInvitationArgs, 'input'>>;
   addAvailabilityException?: Resolver<ResolversTypes['AddAvailabilityExceptionResult'], ParentType, ContextType, RequireFields<MutationAddAvailabilityExceptionArgs, 'input'>>;
   addLessonMaterial?: Resolver<ResolversTypes['AddLessonMaterialResult'], ParentType, ContextType, RequireFields<MutationAddLessonMaterialArgs, 'input'>>;
   adjustClassCredits?: Resolver<ResolversTypes['AdjustClassCreditsResult'], ParentType, ContextType, RequireFields<MutationAdjustClassCreditsArgs, 'input'>>;
@@ -2711,9 +2908,11 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   changeClassSessionSeatCapacity?: Resolver<ResolversTypes['ChangeClassSessionSeatCapacityResult'], ParentType, ContextType, RequireFields<MutationChangeClassSessionSeatCapacityArgs, 'input'>>;
   createCourse?: Resolver<ResolversTypes['CreateCourseResult'], ParentType, ContextType, RequireFields<MutationCreateCourseArgs, 'input'>>;
   createLessonUnit?: Resolver<ResolversTypes['CreateLessonUnitResult'], ParentType, ContextType, RequireFields<MutationCreateLessonUnitArgs, 'input'>>;
+  declineSponsorshipInvitation?: Resolver<ResolversTypes['DeclineSponsorshipInvitationResult'], ParentType, ContextType, RequireFields<MutationDeclineSponsorshipInvitationArgs, 'input'>>;
   endTeacherAvailabilityRange?: Resolver<ResolversTypes['EndTeacherAvailabilityRangeResult'], ParentType, ContextType, RequireFields<MutationEndTeacherAvailabilityRangeArgs, 'input'>>;
   enterClassroom?: Resolver<ResolversTypes['EnterClassroomResult'], ParentType, ContextType, RequireFields<MutationEnterClassroomArgs, 'input'>>;
   grantTeacherQualification?: Resolver<ResolversTypes['GrantTeacherQualificationResult'], ParentType, ContextType, RequireFields<MutationGrantTeacherQualificationArgs, 'input'>>;
+  inviteToSponsorship?: Resolver<ResolversTypes['InviteToSponsorshipResult'], ParentType, ContextType, RequireFields<MutationInviteToSponsorshipArgs, 'input'>>;
   joinWaitlist?: Resolver<ResolversTypes['JoinWaitlistResult'], ParentType, ContextType, RequireFields<MutationJoinWaitlistArgs, 'input'>>;
   markNotificationRead?: Resolver<ResolversTypes['InAppNotification'], ParentType, ContextType, RequireFields<MutationMarkNotificationReadArgs, 'id'>>;
   placeLessonUnitInCourse?: Resolver<ResolversTypes['ReorderLessonUnitResult'], ParentType, ContextType, RequireFields<MutationPlaceLessonUnitInCourseArgs, 'input'>>;
@@ -2741,6 +2940,11 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   substituteTeacher?: Resolver<ResolversTypes['SubstituteTeacherResult'], ParentType, ContextType, RequireFields<MutationSubstituteTeacherArgs, 'input'>>;
   undoSubscriptionCancellation?: Resolver<ResolversTypes['UndoSubscriptionCancellationResult'], ParentType, ContextType, RequireFields<MutationUndoSubscriptionCancellationArgs, 'input'>>;
   withdrawWaitlist?: Resolver<ResolversTypes['WithdrawWaitlistResult'], ParentType, ContextType, RequireFields<MutationWithdrawWaitlistArgs, 'input'>>;
+};
+
+export type OrganizationResolvers<ContextType = any, ParentType extends ResolversParentTypes['Organization'] = ResolversParentTypes['Organization']> = {
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
 };
 
 export type ProcessSubscriptionProviderEventResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['ProcessSubscriptionProviderEventResult'] = ResolversParentTypes['ProcessSubscriptionProviderEventResult']> = {
@@ -2788,6 +2992,8 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   learningAccessLessonUnits?: Resolver<Array<ResolversTypes['LearningAccessLessonUnit']>, ParentType, ContextType, RequireFields<QueryLearningAccessLessonUnitsArgs, 'actingRole'>>;
   lessonMaterials?: Resolver<Maybe<Array<ResolversTypes['LessonMaterial']>>, ParentType, ContextType, RequireFields<QueryLessonMaterialsArgs, 'actingRole' | 'lessonUnitId'>>;
   notifications?: Resolver<Array<ResolversTypes['InAppNotification']>, ParentType, ContextType>;
+  organizationSponsoredStudents?: Resolver<Array<ResolversTypes['Sponsorship']>, ParentType, ContextType>;
+  organizationSponsorshipInvitations?: Resolver<Array<ResolversTypes['SponsorshipInvitation']>, ParentType, ContextType>;
   publicTeacherProfile?: Resolver<Maybe<ResolversTypes['PublicTeacherProfile']>, ParentType, ContextType, RequireFields<QueryPublicTeacherProfileArgs, 'locale' | 'teacherUserId'>>;
   roleWorkspace?: Resolver<ResolversTypes['RoleWorkspace'], ParentType, ContextType, RequireFields<QueryRoleWorkspaceArgs, 'actingRole'>>;
   studentBookings?: Resolver<Array<ResolversTypes['Booking']>, ParentType, ContextType>;
@@ -2795,6 +3001,8 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   studentCourseProgress?: Resolver<Array<ResolversTypes['CourseProgress']>, ParentType, ContextType>;
   studentFeedbackAndRatings?: Resolver<Array<ResolversTypes['FeedbackAndRatingItem']>, ParentType, ContextType>;
   studentPlacements?: Resolver<Array<ResolversTypes['StudentPlacement']>, ParentType, ContextType>;
+  studentSponsorship?: Resolver<Maybe<ResolversTypes['Sponsorship']>, ParentType, ContextType>;
+  studentSponsorshipInvitations?: Resolver<Array<ResolversTypes['SponsorshipInvitation']>, ParentType, ContextType>;
   studentSubscription?: Resolver<Maybe<ResolversTypes['Subscription']>, ParentType, ContextType>;
   studentWaitlistEntries?: Resolver<Array<ResolversTypes['WaitlistEntry']>, ParentType, ContextType>;
   studentWorkspace?: Resolver<ResolversTypes['StudentWorkspace'], ParentType, ContextType>;
@@ -2956,6 +3164,46 @@ export type SessionRatingErrorResolvers<ContextType = any, ParentType extends Re
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
+export type SponsorshipResolvers<ContextType = any, ParentType extends ResolversParentTypes['Sponsorship'] = ResolversParentTypes['Sponsorship']> = {
+  acceptedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  nextAnniversaryAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  organization?: Resolver<ResolversTypes['Organization'], ParentType, ContextType>;
+  studentDisplayName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  studentUserId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+};
+
+export type SponsorshipDisclosureResolvers<ContextType = any, ParentType extends ResolversParentTypes['SponsorshipDisclosure'] = ResolversParentTypes['SponsorshipDisclosure']> = {
+  benefitDescription?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  excludedPrivateDataDescription?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  organizationVisibleDataDescription?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  version?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
+export type SponsorshipInvitationResolvers<ContextType = any, ParentType extends ResolversParentTypes['SponsorshipInvitation'] = ResolversParentTypes['SponsorshipInvitation']> = {
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  decidedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  disclosure?: Resolver<ResolversTypes['SponsorshipDisclosure'], ParentType, ContextType>;
+  expiresAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  organization?: Resolver<ResolversTypes['Organization'], ParentType, ContextType>;
+  state?: Resolver<ResolversTypes['SponsorshipInvitationState'], ParentType, ContextType>;
+  studentDisplayName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  studentUserId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+};
+
+export type SponsorshipInvitationErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['SponsorshipInvitationError'] = ResolversParentTypes['SponsorshipInvitationError']> = {
+  code?: Resolver<ResolversTypes['SponsorshipInvitationErrorCode'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type SponsorshipInvitationResponseErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['SponsorshipInvitationResponseError'] = ResolversParentTypes['SponsorshipInvitationResponseError']> = {
+  code?: Resolver<ResolversTypes['SponsorshipInvitationResponseErrorCode'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
 export type StudentPlacementResolvers<ContextType = any, ParentType extends ResolversParentTypes['StudentPlacement'] = ResolversParentTypes['StudentPlacement']> = {
   curriculumLevel?: Resolver<ResolversTypes['CurriculumLevel'], ParentType, ContextType>;
   targetLanguage?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -3113,6 +3361,8 @@ export type WithdrawWaitlistSuccessResolvers<ContextType = any, ParentType exten
 
 export type Resolvers<ContextType = any> = {
   AbsenceRequest?: AbsenceRequestResolvers<ContextType>;
+  AcceptSponsorshipInvitationResult?: AcceptSponsorshipInvitationResultResolvers<ContextType>;
+  AcceptSponsorshipInvitationSuccess?: AcceptSponsorshipInvitationSuccessResolvers<ContextType>;
   AddAvailabilityExceptionResult?: AddAvailabilityExceptionResultResolvers<ContextType>;
   AddAvailabilityExceptionSuccess?: AddAvailabilityExceptionSuccessResolvers<ContextType>;
   AddLessonMaterialResult?: AddLessonMaterialResultResolvers<ContextType>;
@@ -3162,6 +3412,8 @@ export type Resolvers<ContextType = any> = {
   CreateLessonUnitResult?: CreateLessonUnitResultResolvers<ContextType>;
   CreateLessonUnitSuccess?: CreateLessonUnitSuccessResolvers<ContextType>;
   CurriculumConflict?: CurriculumConflictResolvers<ContextType>;
+  DeclineSponsorshipInvitationResult?: DeclineSponsorshipInvitationResultResolvers<ContextType>;
+  DeclineSponsorshipInvitationSuccess?: DeclineSponsorshipInvitationSuccessResolvers<ContextType>;
   DiscoverableClassSession?: DiscoverableClassSessionResolvers<ContextType>;
   DiscoveryLessonUnit?: DiscoveryLessonUnitResolvers<ContextType>;
   EndTeacherAvailabilityRangeResult?: EndTeacherAvailabilityRangeResultResolvers<ContextType>;
@@ -3173,6 +3425,8 @@ export type Resolvers<ContextType = any> = {
   InAppNotification?: InAppNotificationResolvers<ContextType>;
   InstructionalIdentityLocked?: InstructionalIdentityLockedResolvers<ContextType>;
   InvalidLessonMaterial?: InvalidLessonMaterialResolvers<ContextType>;
+  InviteToSponsorshipResult?: InviteToSponsorshipResultResolvers<ContextType>;
+  InviteToSponsorshipSuccess?: InviteToSponsorshipSuccessResolvers<ContextType>;
   JoinWaitlistResult?: JoinWaitlistResultResolvers<ContextType>;
   JoinWaitlistSuccess?: JoinWaitlistSuccessResolvers<ContextType>;
   LearningAccessLessonUnit?: LearningAccessLessonUnitResolvers<ContextType>;
@@ -3181,6 +3435,7 @@ export type Resolvers<ContextType = any> = {
   LessonMaterial?: LessonMaterialResolvers<ContextType>;
   LessonUnit?: LessonUnitResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
+  Organization?: OrganizationResolvers<ContextType>;
   ProcessSubscriptionProviderEventResult?: ProcessSubscriptionProviderEventResultResolvers<ContextType>;
   ProcessSubscriptionProviderEventSuccess?: ProcessSubscriptionProviderEventSuccessResolvers<ContextType>;
   PublicTeacherProfile?: PublicTeacherProfileResolvers<ContextType>;
@@ -3218,6 +3473,11 @@ export type Resolvers<ContextType = any> = {
   ScheduleSubscriptionCancellationSuccess?: ScheduleSubscriptionCancellationSuccessResolvers<ContextType>;
   SessionRating?: SessionRatingResolvers<ContextType>;
   SessionRatingError?: SessionRatingErrorResolvers<ContextType>;
+  Sponsorship?: SponsorshipResolvers<ContextType>;
+  SponsorshipDisclosure?: SponsorshipDisclosureResolvers<ContextType>;
+  SponsorshipInvitation?: SponsorshipInvitationResolvers<ContextType>;
+  SponsorshipInvitationError?: SponsorshipInvitationErrorResolvers<ContextType>;
+  SponsorshipInvitationResponseError?: SponsorshipInvitationResponseErrorResolvers<ContextType>;
   StudentPlacement?: StudentPlacementResolvers<ContextType>;
   StudentWorkspace?: StudentWorkspaceResolvers<ContextType>;
   Subscription?: SubscriptionResolvers<ContextType>;

@@ -37,6 +37,7 @@ import { CourseProgressPanel } from "./course-progress.js";
 import { TeacherAttendancePanel } from "./teacher-attendance.js";
 import { LearningAccessPanel } from "./learning-access.js";
 import { AdministratorQualityPanel, StudentFeedbackRatingsPanel, TeacherFeedbackPanel } from "./feedback-rating.js";
+import { OrganizationSponsorshipPanel, StudentSponsorshipPanel } from "./sponsorship.js";
 
 const graphQLInterfaceLocales: Record<InterfaceLocale, GraphQLInterfaceLocale> = {
   en: "EN",
@@ -422,7 +423,11 @@ function WorkspaceContent({
           <StudentFeedbackRatingsPanel />
           <StudentSubscription />
           <StudentClassCredits />
+          <StudentSponsorshipPanel />
         </>}
+        {currentPlace === "ORGANIZATION_STUDENTS" && (
+          <OrganizationSponsorshipPanel />
+        )}
         {currentPlace === "STUDENT_DISCOVERY" && hasSavedPreferences && (
           <StudentDiscoveryPanel displayTimeZone={displayTimeZone} />
         )}
