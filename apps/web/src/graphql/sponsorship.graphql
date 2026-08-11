@@ -1,0 +1,157 @@
+query StudentSponsorship {
+  studentSponsorship {
+    id
+    studentUserId
+    studentDisplayName
+    acceptedAt
+    nextAnniversaryAt
+    organization {
+      id
+      name
+    }
+  }
+}
+
+query StudentSponsorshipInvitations {
+  studentSponsorshipInvitations {
+    id
+    studentUserId
+    studentDisplayName
+    state
+    expiresAt
+    createdAt
+    decidedAt
+    organization {
+      id
+      name
+    }
+    disclosure {
+      version
+      benefitDescription
+      organizationVisibleDataDescription
+      excludedPrivateDataDescription
+    }
+  }
+}
+
+query OrganizationSponsorshipInvitations {
+  organizationSponsorshipInvitations {
+    id
+    studentUserId
+    studentDisplayName
+    state
+    expiresAt
+    createdAt
+    decidedAt
+    organization {
+      id
+      name
+    }
+    disclosure {
+      version
+      benefitDescription
+      organizationVisibleDataDescription
+      excludedPrivateDataDescription
+    }
+  }
+}
+
+query OrganizationSponsoredStudents {
+  organizationSponsoredStudents {
+    id
+    studentUserId
+    studentDisplayName
+    acceptedAt
+    nextAnniversaryAt
+    organization {
+      id
+      name
+    }
+  }
+}
+
+mutation InviteToSponsorship($input: InviteToSponsorshipInput!) {
+  inviteToSponsorship(input: $input) {
+    ... on InviteToSponsorshipSuccess {
+      invitation {
+        id
+        studentUserId
+        studentDisplayName
+        state
+        expiresAt
+        createdAt
+        decidedAt
+        organization {
+          id
+          name
+        }
+        disclosure {
+          version
+          benefitDescription
+          organizationVisibleDataDescription
+          excludedPrivateDataDescription
+        }
+      }
+    }
+    ... on SponsorshipInvitationError {
+      code
+      message
+    }
+  }
+}
+
+mutation AcceptSponsorshipInvitation($input: SponsorshipInvitationResponseInput!) {
+  acceptSponsorshipInvitation(input: $input) {
+    ... on AcceptSponsorshipInvitationSuccess {
+      sponsorship {
+        id
+        studentUserId
+        studentDisplayName
+        acceptedAt
+        nextAnniversaryAt
+        organization {
+          id
+          name
+        }
+      }
+      account {
+        studentUserId
+        availableBalance
+      }
+    }
+    ... on SponsorshipInvitationResponseError {
+      code
+      message
+    }
+  }
+}
+
+mutation DeclineSponsorshipInvitation($input: SponsorshipInvitationResponseInput!) {
+  declineSponsorshipInvitation(input: $input) {
+    ... on DeclineSponsorshipInvitationSuccess {
+      invitation {
+        id
+        studentUserId
+        studentDisplayName
+        state
+        expiresAt
+        createdAt
+        decidedAt
+        organization {
+          id
+          name
+        }
+        disclosure {
+          version
+          benefitDescription
+          organizationVisibleDataDescription
+          excludedPrivateDataDescription
+        }
+      }
+    }
+    ... on SponsorshipInvitationResponseError {
+      code
+      message
+    }
+  }
+}

@@ -5,6 +5,7 @@ import { canonicalCurriculumFixtures } from "./canonical-curriculum-fixtures.js"
 import { createDatabase, type Database } from "./database.js";
 import { migrateDatabase } from "./migrate.js";
 import type { CurriculumLevel } from "./types.js";
+import { CURRENT_SPONSORSHIP_DISCLOSURE_VERSION } from "../sponsorship/sponsorship-service.js";
 import { monthlySubscriptionAnniversary } from "../subscription/subscription-time.js";
 
 export const DEMO_STUDENT_ID = "00000000-0000-4000-8000-000000000001";
@@ -117,6 +118,39 @@ export async function seedDemoSubscription(db: Database, now = new Date()) {
   })).execute();
 }
 
+const DEMO_ORGANIZATION_ID = "00000000-0000-4000-8000-000000000041";
+const DEMO_SECONDARY_ORGANIZATION_ID = "00000000-0000-4000-8000-000000000042";
+const DEMO_SPONSORSHIP_INVITATION_ID = "00000000-0000-4000-8000-000000000043";
+
+export async function seedDemoOrganizations(db: Database) {
+  await db.insertInto("organizations").values([
+    { id: DEMO_ORGANIZATION_ID, name: "Nimbus Logistics" },
+    { id: DEMO_SECONDARY_ORGANIZATION_ID, name: "Riverside Health" },
+  ]).onConflict((conflict) => conflict.column("id").doUpdateSet((eb) => ({ name: eb.ref("excluded.name") }))).execute();
+  await db.insertInto("organization_managers").values([
+    { user_id: DEMO_STUDENT_ID, organization_id: DEMO_ORGANIZATION_ID },
+    { user_id: DEMO_ENGLISH_STUDENT_ID, organization_id: DEMO_SECONDARY_ORGANIZATION_ID },
+  ]).onConflict((conflict) => conflict.column("user_id").doUpdateSet((eb) => ({ organization_id: eb.ref("excluded.organization_id") }))).execute();
+}
+
+export async function seedDemoSponsorship(db: Database, now = new Date()) {
+  const expiresAt = new Date(now.getTime() + 14 * 24 * 60 * 60_000);
+  await db.insertInto("sponsorship_invitations").values({
+    id: DEMO_SPONSORSHIP_INVITATION_ID,
+    organization_id: DEMO_ORGANIZATION_ID,
+    student_user_id: DEMO_LIMITED_STUDENT_ID,
+    invited_by_user_id: DEMO_STUDENT_ID,
+    state: "PENDING",
+    disclosure_text_version: CURRENT_SPONSORSHIP_DISCLOSURE_VERSION,
+    expires_at: expiresAt,
+    decided_at: null,
+  }).onConflict((conflict) => conflict.column("id").doUpdateSet({
+    state: "PENDING",
+    expires_at: expiresAt,
+    decided_at: null,
+  })).execute();
+}
+
 const referenceFixtures: Record<string, [string, string]> = {
   "en-a1-02": ["Transport for London maps", "https://tfl.gov.uk/maps_/maps"],
   "en-a1-05": ["Met Office UK forecast guide", "https://weather.metoffice.gov.uk/guides/uk-forecast"],
@@ -190,6 +224,8 @@ async function main() {
     await seedDemoStudents(db);
     await seedDemoSubscription(db);
     await seedDemoCurriculum(db);
+    await seedDemoOrganizations(db);
+    await seedDemoSponsorship(db);
   } finally {
     await db.destroy();
   }

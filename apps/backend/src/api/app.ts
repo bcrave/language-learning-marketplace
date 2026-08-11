@@ -17,6 +17,7 @@ import {
   rememberRoleWorkspacePlace,
 } from "../authorization/role-workspace-service.js";
 import { administratorFor } from "../authorization/administrator-policy.js";
+import { organizationManagerFor } from "../authorization/organization-manager-policy.js";
 import { studentFor } from "../authorization/student-policy.js";
 import { recordAdministrationAudit } from "../audit/administration-audit.js";
 import { administerAttendance, classRosterForViewer, recordAttendance } from "../attendance/attendance-service.js";
@@ -66,6 +67,15 @@ import {
   subscriptionForStudent,
   undoSubscriptionCancellation,
 } from "../subscription/subscription-service.js";
+import {
+  acceptSponsorshipInvitation,
+  declineSponsorshipInvitation,
+  inviteToSponsorship,
+  sponsorshipForStudent,
+  sponsorshipInvitationsForOrganization,
+  sponsorshipInvitationsForStudent,
+  sponsorshipsForOrganization,
+} from "../sponsorship/sponsorship-service.js";
 import { joinWaitlist, waitlistEntriesForStudent, withdrawWaitlist } from "../waitlist/waitlist-service.js";
 import { notificationsForUser, openAdministratorTasks, resolveAdministratorTask, updateNotificationState, userForNotificationAccess } from "../notification/notification-service.js";
 import { createSimulatedClassroomProvider, enterClassroom, learningAccessClassSessionsForViewer, learningAccessLessonUnitsForViewer, lessonMaterialsForViewer, type ClassroomProvider } from "../learning-access/learning-access-service.js";
@@ -214,6 +224,9 @@ export function createApi(options: {
       SaveSessionRatingResult: { __resolveType: (value) => value.__typename! },
       RedactSessionRatingCommentResult: { __resolveType: (value) => value.__typename! },
       EnterClassroomResult: { __resolveType: (value) => value.__typename! },
+      InviteToSponsorshipResult: { __resolveType: (value) => value.__typename! },
+      AcceptSponsorshipInvitationResult: { __resolveType: (value) => value.__typename! },
+      DeclineSponsorshipInvitationResult: { __resolveType: (value) => value.__typename! },
       Query: {
         notifications: async (_parent, _arguments, context) => {
           const user = await authenticateNotificationUser(context);
@@ -248,6 +261,22 @@ export function createApi(options: {
         studentSubscription: async (_parent, _arguments, context) => {
           const student = await authenticateStudent(context, "subscription.read", "Subscription");
           return graphQLResult(await subscriptionForStudent(context.db, student.id));
+        },
+        studentSponsorship: async (_parent, _arguments, context) => {
+          const student = await authenticateStudent(context, "sponsorship.read", "Sponsorship");
+          return graphQLResult(await sponsorshipForStudent(context.db, student.id));
+        },
+        studentSponsorshipInvitations: async (_parent, _arguments, context) => {
+          const student = await authenticateStudent(context, "sponsorship-invitation.read", "SponsorshipInvitation");
+          return graphQLResult(await sponsorshipInvitationsForStudent(context.db, student));
+        },
+        organizationSponsorshipInvitations: async (_parent, _arguments, context) => {
+          const organizationManager = await authenticateOrganizationManager(context, "sponsorship-invitation.read");
+          return graphQLResult(await sponsorshipInvitationsForOrganization(context.db, organizationManager));
+        },
+        organizationSponsoredStudents: async (_parent, _arguments, context) => {
+          const organizationManager = await authenticateOrganizationManager(context, "sponsorship.read");
+          return graphQLResult(await sponsorshipsForOrganization(context.db, organizationManager));
         },
         discoverClassSessions: async (_parent, { input }, context) => {
           const student = await authenticateStudent(context, "class-session-discovery.read", "ClassSessionDiscovery");
@@ -576,6 +605,44 @@ export function createApi(options: {
             input.idempotencyKey,
             input,
             (transaction) => undoSubscriptionCancellation(transaction, student, context.correlationId),
+          ));
+        },
+        inviteToSponsorship: async (_parent, { input }, context) => {
+          const organizationManager = await authenticateOrganizationManager(context, "sponsorship-invitation.created");
+          return graphQLResult(await idempotentOrganizationManagerMutation(
+            context,
+            organizationManager,
+            "sponsorship-invitation.created",
+            input.idempotencyKey,
+            input,
+            (transaction) => inviteToSponsorship(transaction, organizationManager, input, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "SponsorshipInvitationError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+          ));
+        },
+        acceptSponsorshipInvitation: async (_parent, { input }, context) => {
+          const student = await authenticateStudent(context, "sponsorship-invitation.accepted", "SponsorshipInvitation");
+          return graphQLResult(await idempotentStudentMutation(
+            context,
+            student,
+            "sponsorship-invitation.accepted",
+            input.idempotencyKey,
+            input,
+            (transaction) => acceptSponsorshipInvitation(transaction, student, input, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "SponsorshipInvitationResponseError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "SponsorshipInvitation",
+          ));
+        },
+        declineSponsorshipInvitation: async (_parent, { input }, context) => {
+          const student = await authenticateStudent(context, "sponsorship-invitation.declined", "SponsorshipInvitation");
+          return graphQLResult(await idempotentStudentMutation(
+            context,
+            student,
+            "sponsorship-invitation.declined",
+            input.idempotencyKey,
+            input,
+            (transaction) => declineSponsorshipInvitation(transaction, student, input, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "SponsorshipInvitationResponseError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "SponsorshipInvitation",
           ));
         },
         setStudentPlacement: async (_parent, { input }, context) => {
@@ -1088,6 +1155,21 @@ export function createApi(options: {
     return result.teacher;
   }
 
+  async function authenticateOrganizationManager(context: ApiContext, operation: string, targetType?: string) {
+    const identity = await context.authenticator.authenticate(context.request);
+    if (!identity) {
+      throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+    }
+    const result = await organizationManagerFor(context.db, identity, context.correlationId, operation, targetType);
+    if (result.status === "UNKNOWN_USER") {
+      throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+    }
+    if (result.status === "ROLE_REQUIRED") {
+      throw createGraphQLError("The Organization Manager Role Assignment is required", { extensions: { code: "FORBIDDEN" } });
+    }
+    return result.organizationManager;
+  }
+
   async function authenticateStudent(context: ApiContext, operation: string, targetType?: string) {
     const identity = await context.authenticator.authenticate(context.request);
     if (!identity) {
@@ -1157,6 +1239,41 @@ export function createApi(options: {
       });
     } catch (error) {
       await context.db.insertInto("audit_entries").values({ actor_user_id: teacher.id, acting_role: "TEACHER", operation, target_type: targetType, target_id: teacher.id, outcome: "FAILED", reason_code: "UNEXPECTED_MUTATION_FAILURE", correlation_id: context.correlationId }).execute();
+      throw error;
+    }
+  }
+
+  async function idempotentOrganizationManagerMutation<T, C extends { __typename: string; code: string; message: string }>(
+    context: ApiContext,
+    organizationManager: { id: string },
+    operation: string,
+    idempotencyKey: string,
+    input: object,
+    perform: (transaction: Database) => Promise<T>,
+    idempotencyConflict: C,
+    targetType = "SponsorshipInvitation",
+  ): Promise<T | C> {
+    const inputFingerprint = JSON.stringify(input);
+    try {
+      return await context.db.transaction().execute(async (transaction) => {
+        await sql`select pg_advisory_xact_lock(hashtextextended(${`${organizationManager.id}:${operation}:${idempotencyKey}`}, 0))`.execute(transaction);
+        await transaction.deleteFrom("mutation_idempotency_records").where("actor_user_id", "=", organizationManager.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).where("created_at", "<=", sql<Date>`now() - interval '7 days'`).execute();
+        const existing = await transaction.selectFrom("mutation_idempotency_records").select(["input_fingerprint", "outcome"]).where("actor_user_id", "=", organizationManager.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).executeTakeFirst();
+        if (existing) {
+          if (existing.input_fingerprint !== inputFingerprint) {
+            await transaction.insertInto("audit_entries").values({ actor_user_id: organizationManager.id, acting_role: "ORGANIZATION_MANAGER", operation, target_type: "IdempotencyKey", target_id: organizationManager.id, outcome: "DENIED", reason_code: "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_INPUT", correlation_id: context.correlationId }).execute();
+            return idempotencyConflict;
+          }
+          const replaySucceeded = typeof existing.outcome === "object" && existing.outcome !== null && "__typename" in existing.outcome && typeof existing.outcome.__typename === "string" && existing.outcome.__typename.endsWith("Success");
+          await transaction.insertInto("audit_entries").values({ actor_user_id: organizationManager.id, acting_role: "ORGANIZATION_MANAGER", operation, target_type: "IdempotencyKey", target_id: organizationManager.id, outcome: replaySucceeded ? "SUCCEEDED" : "DENIED", reason_code: replaySucceeded ? "IDEMPOTENT_REPLAY_SUCCEEDED" : "IDEMPOTENT_REPLAY_DENIED", correlation_id: context.correlationId }).execute();
+          return existing.outcome as T;
+        }
+        const outcome = await perform(transaction as Database);
+        await transaction.insertInto("mutation_idempotency_records").values({ actor_user_id: organizationManager.id, operation, idempotency_key: idempotencyKey, input_fingerprint: inputFingerprint, outcome: JSON.stringify(outcome as Record<string, unknown>) }).execute();
+        return outcome;
+      });
+    } catch (error) {
+      await context.db.insertInto("audit_entries").values({ actor_user_id: organizationManager.id, acting_role: "ORGANIZATION_MANAGER", operation, target_type: targetType, target_id: organizationManager.id, outcome: "FAILED", reason_code: "UNEXPECTED_MUTATION_FAILURE", correlation_id: context.correlationId }).execute();
       throw error;
     }
   }

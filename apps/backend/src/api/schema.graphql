@@ -218,6 +218,24 @@ union ReviseLessonMaterialResult = ReviseLessonMaterialSuccess | InvalidLessonMa
 union GrantTeacherQualificationResult = ChangeTeacherQualificationSuccess | CurriculumConflict
 union RemoveTeacherQualificationResult = ChangeTeacherQualificationSuccess | TeacherQualificationRemovalBlocked | CurriculumConflict
 
+type Organization { id: ID!, name: String! }
+enum SponsorshipInvitationState { PENDING ACCEPTED DECLINED EXPIRED }
+type SponsorshipDisclosure { version: String!, benefitDescription: String!, organizationVisibleDataDescription: String!, excludedPrivateDataDescription: String! }
+type SponsorshipInvitation { id: ID!, organization: Organization!, studentUserId: ID!, studentDisplayName: String!, state: SponsorshipInvitationState!, disclosure: SponsorshipDisclosure!, expiresAt: String!, createdAt: String!, decidedAt: String }
+type Sponsorship { id: ID!, organization: Organization!, studentUserId: ID!, studentDisplayName: String!, acceptedAt: String!, nextAnniversaryAt: String! }
+input InviteToSponsorshipInput { idempotencyKey: ID!, studentUserId: ID! }
+type InviteToSponsorshipSuccess { invitation: SponsorshipInvitation! }
+enum SponsorshipInvitationErrorCode { STUDENT_NOT_FOUND STUDENT_ALREADY_SPONSORED INVITATION_ALREADY_PENDING IDEMPOTENCY_KEY_REUSED }
+type SponsorshipInvitationError { code: SponsorshipInvitationErrorCode!, message: String! }
+union InviteToSponsorshipResult = InviteToSponsorshipSuccess | SponsorshipInvitationError
+input SponsorshipInvitationResponseInput { idempotencyKey: ID!, invitationId: ID! }
+type AcceptSponsorshipInvitationSuccess { sponsorship: Sponsorship!, account: ClassCreditAccount! }
+type DeclineSponsorshipInvitationSuccess { invitation: SponsorshipInvitation! }
+enum SponsorshipInvitationResponseErrorCode { INVITATION_NOT_FOUND INVITATION_NOT_PENDING INVITATION_EXPIRED SPONSORSHIP_ALREADY_ACTIVE IDEMPOTENCY_KEY_REUSED }
+type SponsorshipInvitationResponseError { code: SponsorshipInvitationResponseErrorCode!, message: String! }
+union AcceptSponsorshipInvitationResult = AcceptSponsorshipInvitationSuccess | SponsorshipInvitationResponseError
+union DeclineSponsorshipInvitationResult = DeclineSponsorshipInvitationSuccess | SponsorshipInvitationResponseError
+
 type User {
   id: ID!
   displayName: String!
@@ -374,6 +392,10 @@ type Query {
   publicTeacherProfile(teacherUserId: ID!, locale: InterfaceLocale!): PublicTeacherProfile
   roleWorkspace(actingRole: UserRole!): RoleWorkspace!
   studentWorkspace: StudentWorkspace!
+  studentSponsorship: Sponsorship
+  studentSponsorshipInvitations: [SponsorshipInvitation!]!
+  organizationSponsorshipInvitations: [SponsorshipInvitation!]!
+  organizationSponsoredStudents: [Sponsorship!]!
 }
 
 type Mutation {
@@ -420,4 +442,7 @@ type Mutation {
   removeTeacherQualification(input: ChangeTeacherQualificationInput!): RemoveTeacherQualificationResult!
   rememberRoleWorkspacePlace(input: RememberRoleWorkspacePlaceInput!): RolePlace!
   saveUserPreferences(input: SaveUserPreferencesInput!): SaveUserPreferencesPayload!
+  inviteToSponsorship(input: InviteToSponsorshipInput!): InviteToSponsorshipResult!
+  acceptSponsorshipInvitation(input: SponsorshipInvitationResponseInput!): AcceptSponsorshipInvitationResult!
+  declineSponsorshipInvitation(input: SponsorshipInvitationResponseInput!): DeclineSponsorshipInvitationResult!
 }
