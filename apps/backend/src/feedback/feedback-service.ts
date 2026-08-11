@@ -2,18 +2,23 @@ import {
   FEEDBACK_SKILLS,
   SESSION_RATING_IMPROVEMENT_TAGS,
   SESSION_RATING_POSITIVE_TAGS,
-  feedbackWindowIsOpen,
   feedbackDeadline,
+  feedbackWindowIsOpen,
   sessionRatingDeadline,
   sessionRatingWindowIsOpen,
   type FeedbackSkill,
   type SessionRatingImprovementTag,
   type SessionRatingPositiveTag,
 } from "@marketplace/core";
+import { sql } from "kysely";
 
 import type { Database } from "../database/database.js";
-import { notifyLearningFeedbackSubmitted } from "./feedback-notifications.js";
-import { sql } from "kysely";
+import {
+  notifyLearningFeedbackRedactedStudent,
+  notifyLearningFeedbackRedactedTeacher,
+  notifyLearningFeedbackSubmitted,
+  notifySessionRatingCommentRedacted,
+} from "./feedback-notifications.js";
 
 type LearningFeedbackInput = {
   bookingId: string;
@@ -32,6 +37,9 @@ type SessionRatingInput = {
   comment?: string | null;
 };
 
+type RedactLearningFeedbackInput = { bookingId: string; reason: string };
+type RedactSessionRatingCommentInput = { bookingId: string; reason: string };
+
 const feedbackError = (code: string, message: string) => ({ __typename: "LearningFeedbackError" as const, code, message });
 const ratingError = (code: string, message: string) => ({ __typename: "SessionRatingError" as const, code, message });
 
@@ -43,7 +51,15 @@ function hasUniqueAllowedValues<T extends string>(values: readonly T[], allowed:
 
 function enumArray<T extends string>(value: T[] | string): T[] {
   if (Array.isArray(value)) return value;
-  return value === "{}" ? [] : value.slice(1, -1).split(",") as T[];
+  return value === "{}" ? [] : (value.slice(1, -1).split(",") as T[]);
+}
+
+function boundedPlainText(value: string | null | undefined) {
+  return value?.trim() ?? "";
+}
+
+function isValidRedactionReason(reason: string) {
+  return reason.length >= 10 && reason.length <= 500;
 }
 
 async function bookingFeedbackContext(db: Database, bookingId: string) {
@@ -73,77 +89,242 @@ async function bookingFeedbackContext(db: Database, bookingId: string) {
 
 function learningFeedbackProjection(feedback: {
   booking_id: string; observed_strengths: FeedbackSkill[]; suggested_focuses: FeedbackSkill[];
-  observations: string; next_practice: string; state: "DRAFT" | "SUBMITTED"; submitted_at: Date | null; updated_at: Date;
+  observations: string; next_practice: string; state: "DRAFT" | "SUBMITTED"; submitted_at: Date | null;
+  redacted_at: Date | null; redaction_reason: string | null; updated_at: Date;
 }) {
-  return { bookingId: feedback.booking_id, observedStrengths: enumArray(feedback.observed_strengths), suggestedFocuses: enumArray(feedback.suggested_focuses), observations: feedback.observations, nextPractice: feedback.next_practice, state: feedback.state, submittedAt: feedback.submitted_at?.toISOString() ?? null, updatedAt: feedback.updated_at.toISOString() };
+  return {
+    bookingId: feedback.booking_id,
+    observedStrengths: enumArray(feedback.observed_strengths),
+    suggestedFocuses: enumArray(feedback.suggested_focuses),
+    observations: feedback.observations,
+    nextPractice: feedback.next_practice,
+    state: feedback.state,
+    submittedAt: feedback.submitted_at?.toISOString() ?? null,
+    redactedAt: feedback.redacted_at?.toISOString() ?? null,
+    redactionReason: feedback.redaction_reason,
+    updatedAt: feedback.updated_at.toISOString(),
+  };
 }
 
 function sessionRatingProjection(rating: {
   booking_id: string; overall_rating: number; positive_tags: SessionRatingPositiveTag[];
-  improvement_tags: SessionRatingImprovementTag[]; comment: string; created_at: Date; updated_at: Date;
+  improvement_tags: SessionRatingImprovementTag[]; comment: string;
+  redacted_at: Date | null; redaction_reason: string | null; created_at: Date; updated_at: Date;
 }) {
-  return { bookingId: rating.booking_id, overallRating: rating.overall_rating, positiveTags: enumArray(rating.positive_tags), improvementTags: enumArray(rating.improvement_tags), comment: rating.comment, createdAt: rating.created_at.toISOString(), updatedAt: rating.updated_at.toISOString() };
+  return {
+    bookingId: rating.booking_id,
+    overallRating: rating.overall_rating,
+    positiveTags: enumArray(rating.positive_tags),
+    improvementTags: enumArray(rating.improvement_tags),
+    comment: rating.comment,
+    redactedAt: rating.redacted_at?.toISOString() ?? null,
+    redactionReason: rating.redaction_reason,
+    createdAt: rating.created_at.toISOString(),
+    updatedAt: rating.updated_at.toISOString(),
+  };
+}
+
+type FeedbackActor = { id: string; role: "TEACHER" | "PLATFORM_ADMINISTRATOR" };
+type RatingActor = { id: string; role: "STUDENT" | "PLATFORM_ADMINISTRATOR" };
+
+async function recordLearningFeedbackAudit(
+  db: Database,
+  actor: FeedbackActor,
+  operation: string,
+  targetId: string,
+  correlationId: string,
+  outcome: "SUCCEEDED" | "DENIED",
+  reasonCode: string,
+) {
+  await db.insertInto("audit_entries").values({
+    actor_user_id: actor.id,
+    acting_role: actor.role,
+    operation,
+    target_type: "LearningFeedback",
+    target_id: targetId,
+    outcome,
+    reason_code: reasonCode,
+    correlation_id: correlationId,
+  }).execute();
+}
+
+async function denyLearningFeedback(
+  db: Database,
+  actor: FeedbackActor,
+  operation: string,
+  targetId: string,
+  correlationId: string,
+  code: string,
+  message: string,
+) {
+  await recordLearningFeedbackAudit(db, actor, operation, targetId, correlationId, "DENIED", code);
+  return feedbackError(code, message);
+}
+
+async function recordSessionRatingAudit(
+  db: Database,
+  actor: RatingActor,
+  operation: string,
+  targetId: string,
+  correlationId: string,
+  outcome: "SUCCEEDED" | "DENIED",
+  reasonCode: string,
+) {
+  await db.insertInto("audit_entries").values({
+    actor_user_id: actor.id,
+    acting_role: actor.role,
+    operation,
+    target_type: "SessionRating",
+    target_id: targetId,
+    outcome,
+    reason_code: reasonCode,
+    correlation_id: correlationId,
+  }).execute();
+}
+
+async function denySessionRating(
+  db: Database,
+  actor: RatingActor,
+  operation: string,
+  targetId: string,
+  correlationId: string,
+  code: string,
+  message: string,
+) {
+  await recordSessionRatingAudit(db, actor, operation, targetId, correlationId, "DENIED", code);
+  return ratingError(code, message);
 }
 
 export async function saveLearningFeedback(db: Database, teacher: { id: string }, input: LearningFeedbackInput, correlationId: string, now: Date) {
   await sql`select pg_advisory_xact_lock(hashtextextended(${`learning-feedback:${input.bookingId}`}, 39))`.execute(db);
+  const actor: FeedbackActor = { id: teacher.id, role: "TEACHER" };
+  const operation = "learning-feedback.saved";
   const context = await bookingFeedbackContext(db, input.bookingId);
-  const audit = async (outcome: "SUCCEEDED" | "DENIED", reasonCode: string) => db.insertInto("audit_entries").values({ actor_user_id: teacher.id, acting_role: "TEACHER", operation: "learning-feedback.saved", target_type: "LearningFeedback", target_id: context?.booking_id ?? teacher.id, outcome, reason_code: reasonCode, correlation_id: correlationId }).execute();
   if (!context || context.teacher_user_id !== teacher.id || context.outcome !== "ATTENDED") {
-    await audit("DENIED", "LEARNING_FEEDBACK_NOT_FOUND");
-    return feedbackError("BOOKING_NOT_FOUND", "Choose an Attended Booking assigned to you.");
+    return denyLearningFeedback(db, actor, operation, context?.booking_id ?? teacher.id, correlationId, "BOOKING_NOT_FOUND", "Choose an Attended Booking assigned to you.");
   }
   if (!feedbackWindowIsOpen(now, context.eligibleFrom)) {
-    await audit("DENIED", "LEARNING_FEEDBACK_WINDOW_CLOSED");
-    return feedbackError("FEEDBACK_WINDOW_CLOSED", "The 48-hour Learning Feedback window has closed.");
+    return denyLearningFeedback(db, actor, operation, context.booking_id, correlationId, "FEEDBACK_WINDOW_CLOSED", "The 48-hour Learning Feedback window has closed.");
   }
-  const observations = input.observations?.trim() ?? "";
-  const nextPractice = input.nextPractice?.trim() ?? "";
+  const observations = boundedPlainText(input.observations);
+  const nextPractice = boundedPlainText(input.nextPractice);
   const existing = await db.selectFrom("learning_feedback").selectAll().where("booking_id", "=", input.bookingId).forUpdate().executeTakeFirst();
   const state = input.submit || existing?.state === "SUBMITTED" ? "SUBMITTED" as const : "DRAFT" as const;
   const validSkills = hasUniqueAllowedValues(input.observedStrengths, FEEDBACK_SKILLS, 3) && hasUniqueAllowedValues(input.suggestedFocuses, FEEDBACK_SKILLS, 3);
   const hasContent = input.observedStrengths.length > 0 || input.suggestedFocuses.length > 0 || observations.length > 0 || nextPractice.length > 0;
   if (!validSkills || observations.length > 500 || nextPractice.length > 500 || (state === "SUBMITTED" && !hasContent)) {
-    await audit("DENIED", "LEARNING_FEEDBACK_INVALID");
-    return feedbackError("INVALID_FEEDBACK", "Use up to three allowed skills per group and plain text fields of at most 500 characters; submitted feedback needs content.");
+    return denyLearningFeedback(db, actor, operation, context.booking_id, correlationId, "INVALID_FEEDBACK", "Use up to three allowed skills per group and plain text fields of at most 500 characters; submitted feedback needs content.");
   }
   const firstSubmission = state === "SUBMITTED" && existing?.state !== "SUBMITTED";
   const submittedAt = state === "SUBMITTED" ? existing?.submitted_at ?? now : null;
   const feedback = existing
-    ? await db.updateTable("learning_feedback").set({ observed_strengths: input.observedStrengths, suggested_focuses: input.suggestedFocuses, observations, next_practice: nextPractice, state, submitted_at: submittedAt, updated_at: now }).where("id", "=", existing.id).returningAll().executeTakeFirstOrThrow()
-    : await db.insertInto("learning_feedback").values({ booking_id: input.bookingId, teacher_user_id: teacher.id, observed_strengths: input.observedStrengths, suggested_focuses: input.suggestedFocuses, observations, next_practice: nextPractice, state, submitted_at: submittedAt, created_at: now, updated_at: now }).returningAll().executeTakeFirstOrThrow();
+    ? await db.updateTable("learning_feedback").set({
+      observed_strengths: input.observedStrengths, suggested_focuses: input.suggestedFocuses,
+      observations, next_practice: nextPractice, state, submitted_at: submittedAt,
+      redacted_at: null, redacted_by_user_id: null, redaction_reason: null,
+      updated_at: now,
+    }).where("id", "=", existing.id).returningAll().executeTakeFirstOrThrow()
+    : await db.insertInto("learning_feedback").values({
+      booking_id: input.bookingId, teacher_user_id: teacher.id,
+      observed_strengths: input.observedStrengths, suggested_focuses: input.suggestedFocuses,
+      observations, next_practice: nextPractice, state, submitted_at: submittedAt,
+      created_at: now, updated_at: now,
+    }).returningAll().executeTakeFirstOrThrow();
   if (firstSubmission) await notifyLearningFeedbackSubmitted(db, context.student_user_id, context.class_session_id, feedback.id);
-  await audit("SUCCEEDED", firstSubmission ? "LEARNING_FEEDBACK_SUBMITTED" : state === "DRAFT" ? "LEARNING_FEEDBACK_DRAFT_SAVED" : "LEARNING_FEEDBACK_REVISED");
+  await recordLearningFeedbackAudit(db, actor, operation, context.booking_id, correlationId, "SUCCEEDED", firstSubmission ? "LEARNING_FEEDBACK_SUBMITTED" : state === "DRAFT" ? "LEARNING_FEEDBACK_DRAFT_SAVED" : "LEARNING_FEEDBACK_REVISED");
   return { __typename: "SaveLearningFeedbackSuccess" as const, feedback: learningFeedbackProjection(feedback) };
+}
+
+export async function redactLearningFeedback(db: Database, administrator: { id: string }, input: RedactLearningFeedbackInput, correlationId: string, now: Date) {
+  await sql`select pg_advisory_xact_lock(hashtextextended(${`learning-feedback:${input.bookingId}`}, 39))`.execute(db);
+  const actor: FeedbackActor = { id: administrator.id, role: "PLATFORM_ADMINISTRATOR" };
+  const operation = "learning-feedback.redacted";
+  const context = await bookingFeedbackContext(db, input.bookingId);
+  const feedback = await db.selectFrom("learning_feedback").selectAll().where("booking_id", "=", input.bookingId).forUpdate().executeTakeFirst();
+  if (!context || !feedback) {
+    return denyLearningFeedback(db, actor, operation, context?.booking_id ?? administrator.id, correlationId, "FEEDBACK_NOT_FOUND", "Choose an Attended Booking with Learning Feedback.");
+  }
+  const reason = input.reason.trim();
+  if (!isValidRedactionReason(reason)) {
+    return denyLearningFeedback(db, actor, operation, feedback.id, correlationId, "INVALID_REASON", "Give a redaction reason from 10 through 500 characters.");
+  }
+  const stateAtRedaction = feedback.state;
+  const redacted = await db.updateTable("learning_feedback").set({
+    observations: "", next_practice: "",
+    redacted_at: now, redacted_by_user_id: administrator.id, redaction_reason: reason,
+    updated_at: now,
+  }).where("id", "=", feedback.id).returningAll().executeTakeFirstOrThrow();
+  await db.insertInto("learning_feedback_redactions").values({
+    learning_feedback_id: feedback.id, redacted_by_user_id: administrator.id,
+    feedback_state_at_redaction: stateAtRedaction, reason, redacted_at: now,
+  }).execute();
+  await notifyLearningFeedbackRedactedTeacher(db, context.teacher_user_id, context.class_session_id, feedback.id, reason, stateAtRedaction);
+  if (stateAtRedaction === "SUBMITTED") {
+    await notifyLearningFeedbackRedactedStudent(db, context.student_user_id, context.class_session_id, feedback.id, reason);
+  }
+  await recordLearningFeedbackAudit(db, actor, operation, feedback.id, correlationId, "SUCCEEDED", "LEARNING_FEEDBACK_REDACTED");
+  return { __typename: "RedactLearningFeedbackSuccess" as const, feedback: learningFeedbackProjection(redacted) };
 }
 
 export async function saveSessionRating(db: Database, student: { id: string }, input: SessionRatingInput, correlationId: string, now: Date) {
   await sql`select pg_advisory_xact_lock(hashtextextended(${`session-rating:${input.bookingId}`}, 39))`.execute(db);
+  const actor: RatingActor = { id: student.id, role: "STUDENT" };
+  const operation = "session-rating.saved";
   const context = await bookingFeedbackContext(db, input.bookingId);
-  const audit = async (outcome: "SUCCEEDED" | "DENIED", reasonCode: string) => db.insertInto("audit_entries").values({ actor_user_id: student.id, acting_role: "STUDENT", operation: "session-rating.saved", target_type: "SessionRating", target_id: context?.booking_id ?? student.id, outcome, reason_code: reasonCode, correlation_id: correlationId }).execute();
   if (!context || context.student_user_id !== student.id || context.outcome !== "ATTENDED") {
-    await audit("DENIED", "SESSION_RATING_NOT_FOUND");
-    return ratingError("BOOKING_NOT_FOUND", "Choose one of your Attended Bookings.");
+    return denySessionRating(db, actor, operation, context?.booking_id ?? student.id, correlationId, "BOOKING_NOT_FOUND", "Choose one of your Attended Bookings.");
   }
   if (!sessionRatingWindowIsOpen(now, context.eligibleFrom)) {
-    await audit("DENIED", "SESSION_RATING_WINDOW_CLOSED");
-    return ratingError("RATING_WINDOW_CLOSED", "The seven-day Session Rating window has closed.");
+    return denySessionRating(db, actor, operation, context.booking_id, correlationId, "RATING_WINDOW_CLOSED", "The seven-day Session Rating window has closed.");
   }
-  const comment = input.comment?.trim() ?? "";
+  const comment = boundedPlainText(input.comment);
   const valid = Number.isInteger(input.overallRating) && input.overallRating >= 1 && input.overallRating <= 5
     && hasUniqueAllowedValues(input.positiveTags, SESSION_RATING_POSITIVE_TAGS)
     && hasUniqueAllowedValues(input.improvementTags, SESSION_RATING_IMPROVEMENT_TAGS)
     && comment.length <= 500;
   if (!valid) {
-    await audit("DENIED", "SESSION_RATING_INVALID");
-    return ratingError("INVALID_RATING", "Choose an overall rating from one through five, predefined tags, and a comment of at most 500 characters.");
+    return denySessionRating(db, actor, operation, context.booking_id, correlationId, "INVALID_RATING", "Choose an overall rating from one through five, predefined tags, and a comment of at most 500 characters.");
   }
   const existing = await db.selectFrom("session_ratings").selectAll().where("booking_id", "=", input.bookingId).forUpdate().executeTakeFirst();
   const rating = existing
-    ? await db.updateTable("session_ratings").set({ overall_rating: input.overallRating, positive_tags: input.positiveTags, improvement_tags: input.improvementTags, comment, updated_at: now }).where("id", "=", existing.id).returningAll().executeTakeFirstOrThrow()
-    : await db.insertInto("session_ratings").values({ booking_id: input.bookingId, student_user_id: student.id, overall_rating: input.overallRating, positive_tags: input.positiveTags, improvement_tags: input.improvementTags, comment, created_at: now, updated_at: now }).returningAll().executeTakeFirstOrThrow();
-  await audit("SUCCEEDED", existing ? "SESSION_RATING_REVISED" : "SESSION_RATING_SUBMITTED");
+    ? await db.updateTable("session_ratings").set({
+      overall_rating: input.overallRating, positive_tags: input.positiveTags, improvement_tags: input.improvementTags, comment,
+      redacted_at: null, redacted_by_user_id: null, redaction_reason: null,
+      updated_at: now,
+    }).where("id", "=", existing.id).returningAll().executeTakeFirstOrThrow()
+    : await db.insertInto("session_ratings").values({
+      booking_id: input.bookingId, student_user_id: student.id,
+      overall_rating: input.overallRating, positive_tags: input.positiveTags, improvement_tags: input.improvementTags, comment,
+      created_at: now, updated_at: now,
+    }).returningAll().executeTakeFirstOrThrow();
+  await recordSessionRatingAudit(db, actor, operation, context.booking_id, correlationId, "SUCCEEDED", existing ? "SESSION_RATING_REVISED" : "SESSION_RATING_SUBMITTED");
   return { __typename: "SaveSessionRatingSuccess" as const, rating: sessionRatingProjection(rating) };
+}
+
+export async function redactSessionRatingComment(db: Database, administrator: { id: string }, input: RedactSessionRatingCommentInput, correlationId: string, now: Date) {
+  await sql`select pg_advisory_xact_lock(hashtextextended(${`session-rating:${input.bookingId}`}, 39))`.execute(db);
+  const actor: RatingActor = { id: administrator.id, role: "PLATFORM_ADMINISTRATOR" };
+  const operation = "session-rating.comment-redacted";
+  const context = await bookingFeedbackContext(db, input.bookingId);
+  const rating = await db.selectFrom("session_ratings").selectAll().where("booking_id", "=", input.bookingId).forUpdate().executeTakeFirst();
+  if (!context || !rating) {
+    return denySessionRating(db, actor, operation, context?.booking_id ?? administrator.id, correlationId, "RATING_NOT_FOUND", "Choose an Attended Booking with a Session Rating.");
+  }
+  const reason = input.reason.trim();
+  if (!isValidRedactionReason(reason)) {
+    return denySessionRating(db, actor, operation, rating.id, correlationId, "INVALID_REASON", "Give a redaction reason from 10 through 500 characters.");
+  }
+  const redacted = await db.updateTable("session_ratings").set({
+    comment: "",
+    redacted_at: now, redacted_by_user_id: administrator.id, redaction_reason: reason,
+    updated_at: now,
+  }).where("id", "=", rating.id).returningAll().executeTakeFirstOrThrow();
+  await db.insertInto("session_rating_redactions").values({
+    session_rating_id: rating.id, redacted_by_user_id: administrator.id, reason, redacted_at: now,
+  }).execute();
+  await notifySessionRatingCommentRedacted(db, context.student_user_id, context.class_session_id, rating.id, reason);
+  await recordSessionRatingAudit(db, actor, operation, rating.id, correlationId, "SUCCEEDED", "SESSION_RATING_COMMENT_REDACTED");
+  return { __typename: "RedactSessionRatingCommentSuccess" as const, rating: sessionRatingProjection(redacted) };
 }
 
 async function feedbackAndRatingForContexts(db: Database, contexts: Array<NonNullable<Awaited<ReturnType<typeof bookingFeedbackContext>>>>, includeDrafts: boolean) {
@@ -154,7 +335,17 @@ async function feedbackAndRatingForContexts(db: Database, contexts: Array<NonNul
   return contexts.map((context) => {
     const foundFeedback = feedback.find(({ booking_id: bookingId }) => bookingId === context.booking_id);
     const foundRating = ratings.find(({ booking_id: bookingId }) => bookingId === context.booking_id);
-    return { bookingId: context.booking_id, classSessionId: context.class_session_id, classSessionEndsAt: context.classSessionEndsAt.toISOString(), feedbackDeadline: feedbackDeadline(context.eligibleFrom).toISOString(), ratingDeadline: sessionRatingDeadline(context.eligibleFrom).toISOString(), studentDisplayName: context.student_display_name, teacherDisplayName: context.teacher_display_name, learningFeedback: foundFeedback && (includeDrafts || foundFeedback.state === "SUBMITTED") ? learningFeedbackProjection(foundFeedback) : null, sessionRating: foundRating ? sessionRatingProjection(foundRating) : null };
+    return {
+      bookingId: context.booking_id,
+      classSessionId: context.class_session_id,
+      classSessionEndsAt: context.classSessionEndsAt.toISOString(),
+      feedbackDeadline: feedbackDeadline(context.eligibleFrom).toISOString(),
+      ratingDeadline: sessionRatingDeadline(context.eligibleFrom).toISOString(),
+      studentDisplayName: context.student_display_name,
+      teacherDisplayName: context.teacher_display_name,
+      learningFeedback: foundFeedback && (includeDrafts || foundFeedback.state === "SUBMITTED") ? learningFeedbackProjection(foundFeedback) : null,
+      sessionRating: foundRating ? sessionRatingProjection(foundRating) : null,
+    };
   });
 }
 
@@ -175,5 +366,5 @@ export async function studentFeedbackAndRatings(db: Database, student: { id: str
 
 export async function administratorFeedbackAndRatings(db: Database) {
   const rows = await db.selectFrom("bookings").innerJoin("attendance_records", "attendance_records.booking_id", "bookings.id").select("bookings.id").where("attendance_records.outcome", "=", "ATTENDED").execute();
-  return feedbackAndRatingForContexts(db, await contextsForBookingRows(db, rows.map(({ id }) => id)), false);
+  return feedbackAndRatingForContexts(db, await contextsForBookingRows(db, rows.map(({ id }) => id)), true);
 }

@@ -96,8 +96,10 @@ export interface AttendanceRecordCorrectionsTable { id: Generated<string>; booki
 export type FeedbackSkill = "LISTENING" | "READING" | "SPOKEN_INTERACTION" | "SPOKEN_PRODUCTION" | "WRITING" | "VOCABULARY" | "GRAMMAR" | "PRONUNCIATION";
 export type SessionRatingPositiveTag = "CLEAR_EXPLANATIONS" | "SUPPORTIVE" | "ENGAGING" | "USEFUL_PRACTICE";
 export type SessionRatingImprovementTag = "PACING" | "AUDIO_QUALITY" | "MORE_CORRECTION" | "MORE_SPEAKING_TIME";
-export interface LearningFeedbackTable { id: Generated<string>; booking_id: string; teacher_user_id: string; observed_strengths: FeedbackSkill[]; suggested_focuses: FeedbackSkill[]; observations: string; next_practice: string; state: "DRAFT" | "SUBMITTED"; submitted_at: Date | null; created_at: Date; updated_at: Date }
-export interface SessionRatingsTable { id: Generated<string>; booking_id: string; student_user_id: string; overall_rating: number; positive_tags: SessionRatingPositiveTag[]; improvement_tags: SessionRatingImprovementTag[]; comment: string; created_at: Date; updated_at: Date }
+export interface LearningFeedbackTable { id: Generated<string>; booking_id: string; teacher_user_id: string; observed_strengths: FeedbackSkill[]; suggested_focuses: FeedbackSkill[]; observations: string; next_practice: string; state: "DRAFT" | "SUBMITTED"; submitted_at: Date | null; redacted_at: Date | null; redacted_by_user_id: string | null; redaction_reason: string | null; created_at: Date; updated_at: Date }
+export interface SessionRatingsTable { id: Generated<string>; booking_id: string; student_user_id: string; overall_rating: number; positive_tags: SessionRatingPositiveTag[]; improvement_tags: SessionRatingImprovementTag[]; comment: string; redacted_at: Date | null; redacted_by_user_id: string | null; redaction_reason: string | null; created_at: Date; updated_at: Date }
+export interface LearningFeedbackRedactionsTable { id: Generated<string>; learning_feedback_id: string; redacted_by_user_id: string; feedback_state_at_redaction: "DRAFT" | "SUBMITTED"; reason: string; redacted_at: Date }
+export interface SessionRatingRedactionsTable { id: Generated<string>; session_rating_id: string; redacted_by_user_id: string; reason: string; redacted_at: Date }
 
 export interface DatabaseSchema {
   users: UsersTable;
@@ -142,4 +144,6 @@ export interface DatabaseSchema {
   attendance_record_corrections: AttendanceRecordCorrectionsTable;
   learning_feedback: LearningFeedbackTable;
   session_ratings: SessionRatingsTable;
+  learning_feedback_redactions: LearningFeedbackRedactionsTable;
+  session_rating_redactions: SessionRatingRedactionsTable;
 }

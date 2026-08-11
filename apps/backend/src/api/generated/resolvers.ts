@@ -665,6 +665,8 @@ export type LearningFeedback = {
   nextPractice: Scalars['String']['output'];
   observations: Scalars['String']['output'];
   observedStrengths: Array<FeedbackSkill>;
+  redactedAt?: Maybe<Scalars['String']['output']>;
+  redactionReason?: Maybe<Scalars['String']['output']>;
   state: LearningFeedbackState;
   submittedAt?: Maybe<Scalars['String']['output']>;
   suggestedFocuses: Array<FeedbackSkill>;
@@ -679,9 +681,11 @@ export type LearningFeedbackError = {
 
 export enum LearningFeedbackErrorCode {
   BookingNotFound = 'BOOKING_NOT_FOUND',
+  FeedbackNotFound = 'FEEDBACK_NOT_FOUND',
   FeedbackWindowClosed = 'FEEDBACK_WINDOW_CLOSED',
   IdempotencyKeyReused = 'IDEMPOTENCY_KEY_REUSED',
-  InvalidFeedback = 'INVALID_FEEDBACK'
+  InvalidFeedback = 'INVALID_FEEDBACK',
+  InvalidReason = 'INVALID_REASON'
 }
 
 export enum LearningFeedbackState {
@@ -751,6 +755,8 @@ export type Mutation = {
   processSubscriptionProviderEvent: ProcessSubscriptionProviderEventResult;
   publishClassSession: PublishClassSessionResult;
   recordAttendance: RecordAttendanceResult;
+  redactLearningFeedback: RedactLearningFeedbackResult;
+  redactSessionRatingComment: RedactSessionRatingCommentResult;
   rememberRoleWorkspacePlace: RolePlace;
   removeAvailabilityException: RemoveAvailabilityExceptionResult;
   removeTeacherQualification: RemoveTeacherQualificationResult;
@@ -872,6 +878,16 @@ export type MutationPublishClassSessionArgs = {
 
 export type MutationRecordAttendanceArgs = {
   input: RecordAttendanceInput;
+};
+
+
+export type MutationRedactLearningFeedbackArgs = {
+  input: RedactLearningFeedbackInput;
+};
+
+
+export type MutationRedactSessionRatingCommentArgs = {
+  input: RedactSessionRatingCommentInput;
 };
 
 
@@ -1130,6 +1146,32 @@ export type RecordAttendanceSuccess = {
   classRoster: ClassRoster;
 };
 
+export type RedactLearningFeedbackInput = {
+  bookingId: Scalars['ID']['input'];
+  idempotencyKey: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+};
+
+export type RedactLearningFeedbackResult = LearningFeedbackError | RedactLearningFeedbackSuccess;
+
+export type RedactLearningFeedbackSuccess = {
+  __typename?: 'RedactLearningFeedbackSuccess';
+  feedback: LearningFeedback;
+};
+
+export type RedactSessionRatingCommentInput = {
+  bookingId: Scalars['ID']['input'];
+  idempotencyKey: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+};
+
+export type RedactSessionRatingCommentResult = RedactSessionRatingCommentSuccess | SessionRatingError;
+
+export type RedactSessionRatingCommentSuccess = {
+  __typename?: 'RedactSessionRatingCommentSuccess';
+  rating: SessionRating;
+};
+
 export type RememberRoleWorkspacePlaceInput = {
   actingRole: UserRole;
   place: WorkspacePlace;
@@ -1334,6 +1376,8 @@ export type SessionRating = {
   improvementTags: Array<SessionRatingImprovementTag>;
   overallRating: Scalars['Int']['output'];
   positiveTags: Array<SessionRatingPositiveTag>;
+  redactedAt?: Maybe<Scalars['String']['output']>;
+  redactionReason?: Maybe<Scalars['String']['output']>;
   updatedAt: Scalars['String']['output'];
 };
 
@@ -1347,6 +1391,8 @@ export enum SessionRatingErrorCode {
   BookingNotFound = 'BOOKING_NOT_FOUND',
   IdempotencyKeyReused = 'IDEMPOTENCY_KEY_REUSED',
   InvalidRating = 'INVALID_RATING',
+  InvalidReason = 'INVALID_REASON',
+  RatingNotFound = 'RATING_NOT_FOUND',
   RatingWindowClosed = 'RATING_WINDOW_CLOSED'
 }
 
@@ -1788,6 +1834,14 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( AttendanceError )
     | ( RecordAttendanceSuccess )
   ;
+  RedactLearningFeedbackResult:
+    | ( LearningFeedbackError )
+    | ( RedactLearningFeedbackSuccess )
+  ;
+  RedactSessionRatingCommentResult:
+    | ( RedactSessionRatingCommentSuccess )
+    | ( SessionRatingError )
+  ;
   RemoveAvailabilityExceptionResult:
     | ( RemoveAvailabilityExceptionSuccess )
     | ( TeacherAvailabilityValidationError )
@@ -1988,6 +2042,12 @@ export type ResolversTypes = {
   RecordAttendanceInput: RecordAttendanceInput;
   RecordAttendanceResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RecordAttendanceResult']>;
   RecordAttendanceSuccess: ResolverTypeWrapper<RecordAttendanceSuccess>;
+  RedactLearningFeedbackInput: RedactLearningFeedbackInput;
+  RedactLearningFeedbackResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RedactLearningFeedbackResult']>;
+  RedactLearningFeedbackSuccess: ResolverTypeWrapper<RedactLearningFeedbackSuccess>;
+  RedactSessionRatingCommentInput: RedactSessionRatingCommentInput;
+  RedactSessionRatingCommentResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RedactSessionRatingCommentResult']>;
+  RedactSessionRatingCommentSuccess: ResolverTypeWrapper<RedactSessionRatingCommentSuccess>;
   RememberRoleWorkspacePlaceInput: RememberRoleWorkspacePlaceInput;
   RemoveAvailabilityExceptionInput: RemoveAvailabilityExceptionInput;
   RemoveAvailabilityExceptionResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RemoveAvailabilityExceptionResult']>;
@@ -2179,6 +2239,12 @@ export type ResolversParentTypes = {
   RecordAttendanceInput: RecordAttendanceInput;
   RecordAttendanceResult: ResolversUnionTypes<ResolversParentTypes>['RecordAttendanceResult'];
   RecordAttendanceSuccess: RecordAttendanceSuccess;
+  RedactLearningFeedbackInput: RedactLearningFeedbackInput;
+  RedactLearningFeedbackResult: ResolversUnionTypes<ResolversParentTypes>['RedactLearningFeedbackResult'];
+  RedactLearningFeedbackSuccess: RedactLearningFeedbackSuccess;
+  RedactSessionRatingCommentInput: RedactSessionRatingCommentInput;
+  RedactSessionRatingCommentResult: ResolversUnionTypes<ResolversParentTypes>['RedactSessionRatingCommentResult'];
+  RedactSessionRatingCommentSuccess: RedactSessionRatingCommentSuccess;
   RememberRoleWorkspacePlaceInput: RememberRoleWorkspacePlaceInput;
   RemoveAvailabilityExceptionInput: RemoveAvailabilityExceptionInput;
   RemoveAvailabilityExceptionResult: ResolversUnionTypes<ResolversParentTypes>['RemoveAvailabilityExceptionResult'];
@@ -2665,6 +2731,8 @@ export type LearningFeedbackResolvers<ContextType = any, ParentType extends Reso
   nextPractice?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   observations?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   observedStrengths?: Resolver<Array<ResolversTypes['FeedbackSkill']>, ParentType, ContextType>;
+  redactedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  redactionReason?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   state?: Resolver<ResolversTypes['LearningFeedbackState'], ParentType, ContextType>;
   submittedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   suggestedFocuses?: Resolver<Array<ResolversTypes['FeedbackSkill']>, ParentType, ContextType>;
@@ -2720,6 +2788,8 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   processSubscriptionProviderEvent?: Resolver<ResolversTypes['ProcessSubscriptionProviderEventResult'], ParentType, ContextType, RequireFields<MutationProcessSubscriptionProviderEventArgs, 'input'>>;
   publishClassSession?: Resolver<ResolversTypes['PublishClassSessionResult'], ParentType, ContextType, RequireFields<MutationPublishClassSessionArgs, 'input'>>;
   recordAttendance?: Resolver<ResolversTypes['RecordAttendanceResult'], ParentType, ContextType, RequireFields<MutationRecordAttendanceArgs, 'input'>>;
+  redactLearningFeedback?: Resolver<ResolversTypes['RedactLearningFeedbackResult'], ParentType, ContextType, RequireFields<MutationRedactLearningFeedbackArgs, 'input'>>;
+  redactSessionRatingComment?: Resolver<ResolversTypes['RedactSessionRatingCommentResult'], ParentType, ContextType, RequireFields<MutationRedactSessionRatingCommentArgs, 'input'>>;
   rememberRoleWorkspacePlace?: Resolver<ResolversTypes['RolePlace'], ParentType, ContextType, RequireFields<MutationRememberRoleWorkspacePlaceArgs, 'input'>>;
   removeAvailabilityException?: Resolver<ResolversTypes['RemoveAvailabilityExceptionResult'], ParentType, ContextType, RequireFields<MutationRemoveAvailabilityExceptionArgs, 'input'>>;
   removeTeacherQualification?: Resolver<ResolversTypes['RemoveTeacherQualificationResult'], ParentType, ContextType, RequireFields<MutationRemoveTeacherQualificationArgs, 'input'>>;
@@ -2812,6 +2882,24 @@ export type RecordAttendanceResultResolvers<ContextType = any, ParentType extend
 
 export type RecordAttendanceSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['RecordAttendanceSuccess'] = ResolversParentTypes['RecordAttendanceSuccess']> = {
   classRoster?: Resolver<ResolversTypes['ClassRoster'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type RedactLearningFeedbackResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['RedactLearningFeedbackResult'] = ResolversParentTypes['RedactLearningFeedbackResult']> = {
+  __resolveType: TypeResolveFn<'LearningFeedbackError' | 'RedactLearningFeedbackSuccess', ParentType, ContextType>;
+};
+
+export type RedactLearningFeedbackSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['RedactLearningFeedbackSuccess'] = ResolversParentTypes['RedactLearningFeedbackSuccess']> = {
+  feedback?: Resolver<ResolversTypes['LearningFeedback'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type RedactSessionRatingCommentResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['RedactSessionRatingCommentResult'] = ResolversParentTypes['RedactSessionRatingCommentResult']> = {
+  __resolveType: TypeResolveFn<'RedactSessionRatingCommentSuccess' | 'SessionRatingError', ParentType, ContextType>;
+};
+
+export type RedactSessionRatingCommentSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['RedactSessionRatingCommentSuccess'] = ResolversParentTypes['RedactSessionRatingCommentSuccess']> = {
+  rating?: Resolver<ResolversTypes['SessionRating'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
@@ -2947,6 +3035,8 @@ export type SessionRatingResolvers<ContextType = any, ParentType extends Resolve
   improvementTags?: Resolver<Array<ResolversTypes['SessionRatingImprovementTag']>, ParentType, ContextType>;
   overallRating?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   positiveTags?: Resolver<Array<ResolversTypes['SessionRatingPositiveTag']>, ParentType, ContextType>;
+  redactedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  redactionReason?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   updatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
 };
 
@@ -3189,6 +3279,10 @@ export type Resolvers<ContextType = any> = {
   Query?: QueryResolvers<ContextType>;
   RecordAttendanceResult?: RecordAttendanceResultResolvers<ContextType>;
   RecordAttendanceSuccess?: RecordAttendanceSuccessResolvers<ContextType>;
+  RedactLearningFeedbackResult?: RedactLearningFeedbackResultResolvers<ContextType>;
+  RedactLearningFeedbackSuccess?: RedactLearningFeedbackSuccessResolvers<ContextType>;
+  RedactSessionRatingCommentResult?: RedactSessionRatingCommentResultResolvers<ContextType>;
+  RedactSessionRatingCommentSuccess?: RedactSessionRatingCommentSuccessResolvers<ContextType>;
   RemoveAvailabilityExceptionResult?: RemoveAvailabilityExceptionResultResolvers<ContextType>;
   RemoveAvailabilityExceptionSuccess?: RemoveAvailabilityExceptionSuccessResolvers<ContextType>;
   RemoveTeacherQualificationResult?: RemoveTeacherQualificationResultResolvers<ContextType>;
