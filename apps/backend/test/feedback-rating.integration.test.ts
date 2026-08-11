@@ -82,7 +82,7 @@ describe("Learning Feedback and Session Rating GraphQL API", () => {
     const beforeSubmission = await studentLearning();
     expect(beforeSubmission).toMatchObject({ data: { studentFeedbackAndRatings: [{ bookingId, learningFeedback: null }] } });
     const administratorBeforeSubmission = await graphql(`query Quality { administratorFeedbackAndRatings { bookingId learningFeedback { state observations } } }`, {}, randomUUID(), administratorSubject);
-    expect(administratorBeforeSubmission).toMatchObject({ data: { administratorFeedbackAndRatings: [{ bookingId, learningFeedback: null }] } });
+    expect(administratorBeforeSubmission).toMatchObject({ data: { administratorFeedbackAndRatings: [{ bookingId, learningFeedback: { state: "DRAFT", observations: "You told the story in a clear sequence." } }] } });
 
     currentNow = new Date("2026-08-10T12:30:00.000Z");
     const submitCorrelationId = `feedback-submit-${randomUUID()}`;
@@ -168,6 +168,80 @@ describe("Learning Feedback and Session Rating GraphQL API", () => {
     expect(await studentLearning()).toMatchObject({ data: { studentFeedbackAndRatings: [{ bookingId, learningFeedback: { state: "SUBMITTED" }, sessionRating: { overallRating: 5 } }] } });
     expect(await graphql(`query Work { teacherFeedbackWork { bookingId feedbackDeadline } }`, {}, randomUUID(), teacherSubject)).toMatchObject({ data: { teacherFeedbackWork: [{ bookingId, feedbackDeadline: "2026-08-22T12:00:00.000Z" }] } });
   });
+
+  it("lets a Platform Administrator redact submitted Learning Feedback and a Session Rating comment, notifying only the affected parties without reproducing removed text", async () => {
+    const feedbackCorrelationId = `feedback-redact-${randomUUID()}`;
+    const redactedFeedback = await graphql(redactLearningFeedbackMutation, { input: { idempotencyKey: randomUUID(), bookingId, reason: "This observation named a third-party student inappropriately." } }, feedbackCorrelationId, administratorSubject);
+    expect(redactedFeedback.errors).toBeUndefined();
+    expect(redactedFeedback).toMatchObject({ data: { redactLearningFeedback: { feedback: { bookingId, observations: "", nextPractice: "", redactionReason: "This observation named a third-party student inappropriately." } } } });
+
+    const ratingCorrelationId = `rating-redact-${randomUUID()}`;
+    const redactedRating = await graphql(redactSessionRatingCommentMutation, { input: { idempotencyKey: randomUUID(), bookingId, reason: "The comment disclosed another Student's private schedule." } }, ratingCorrelationId, administratorSubject);
+    expect(redactedRating.errors).toBeUndefined();
+    expect(redactedRating).toMatchObject({ data: { redactSessionRatingComment: { rating: { bookingId, comment: "", overallRating: 5, redactionReason: "The comment disclosed another Student's private schedule." } } } });
+
+    expect(await studentLearning()).toMatchObject({ data: { studentFeedbackAndRatings: [{ bookingId, learningFeedback: { state: "SUBMITTED", observations: "" }, sessionRating: { overallRating: 5 } }] } });
+    expect(await db.selectFrom("in_app_notifications").select("message_id").where("recipient_user_id", "=", teacherId).where("message_id", "=", "learning-feedback.redacted.teacher").execute()).toHaveLength(1);
+    expect(await db.selectFrom("in_app_notifications").select("message_id").where("recipient_user_id", "=", studentId).where("message_id", "=", "learning-feedback.redacted.student").execute()).toHaveLength(1);
+    expect(await db.selectFrom("in_app_notifications").select("message_id").where("recipient_user_id", "=", studentId).where("message_id", "=", "session-rating.comment-redacted.student").execute()).toHaveLength(1);
+    expect(await db.selectFrom("in_app_notifications").select("message_id").where("recipient_user_id", "=", teacherId).where("message_id", "like", "session-rating.%").execute()).toEqual([]);
+    expect(await db.selectFrom("audit_entries").select(["outcome", "reason_code"]).where("correlation_id", "=", feedbackCorrelationId).executeTakeFirstOrThrow()).toEqual({ outcome: "SUCCEEDED", reason_code: "LEARNING_FEEDBACK_REDACTED" });
+    expect(await db.selectFrom("audit_entries").select(["outcome", "reason_code"]).where("correlation_id", "=", ratingCorrelationId).executeTakeFirstOrThrow()).toEqual({ outcome: "SUCCEEDED", reason_code: "SESSION_RATING_COMMENT_REDACTED" });
+    expect(await db.selectFrom("learning_feedback_redactions").select(["feedback_state_at_redaction", "reason"]).where("redacted_by_user_id", "=", administratorId).executeTakeFirstOrThrow()).toEqual({ feedback_state_at_redaction: "SUBMITTED", reason: "This observation named a third-party student inappropriately." });
+    expect(await db.selectFrom("session_rating_redactions").select("reason").where("redacted_by_user_id", "=", administratorId).executeTakeFirstOrThrow()).toEqual({ reason: "The comment disclosed another Student's private schedule." });
+
+    currentNow = new Date("2026-08-20T14:00:00.000Z");
+    const revised = await graphql(`mutation Revise($input: SaveLearningFeedbackInput!) { saveLearningFeedback(input: $input) { ... on SaveLearningFeedbackSuccess { feedback { redactedAt redactionReason observations } } ... on LearningFeedbackError { code } } }`, { input: { idempotencyKey: randomUUID(), bookingId, observedStrengths: ["SPOKEN_PRODUCTION"], suggestedFocuses: ["PRONUNCIATION"], observations: "Replacement observations after the redaction.", nextPractice: "Practice the target sounds in three new sentences.", submit: true } }, randomUUID(), teacherSubject);
+    expect(revised).toMatchObject({ data: { saveLearningFeedback: { feedback: { redactedAt: null, redactionReason: null, observations: "Replacement observations after the redaction." } } } });
+  });
+
+  it("denies redaction with an invalid reason, denies non-administrators, and reports missing feedback or ratings", async () => {
+    const shortReasonResult = await graphql(redactSessionRatingCommentMutation, { input: { idempotencyKey: randomUUID(), bookingId, reason: "too short" } }, randomUUID(), administratorSubject);
+    expect(shortReasonResult).toMatchObject({ data: { redactSessionRatingComment: { code: "INVALID_REASON" } } });
+
+    const nonAdministratorCorrelationId = `redact-denied-${randomUUID()}`;
+    const nonAdministratorResult = await graphql(redactLearningFeedbackMutation, { input: { idempotencyKey: randomUUID(), bookingId, reason: "A reason a Teacher should never be able to submit." } }, nonAdministratorCorrelationId, teacherSubject);
+    expect(nonAdministratorResult.errors?.[0]?.extensions?.code).toBe("FORBIDDEN");
+
+    const untouchedBooking = await db.transaction().execute(async (transaction) => {
+      const session = await transaction.selectFrom("class_sessions").select("lesson_unit_id").where("id", "=", classSessionId).executeTakeFirstOrThrow();
+      const otherSession = await transaction.insertInto("class_sessions").values({ lesson_unit_id: session.lesson_unit_id, teacher_user_id: teacherId, starts_at: new Date("2026-08-25T10:00:00.000Z"), scheduling_time_zone: "America/Denver", seat_capacity: 5, occupied_seats: 1, state: "PUBLISHED" }).returning("id").executeTakeFirstOrThrow();
+      const otherBooking = await transaction.insertInto("bookings").values({ student_user_id: studentId, class_session_id: otherSession.id, teacher_user_id_at_booking: teacherId, state: "ACTIVE", terminal_reason: null, class_credit_refunded: false, late_cancellation_refund_until: null, booked_at: new Date("2026-08-20T12:00:00.000Z"), ended_at: null }).returning("id").executeTakeFirstOrThrow();
+      await transaction.insertInto("attendance_records").values({ booking_id: otherBooking.id, outcome: "ATTENDED", submitted_by_user_id: teacherId, submitted_at: new Date("2026-08-25T11:05:00.000Z"), updated_at: new Date("2026-08-25T11:05:00.000Z") }).execute();
+      return otherBooking.id;
+    });
+    const missingFeedback = await graphql(redactLearningFeedbackMutation, { input: { idempotencyKey: randomUUID(), bookingId: untouchedBooking, reason: "Nothing has been submitted for this Booking yet." } }, randomUUID(), administratorSubject);
+    expect(missingFeedback).toMatchObject({ data: { redactLearningFeedback: { code: "FEEDBACK_NOT_FOUND" } } });
+    const missingRating = await graphql(redactSessionRatingCommentMutation, { input: { idempotencyKey: randomUUID(), bookingId: untouchedBooking, reason: "Nothing has been submitted for this Booking yet." } }, randomUUID(), administratorSubject);
+    expect(missingRating).toMatchObject({ data: { redactSessionRatingComment: { code: "RATING_NOT_FOUND" } } });
+
+    const textOnlySubmission = await graphql(`mutation Save($input: SaveLearningFeedbackInput!) { saveLearningFeedback(input: $input) { ... on SaveLearningFeedbackSuccess { feedback { state } } ... on LearningFeedbackError { code } } }`, { input: { idempotencyKey: randomUUID(), bookingId: untouchedBooking, observedStrengths: [], suggestedFocuses: [], observations: "Text-only feedback with no skills selected.", nextPractice: "", submit: true } }, randomUUID(), teacherSubject);
+    expect(textOnlySubmission).toMatchObject({ data: { saveLearningFeedback: { feedback: { state: "SUBMITTED" } } } });
+    const textOnlyRedaction = await graphql(redactLearningFeedbackMutation, { input: { idempotencyKey: randomUUID(), bookingId: untouchedBooking, reason: "This text-only submission needed full redaction." } }, randomUUID(), administratorSubject);
+    expect(textOnlyRedaction).toMatchObject({ data: { redactLearningFeedback: { feedback: { observations: "", nextPractice: "" } } } });
+  });
+
+  it("redacts a private draft without notifying the Student", async () => {
+    currentNow = new Date("2026-08-26T13:00:00.000Z");
+    const draftBookingId = await db.transaction().execute(async (transaction) => {
+      const session = await transaction.selectFrom("class_sessions").select("lesson_unit_id").where("id", "=", classSessionId).executeTakeFirstOrThrow();
+      const draftSession = await transaction.insertInto("class_sessions").values({ lesson_unit_id: session.lesson_unit_id, teacher_user_id: teacherId, starts_at: new Date("2026-08-26T10:00:00.000Z"), scheduling_time_zone: "America/Denver", seat_capacity: 5, occupied_seats: 1, state: "PUBLISHED" }).returning("id").executeTakeFirstOrThrow();
+      const draftBooking = await transaction.insertInto("bookings").values({ student_user_id: studentId, class_session_id: draftSession.id, teacher_user_id_at_booking: teacherId, state: "ACTIVE", terminal_reason: null, class_credit_refunded: false, late_cancellation_refund_until: null, booked_at: new Date("2026-08-20T12:00:00.000Z"), ended_at: null }).returning("id").executeTakeFirstOrThrow();
+      await transaction.insertInto("attendance_records").values({ booking_id: draftBooking.id, outcome: "ATTENDED", submitted_by_user_id: teacherId, submitted_at: new Date("2026-08-26T11:05:00.000Z"), updated_at: new Date("2026-08-26T11:05:00.000Z") }).execute();
+      return draftBooking.id;
+    });
+    const draft = await graphql(`mutation Save($input: SaveLearningFeedbackInput!) { saveLearningFeedback(input: $input) { ... on SaveLearningFeedbackSuccess { feedback { state } } ... on LearningFeedbackError { code } } }`, { input: { idempotencyKey: randomUUID(), bookingId: draftBookingId, observedStrengths: [], suggestedFocuses: [], observations: "A private draft note about pacing.", nextPractice: "", submit: false } }, randomUUID(), teacherSubject);
+    expect(draft).toMatchObject({ data: { saveLearningFeedback: { feedback: { state: "DRAFT" } } } });
+
+    const redacted = await graphql(redactLearningFeedbackMutation, { input: { idempotencyKey: randomUUID(), bookingId: draftBookingId, reason: "The draft named a colleague inappropriately." } }, randomUUID(), administratorSubject);
+    expect(redacted).toMatchObject({ data: { redactLearningFeedback: { feedback: { observations: "" } } } });
+    const draftFeedback = await db.selectFrom("learning_feedback").select("id").where("booking_id", "=", draftBookingId).executeTakeFirstOrThrow();
+    expect(await db.selectFrom("in_app_notifications").select("message_id").where("source_reference", "=", `learning-feedback.redacted.teacher:${draftFeedback.id}`).execute()).toHaveLength(1);
+    expect(await db.selectFrom("in_app_notifications").select("message_id").where("source_reference", "=", `learning-feedback.redacted.student:${draftFeedback.id}`).execute()).toEqual([]);
+  });
+
+  const redactLearningFeedbackMutation = `mutation RedactLearningFeedback($input: RedactLearningFeedbackInput!) { redactLearningFeedback(input: $input) { ... on RedactLearningFeedbackSuccess { feedback { bookingId observations nextPractice redactedAt redactionReason } } ... on LearningFeedbackError { code message } } }`;
+  const redactSessionRatingCommentMutation = `mutation RedactSessionRatingComment($input: RedactSessionRatingCommentInput!) { redactSessionRatingComment(input: $input) { ... on RedactSessionRatingCommentSuccess { rating { bookingId comment overallRating redactedAt redactionReason } } ... on SessionRatingError { code message } } }`;
 
   async function studentLearning() {
     return graphql(`query StudentFeedbackAndRatings { studentFeedbackAndRatings { bookingId learningFeedback { state observations } sessionRating { overallRating } } }`, {}, randomUUID(), studentSubject);

@@ -71,21 +71,27 @@ union RecordAttendanceResult = RecordAttendanceSuccess | AttendanceError
 
 enum FeedbackSkill { LISTENING READING SPOKEN_INTERACTION SPOKEN_PRODUCTION WRITING VOCABULARY GRAMMAR PRONUNCIATION }
 enum LearningFeedbackState { DRAFT SUBMITTED }
-type LearningFeedback { bookingId: ID!, observedStrengths: [FeedbackSkill!]!, suggestedFocuses: [FeedbackSkill!]!, observations: String!, nextPractice: String!, state: LearningFeedbackState!, submittedAt: String, updatedAt: String! }
+type LearningFeedback { bookingId: ID!, observedStrengths: [FeedbackSkill!]!, suggestedFocuses: [FeedbackSkill!]!, observations: String!, nextPractice: String!, state: LearningFeedbackState!, submittedAt: String, redactedAt: String, redactionReason: String, updatedAt: String! }
 enum SessionRatingPositiveTag { CLEAR_EXPLANATIONS SUPPORTIVE ENGAGING USEFUL_PRACTICE }
 enum SessionRatingImprovementTag { PACING AUDIO_QUALITY MORE_CORRECTION MORE_SPEAKING_TIME }
-type SessionRating { bookingId: ID!, overallRating: Int!, positiveTags: [SessionRatingPositiveTag!]!, improvementTags: [SessionRatingImprovementTag!]!, comment: String!, createdAt: String!, updatedAt: String! }
+type SessionRating { bookingId: ID!, overallRating: Int!, positiveTags: [SessionRatingPositiveTag!]!, improvementTags: [SessionRatingImprovementTag!]!, comment: String!, redactedAt: String, redactionReason: String, createdAt: String!, updatedAt: String! }
 type FeedbackAndRatingItem { bookingId: ID!, classSessionId: ID!, classSessionEndsAt: String!, feedbackDeadline: String!, ratingDeadline: String!, studentDisplayName: String!, teacherDisplayName: String!, learningFeedback: LearningFeedback, sessionRating: SessionRating }
 input SaveLearningFeedbackInput { idempotencyKey: ID!, bookingId: ID!, observedStrengths: [FeedbackSkill!]!, suggestedFocuses: [FeedbackSkill!]!, observations: String, nextPractice: String, submit: Boolean! }
-enum LearningFeedbackErrorCode { BOOKING_NOT_FOUND FEEDBACK_WINDOW_CLOSED INVALID_FEEDBACK IDEMPOTENCY_KEY_REUSED }
+enum LearningFeedbackErrorCode { BOOKING_NOT_FOUND FEEDBACK_WINDOW_CLOSED INVALID_FEEDBACK FEEDBACK_NOT_FOUND INVALID_REASON IDEMPOTENCY_KEY_REUSED }
 type LearningFeedbackError { code: LearningFeedbackErrorCode!, message: String! }
 type SaveLearningFeedbackSuccess { feedback: LearningFeedback! }
 union SaveLearningFeedbackResult = SaveLearningFeedbackSuccess | LearningFeedbackError
+input RedactLearningFeedbackInput { idempotencyKey: ID!, bookingId: ID!, reason: String! }
+type RedactLearningFeedbackSuccess { feedback: LearningFeedback! }
+union RedactLearningFeedbackResult = RedactLearningFeedbackSuccess | LearningFeedbackError
 input SaveSessionRatingInput { idempotencyKey: ID!, bookingId: ID!, overallRating: Int!, positiveTags: [SessionRatingPositiveTag!]!, improvementTags: [SessionRatingImprovementTag!]!, comment: String }
-enum SessionRatingErrorCode { BOOKING_NOT_FOUND RATING_WINDOW_CLOSED INVALID_RATING IDEMPOTENCY_KEY_REUSED }
+enum SessionRatingErrorCode { BOOKING_NOT_FOUND RATING_WINDOW_CLOSED INVALID_RATING RATING_NOT_FOUND INVALID_REASON IDEMPOTENCY_KEY_REUSED }
 type SessionRatingError { code: SessionRatingErrorCode!, message: String! }
 type SaveSessionRatingSuccess { rating: SessionRating! }
 union SaveSessionRatingResult = SaveSessionRatingSuccess | SessionRatingError
+input RedactSessionRatingCommentInput { idempotencyKey: ID!, bookingId: ID!, reason: String! }
+type RedactSessionRatingCommentSuccess { rating: SessionRating! }
+union RedactSessionRatingCommentResult = RedactSessionRatingCommentSuccess | SessionRatingError
 type CourseProgressLearningHistory { lessonUnitId: ID!, title: String!, state: LessonUnitState!, earnedAt: String!, countsTowardProgress: Boolean! }
 type CourseProgress { courseId: ID!, title: String!, targetLanguage: String!, curriculumLevel: CurriculumLevel!, activeLessonUnitCount: Int!, completedActiveLessonUnitCount: Int!, percentage: Int!, learningHistory: [CourseProgressLearningHistory!]! }
 enum BookingState { ACTIVE ENDED }
@@ -414,7 +420,9 @@ type Mutation {
   recordAttendance(input: RecordAttendanceInput!): RecordAttendanceResult!
   administerAttendance(input: RecordAttendanceInput!): RecordAttendanceResult!
   saveLearningFeedback(input: SaveLearningFeedbackInput!): SaveLearningFeedbackResult!
+  redactLearningFeedback(input: RedactLearningFeedbackInput!): RedactLearningFeedbackResult!
   saveSessionRating(input: SaveSessionRatingInput!): SaveSessionRatingResult!
+  redactSessionRatingComment(input: RedactSessionRatingCommentInput!): RedactSessionRatingCommentResult!
   enterClassroom(input: EnterClassroomInput!): EnterClassroomResult!
   saveTeacherAvailabilityRange(input: SaveTeacherAvailabilityRangeInput!): SaveTeacherAvailabilityRangeResult!
   addAvailabilityException(input: AddAvailabilityExceptionInput!): AddAvailabilityExceptionResult!

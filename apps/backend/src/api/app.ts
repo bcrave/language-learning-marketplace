@@ -22,7 +22,7 @@ import { studentFor } from "../authorization/student-policy.js";
 import { recordAdministrationAudit } from "../audit/administration-audit.js";
 import { administerAttendance, classRosterForViewer, recordAttendance } from "../attendance/attendance-service.js";
 import { courseProgressForStudent } from "../attendance/course-progress-service.js";
-import { administratorFeedbackAndRatings, saveLearningFeedback, saveSessionRating, studentFeedbackAndRatings, teacherFeedbackWork } from "../feedback/feedback-service.js";
+import { administratorFeedbackAndRatings, redactLearningFeedback, redactSessionRatingComment, saveLearningFeedback, saveSessionRating, studentFeedbackAndRatings, teacherFeedbackWork } from "../feedback/feedback-service.js";
 import { createAuthenticator } from "../auth/create-authenticator.js";
 import { bookClassSession, bookingsForStudent, cancelBooking, rescheduleBooking } from "../booking/booking-service.js";
 import {
@@ -220,7 +220,9 @@ export function createApi(options: {
       ResolveAdministratorTaskResult: { __resolveType: (value) => value.__typename! },
       RecordAttendanceResult: { __resolveType: (value) => value.__typename! },
       SaveLearningFeedbackResult: { __resolveType: (value) => value.__typename! },
+      RedactLearningFeedbackResult: { __resolveType: (value) => value.__typename! },
       SaveSessionRatingResult: { __resolveType: (value) => value.__typename! },
+      RedactSessionRatingCommentResult: { __resolveType: (value) => value.__typename! },
       EnterClassroomResult: { __resolveType: (value) => value.__typename! },
       InviteToSponsorshipResult: { __resolveType: (value) => value.__typename! },
       AcceptSponsorshipInvitationResult: { __resolveType: (value) => value.__typename! },
@@ -369,7 +371,7 @@ export function createApi(options: {
           return graphQLResult(await studentFeedbackAndRatings(context.db, student));
         },
         administratorFeedbackAndRatings: async (_parent, _arguments, context) => {
-          await authenticateAdministrator(context, "learning-feedback-and-session-rating.read", "SessionRating");
+          await authenticateAdministrator(context, "learning-feedback-and-session-rating.read", "LearningFeedback");
           return graphQLResult(await administratorFeedbackAndRatings(context.db));
         },
         teacherAbsenceRequests: async (_parent, _arguments, context) => {
@@ -835,6 +837,19 @@ export function createApi(options: {
             "LearningFeedback",
           ));
         },
+        redactLearningFeedback: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "learning-feedback.redacted", "LearningFeedback");
+          return graphQLResult(await idempotentAdministrationMutation(
+            context,
+            administrator,
+            "learning-feedback.redacted",
+            input.idempotencyKey,
+            input,
+            (transaction) => redactLearningFeedback(transaction, administrator, input, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "LearningFeedbackError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "LearningFeedback",
+          ));
+        },
         saveSessionRating: async (_parent, { input }, context) => {
           const student = await authenticateStudent(context, "session-rating.saved", "SessionRating");
           return graphQLResult(await idempotentStudentMutation(
@@ -844,6 +859,19 @@ export function createApi(options: {
             input.idempotencyKey,
             input,
             (transaction) => saveSessionRating(transaction, student, input, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "SessionRatingError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "SessionRating",
+          ));
+        },
+        redactSessionRatingComment: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "session-rating.comment-redacted", "SessionRating");
+          return graphQLResult(await idempotentAdministrationMutation(
+            context,
+            administrator,
+            "session-rating.comment-redacted",
+            input.idempotencyKey,
+            input,
+            (transaction) => redactSessionRatingComment(transaction, administrator, input, context.correlationId, options.now?.() ?? new Date()),
             { __typename: "SessionRatingError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
             "SessionRating",
           ));
