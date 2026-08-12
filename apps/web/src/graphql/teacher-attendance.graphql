@@ -5,7 +5,7 @@ query TeacherAttendanceSessions {
 query ClassRoster($classSessionId: ID!) {
   classRoster(classSessionId: $classSessionId, actingRole: TEACHER) {
     classSession { id lessonUnitId teacherUserId startsAt endsAt schedulingTimeZone seatCapacity occupiedSeats state cancellationReason }
-    students { bookingId studentUserId displayName placement { targetLanguage curriculumLevel } attendance { outcome submittedAt } }
+    students { bookingId studentUserId displayName placement { targetLanguage curriculumLevel } attendance { outcome submittedAt correctedAt correctionCount } }
   }
 }
 
@@ -15,7 +15,7 @@ mutation RecordAttendance($input: RecordAttendanceInput!) {
     ... on RecordAttendanceSuccess {
       classRoster {
         classSession { id lessonUnitId teacherUserId startsAt endsAt schedulingTimeZone seatCapacity occupiedSeats state cancellationReason }
-        students { bookingId studentUserId displayName placement { targetLanguage curriculumLevel } attendance { outcome submittedAt } }
+        students { bookingId studentUserId displayName placement { targetLanguage curriculumLevel } attendance { outcome submittedAt correctedAt correctionCount } }
       }
     }
     ... on AttendanceError { code message }

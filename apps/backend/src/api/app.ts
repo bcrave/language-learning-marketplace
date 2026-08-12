@@ -21,6 +21,7 @@ import { organizationManagerFor } from "../authorization/organization-manager-po
 import { studentFor } from "../authorization/student-policy.js";
 import { recordAdministrationAudit } from "../audit/administration-audit.js";
 import { administerAttendance, classRosterForViewer, recordAttendance } from "../attendance/attendance-service.js";
+import { administrationAttendanceReviewRequests, decideAttendanceReview, requestAttendanceReview, studentAttendanceRecords } from "../attendance/attendance-review-service.js";
 import { courseProgressForStudent } from "../attendance/course-progress-service.js";
 import { administratorFeedbackAndRatings, redactLearningFeedback, redactSessionRatingComment, saveLearningFeedback, saveSessionRating, studentFeedbackAndRatings, teacherFeedbackWork } from "../feedback/feedback-service.js";
 import { createAuthenticator } from "../auth/create-authenticator.js";
@@ -219,6 +220,8 @@ export function createApi(options: {
       WithdrawWaitlistResult: { __resolveType: (value) => value.__typename! },
       ResolveAdministratorTaskResult: { __resolveType: (value) => value.__typename! },
       RecordAttendanceResult: { __resolveType: (value) => value.__typename! },
+      RequestAttendanceReviewResult: { __resolveType: (value) => value.__typename! },
+      DecideAttendanceReviewResult: { __resolveType: (value) => value.__typename! },
       SaveLearningFeedbackResult: { __resolveType: (value) => value.__typename! },
       RedactLearningFeedbackResult: { __resolveType: (value) => value.__typename! },
       SaveSessionRatingResult: { __resolveType: (value) => value.__typename! },
@@ -353,6 +356,14 @@ export function createApi(options: {
           if (result.status === "UNKNOWN_USER") throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
           if (result.status === "NOT_FOUND") throw createGraphQLError("The Class Roster was not found", { extensions: { code: "NOT_FOUND" } });
           return graphQLResult(result.roster);
+        },
+        studentAttendanceRecords: async (_parent, _arguments, context) => {
+          const student = await authenticateStudent(context, "attendance-record.read", "AttendanceRecord");
+          return graphQLResult(await studentAttendanceRecords(context.db, student, options.now?.() ?? new Date()));
+        },
+        administrationAttendanceReviewRequests: async (_parent, _arguments, context) => {
+          await authenticateAdministrator(context, "attendance-review.read", "AttendanceReviewRequest");
+          return graphQLResult(await administrationAttendanceReviewRequests(context.db));
         },
         teacherClassSessions: async (_parent, _arguments, context) => {
           const teacher = await authenticateTeacher(context, "teacher-class-sessions.read");
@@ -822,6 +833,32 @@ export function createApi(options: {
             (transaction) => administerAttendance(transaction, administrator, input, context.correlationId, options.now?.() ?? new Date()),
             { __typename: "AttendanceError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
             "AttendanceRecord",
+          ));
+        },
+        requestAttendanceReview: async (_parent, { input }, context) => {
+          const student = await authenticateStudent(context, "attendance-review.created", "AttendanceReviewRequest");
+          return graphQLResult(await idempotentStudentMutation(
+            context,
+            student,
+            "attendance-review.created",
+            input.idempotencyKey,
+            input,
+            (transaction) => requestAttendanceReview(transaction, student, input, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "AttendanceReviewError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "AttendanceReviewRequest",
+          ));
+        },
+        decideAttendanceReview: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "attendance-review.resolved", "AttendanceReviewRequest");
+          return graphQLResult(await idempotentAdministrationMutation(
+            context,
+            administrator,
+            "attendance-review.resolved",
+            input.idempotencyKey,
+            input,
+            (transaction) => decideAttendanceReview(transaction, administrator, input, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "AttendanceReviewError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "AttendanceReviewRequest",
           ));
         },
         saveLearningFeedback: async (_parent, { input }, context) => {

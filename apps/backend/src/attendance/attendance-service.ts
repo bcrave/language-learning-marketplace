@@ -1,9 +1,9 @@
-import { establishesLessonUnitCompletion, type UserIdentity, type UserRole } from "@marketplace/core";
+import type { UserIdentity, UserRole } from "@marketplace/core";
 
 import type { Database } from "../database/database.js";
 import { classSessionProjection } from "../class-session/class-session-service.js";
-import { sql } from "kysely";
 
+import { attendanceCorrectionSummaries, classSessionEndsAt, lockLessonUnitCompletion, reconcileLessonUnitCompletion } from "./attendance-reconciliation.js";
 import { notifyAttendanceCorrected, notifyAttendancePublished, notifyTeacherAttendanceCorrected } from "./attendance-notifications.js";
 
 export type RosterAccessResult =
@@ -90,21 +90,31 @@ export async function loadClassRoster(db: Database, classSessionId: string) {
     .orderBy("users.display_name")
     .orderBy("bookings.id")
     .execute();
+  const corrections = await attendanceCorrectionSummaries(db, students.map(({ booking_id: bookingId }) => bookingId));
   return {
     classSession: classSessionProjection(session),
-    students: students.map((student) => ({
-      bookingId: student.booking_id,
-      studentUserId: student.student_user_id,
-      displayName: student.display_name,
-      placement: student.target_language && student.curriculum_level
-        ? { targetLanguage: student.target_language, curriculumLevel: student.curriculum_level }
-        : null,
-      attendance: student.outcome
-        ? { outcome: student.outcome, submittedAt: student.submitted_at!.toISOString() }
-        : null,
-    })),
+    students: students.map((student) => {
+      const correction = corrections.get(student.booking_id);
+      return {
+        bookingId: student.booking_id,
+        studentUserId: student.student_user_id,
+        displayName: student.display_name,
+        placement: student.target_language && student.curriculum_level
+          ? { targetLanguage: student.target_language, curriculumLevel: student.curriculum_level }
+          : null,
+        attendance: student.outcome
+          ? {
+            outcome: student.outcome,
+            submittedAt: student.submitted_at!.toISOString(),
+            correctedAt: correction?.correctedAt?.toISOString() ?? null,
+            correctionCount: correction?.correctionCount ?? 0,
+          }
+          : null,
+      };
+    }),
   };
 }
+
 
 type AttendanceInput = {
   classSessionId: string;
@@ -151,7 +161,7 @@ async function recordAttendanceAs(
     .where("id", "=", input.classSessionId)
     .forUpdate()
     .executeTakeFirst();
-  const endsAt = session ? new Date(session.starts_at.getTime() + 60 * 60_000) : null;
+  const endsAt = session ? classSessionEndsAt(session.starts_at) : null;
   const recordAudit = async (outcome: "SUCCEEDED" | "DENIED", reasonCode: string) => {
     await transaction.insertInto("audit_entries").values({ actor_user_id: actor.id, acting_role: actor.actingRole, operation: actor.actingRole === "TEACHER" ? "attendance.recorded" : "attendance.administered", target_type: "ClassSession", target_id: session?.id ?? actor.id, outcome, reason_code: reasonCode, correlation_id: correlationId }).execute();
   };
@@ -174,7 +184,7 @@ async function recordAttendanceAs(
     .orderBy("id")
     .execute();
   for (const studentUserId of [...new Set(preliminaryBookings.map(({ student_user_id: studentUserId }) => studentUserId))].sort()) {
-    await sql`select pg_advisory_xact_lock(hashtextextended(${`${studentUserId}:${session.lesson_unit_id}`}, 37))`.execute(transaction);
+    await lockLessonUnitCompletion(transaction, studentUserId, session.lesson_unit_id);
   }
   const bookings = await transaction.selectFrom("bookings")
     .select(["id", "student_user_id"])
@@ -224,24 +234,14 @@ async function recordAttendanceAs(
       await transaction.insertInto("attendance_records").values({ booking_id: record.bookingId, outcome: record.outcome, submitted_by_user_id: actor.id, submitted_at: now, updated_at: now }).execute();
       await notifyAttendancePublished(transaction, booking.student_user_id, input.classSessionId, record.bookingId, record.outcome, now);
     }
-    if (establishesLessonUnitCompletion([record.outcome])) {
-      await transaction.insertInto("lesson_unit_completions").values({ student_user_id: booking.student_user_id, lesson_unit_id: session.lesson_unit_id, established_by_booking_id: booking.id, earned_at: endsAt! }).onConflict((conflict) => conflict.columns(["student_user_id", "lesson_unit_id"]).doNothing()).execute();
-    } else if (current?.outcome === "ATTENDED") {
-      const otherAttended = await transaction.selectFrom("attendance_records")
-        .innerJoin("bookings", "bookings.id", "attendance_records.booking_id")
-        .innerJoin("class_sessions", "class_sessions.id", "bookings.class_session_id")
-        .select(["bookings.id as booking_id", "class_sessions.starts_at"])
-        .where("bookings.student_user_id", "=", booking.student_user_id)
-        .where("class_sessions.lesson_unit_id", "=", session.lesson_unit_id)
-        .where("attendance_records.outcome", "=", "ATTENDED")
-        .where("bookings.id", "!=", booking.id)
-        .executeTakeFirst();
-      if (!otherAttended) {
-        await transaction.deleteFrom("lesson_unit_completions").where("student_user_id", "=", booking.student_user_id).where("lesson_unit_id", "=", session.lesson_unit_id).execute();
-      } else {
-        await transaction.updateTable("lesson_unit_completions").set({ established_by_booking_id: otherAttended.booking_id, earned_at: new Date(otherAttended.starts_at.getTime() + 60 * 60_000) }).where("student_user_id", "=", booking.student_user_id).where("lesson_unit_id", "=", session.lesson_unit_id).execute();
-      }
-    }
+    await reconcileLessonUnitCompletion(transaction, {
+      studentUserId: booking.student_user_id,
+      lessonUnitId: session.lesson_unit_id,
+      bookingId: booking.id,
+      priorOutcome: current?.outcome ?? null,
+      outcome: record.outcome,
+      earnedAt: endsAt!,
+    });
   }
   await recordAudit("SUCCEEDED", existing.length === 0 ? "ATTENDANCE_PUBLISHED" : correctionCount > 0 ? "ATTENDANCE_CORRECTED" : "ATTENDANCE_UNCHANGED");
   return { __typename: "RecordAttendanceSuccess" as const, classRoster: await loadClassRoster(transaction, input.classSessionId) };

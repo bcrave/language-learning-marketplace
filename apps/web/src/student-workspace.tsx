@@ -38,6 +38,7 @@ import { TeacherAttendancePanel } from "./teacher-attendance.js";
 import { LearningAccessPanel } from "./learning-access.js";
 import { AdministratorQualityPanel, StudentFeedbackRatingsPanel, TeacherFeedbackPanel } from "./feedback-rating.js";
 import { OrganizationSponsorshipPanel, StudentSponsorshipPanel } from "./sponsorship.js";
+import { AdministratorAttendanceReviewPanel, StudentAttendanceReviewPanel } from "./attendance-review.js";
 
 const graphQLInterfaceLocales: Record<InterfaceLocale, GraphQLInterfaceLocale> = {
   en: "EN",
@@ -411,6 +412,7 @@ function WorkspaceContent({
         {currentPlace === "ADMINISTRATION_OPERATIONS" && (
           <>
             <AdministratorTaskQueue />
+            <AdministratorAttendanceReviewPanel />
             <AdministratorQualityPanel />
             <AdminClassCredits />
             <AdminClassSessions locale={locale} />
@@ -420,6 +422,7 @@ function WorkspaceContent({
         {currentPlace === "STUDENT_LEARNING" && <>
           <LearningAccessPanel actingRole="STUDENT" />
           <CourseProgressPanel />
+          <StudentAttendanceReviewPanel />
           <StudentFeedbackRatingsPanel />
           <StudentSubscription />
           <StudentClassCredits />

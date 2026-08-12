@@ -35,6 +35,23 @@ export function establishesLessonUnitCompletion(outcomes: readonly AttendanceOut
   return outcomes.reduce((attended, outcome) => attended || outcome === "ATTENDED", false);
 }
 
+export type AttendanceReviewDecision = "UPHOLD" | "CORRECT";
+
+const ATTENDANCE_REVIEW_WINDOW_MILLISECONDS = 7 * 24 * 60 * 60_000;
+
+export function attendanceReviewDeadline(publishedAt: Date) {
+  return new Date(publishedAt.getTime() + ATTENDANCE_REVIEW_WINDOW_MILLISECONDS);
+}
+
+export function attendanceReviewWindowIsOpen(now: Date, publishedAt: Date) {
+  return now <= attendanceReviewDeadline(publishedAt);
+}
+
+export function decidedAttendanceOutcome(decision: AttendanceReviewDecision, effectiveOutcome: AttendanceOutcome): AttendanceOutcome {
+  if (decision === "UPHOLD") return effectiveOutcome;
+  return effectiveOutcome === "ATTENDED" ? "NO_SHOW" : "ATTENDED";
+}
+
 const BOOKING_DEADLINE_MILLISECONDS = 30 * 60_000;
 const REFUND_DEADLINE_MILLISECONDS = 24 * 60 * 60_000;
 const WAITLIST_DEADLINE_MILLISECONDS = 2 * 60 * 60_000;
@@ -472,6 +489,40 @@ export const interfaceMessages = {
     "learning-feedback.redacted.teacher": "A Platform Administrator redacted your {state, select, DRAFT {draft} other {submitted}} Learning Feedback for Class Session {classSessionId}: {reason}",
     "learning-feedback.redacted.student": "Learning Feedback for Class Session {classSessionId} was redacted by a Platform Administrator: {reason}",
     "session-rating.comment-redacted.student": "Your Session Rating comment for Class Session {classSessionId} was redacted by a Platform Administrator: {reason}",
+    "attendance-review.created.student": "We received your Attendance Review Request for Class Session {classSessionId}. The recorded outcome stays in force until a Platform Administrator decides.",
+    "attendance-review.created.administrator": "A Student requested review of Attendance for Class Session {classSessionId}. Open the review work item at {reviewLink}.",
+    "attendance-review.resolved.student": "Your Attendance Review Request for Class Session {classSessionId} was {state, select, CORRECTED {corrected} other {upheld}}. The effective outcome is {outcome, select, ATTENDED {Attended} other {No-show}}. {rationale} {completionChange, select, EARNED {Lesson Unit Completion and Lesson Material access were established.} REMOVED {Lesson Unit Completion and Lesson Material access were removed.} other {Lesson Unit Completion and Lesson Material access are unchanged.}} {windowChange, select, OPENED {The Learning Feedback and Session Rating windows reopen from this decision.} HIDDEN {Related Learning Feedback and Session Rating records are preserved but hidden.} other {The Learning Feedback and Session Rating windows are unchanged.}} No Class Credit was refunded automatically.",
+    "attendance-review.upheld.teacher": "An Attendance Review Request for Class Session {classSessionId} was upheld. The recorded outcome stands.",
+    "attendance-review.corrected.teacher": "Attendance for Class Session {classSessionId} was corrected to {outcome, select, ATTENDED {Attended} other {No-show}} by a Platform Administrator review.",
+    "attendanceReview.title": "Attendance and reviews",
+    "attendanceReview.loading": "Loading Attendance records…",
+    "attendanceReview.loadError": "We couldn't load your Attendance records. Try again.",
+    "attendanceReview.empty": "No Attendance has been published for your Bookings yet.",
+    "attendanceReview.outcome": "Attendance: {outcome, select, ATTENDED {Attended} other {No-show}}",
+    "attendanceReview.published": "Published {publishedAt}.",
+    "attendanceReview.corrected": "Corrected {correctedAt} after {correctionCount, plural, one {one correction} other {# corrections}}.",
+    "attendanceReview.deadline": "Request a review by {deadline}.",
+    "attendanceReview.request": "Request Attendance review",
+    "attendanceReview.explanation": "Explanation (optional)",
+    "attendanceReview.submit": "Submit Attendance Review Request",
+    "attendanceReview.submitted": "Attendance Review Request submitted.",
+    "attendanceReview.error": "We couldn't submit this Attendance Review Request. Review the deadline and try again.",
+    "attendanceReview.closed": "The Attendance Review Request window has closed.",
+    "attendanceReview.state": "Review: {state, select, PENDING {Awaiting a decision} UPHELD {Upheld} other {Corrected}}",
+    "attendanceReview.rationale": "Platform Administrator rationale: {rationale}",
+    "attendanceReview.creditNotice": "A correction does not automatically refund a Class Credit.",
+    "attendanceReviewQueue.title": "Attendance Review Requests",
+    "attendanceReviewQueue.loading": "Loading Attendance Review Requests…",
+    "attendanceReviewQueue.error": "We couldn't load Attendance Review Requests. Try again.",
+    "attendanceReviewQueue.empty": "There are no Attendance Review Requests.",
+    "attendanceReviewQueue.summary": "{studentDisplayName}: effective outcome {outcome, select, ATTENDED {Attended} other {No-show}}",
+    "attendanceReviewQueue.explanation": "Student explanation: {explanation}",
+    "attendanceReviewQueue.rationale": "Student-visible rationale",
+    "attendanceReviewQueue.note": "Private administrator note (optional)",
+    "attendanceReviewQueue.uphold": "Uphold the recorded outcome",
+    "attendanceReviewQueue.correct": "Correct the recorded outcome",
+    "attendanceReviewQueue.decided": "Decision recorded.",
+    "attendanceReviewQueue.decideError": "We couldn't record this decision. Give a Student-visible rationale from 10 through 500 characters.",
     "progress.loading": "Loading Course Progress…",
     "progress.loadError": "We couldn't load Course Progress. Try again.",
     "progress.title": "Course Progress",
@@ -1021,6 +1072,40 @@ export const interfaceMessages = {
     "learning-feedback.redacted.teacher": "Un administrador de la plataforma redactó tus comentarios de aprendizaje {state, select, DRAFT {en borrador} other {enviados}} para la sesión de clase {classSessionId}: {reason}",
     "learning-feedback.redacted.student": "Los comentarios de aprendizaje para la sesión de clase {classSessionId} fueron redactados por un administrador de la plataforma: {reason}",
     "session-rating.comment-redacted.student": "Tu comentario de valoración de sesión para la sesión de clase {classSessionId} fue redactado por un administrador de la plataforma: {reason}",
+    "attendance-review.created.student": "Recibimos tu solicitud de revisión de asistencia para la sesión de clase {classSessionId}. El resultado registrado sigue vigente hasta que un administrador de la plataforma decida.",
+    "attendance-review.created.administrator": "Un estudiante solicitó la revisión de la asistencia de la sesión de clase {classSessionId}. Abre el elemento de trabajo de revisión en {reviewLink}.",
+    "attendance-review.resolved.student": "Tu solicitud de revisión de asistencia para la sesión de clase {classSessionId} se {state, select, CORRECTED {corrigió} other {mantuvo}}. El resultado vigente es {outcome, select, ATTENDED {Asistió} other {Ausente}}. {rationale} {completionChange, select, EARNED {Se establecieron la finalización de la unidad de lección y el acceso al material de lección.} REMOVED {Se retiraron la finalización de la unidad de lección y el acceso al material de lección.} other {La finalización de la unidad de lección y el acceso al material de lección no cambian.}} {windowChange, select, OPENED {Los plazos de comentarios de aprendizaje y valoración de la sesión se reabren desde esta decisión.} HIDDEN {Los comentarios de aprendizaje y las valoraciones de sesión relacionados se conservan pero quedan ocultos.} other {Los plazos de comentarios de aprendizaje y valoración de la sesión no cambian.}} No se reembolsó ningún crédito de clase automáticamente.",
+    "attendance-review.upheld.teacher": "Una solicitud de revisión de asistencia para la sesión de clase {classSessionId} se mantuvo. El resultado registrado sigue vigente.",
+    "attendance-review.corrected.teacher": "La asistencia de la sesión de clase {classSessionId} se corrigió a {outcome, select, ATTENDED {Asistió} other {Ausente}} tras la revisión de un administrador de la plataforma.",
+    "attendanceReview.title": "Asistencia y revisiones",
+    "attendanceReview.loading": "Cargando los registros de asistencia…",
+    "attendanceReview.loadError": "No pudimos cargar tus registros de asistencia. Inténtalo de nuevo.",
+    "attendanceReview.empty": "Todavía no se ha publicado asistencia para tus reservas.",
+    "attendanceReview.outcome": "Asistencia: {outcome, select, ATTENDED {Asistió} other {Ausente}}",
+    "attendanceReview.published": "Publicada el {publishedAt}.",
+    "attendanceReview.corrected": "Corregida el {correctedAt} tras {correctionCount, plural, one {una corrección} other {# correcciones}}.",
+    "attendanceReview.deadline": "Solicita una revisión antes del {deadline}.",
+    "attendanceReview.request": "Solicitar revisión de asistencia",
+    "attendanceReview.explanation": "Explicación (opcional)",
+    "attendanceReview.submit": "Enviar solicitud de revisión de asistencia",
+    "attendanceReview.submitted": "Solicitud de revisión de asistencia enviada.",
+    "attendanceReview.error": "No pudimos enviar esta solicitud de revisión de asistencia. Revisa el plazo e inténtalo de nuevo.",
+    "attendanceReview.closed": "El plazo para solicitar la revisión de asistencia ha terminado.",
+    "attendanceReview.state": "Revisión: {state, select, PENDING {Pendiente de decisión} UPHELD {Mantenida} other {Corregida}}",
+    "attendanceReview.rationale": "Justificación del administrador de la plataforma: {rationale}",
+    "attendanceReview.creditNotice": "Una corrección no reembolsa automáticamente un crédito de clase.",
+    "attendanceReviewQueue.title": "Solicitudes de revisión de asistencia",
+    "attendanceReviewQueue.loading": "Cargando las solicitudes de revisión de asistencia…",
+    "attendanceReviewQueue.error": "No pudimos cargar las solicitudes de revisión de asistencia. Inténtalo de nuevo.",
+    "attendanceReviewQueue.empty": "No hay solicitudes de revisión de asistencia.",
+    "attendanceReviewQueue.summary": "{studentDisplayName}: resultado vigente {outcome, select, ATTENDED {Asistió} other {Ausente}}",
+    "attendanceReviewQueue.explanation": "Explicación del estudiante: {explanation}",
+    "attendanceReviewQueue.rationale": "Justificación visible para el estudiante",
+    "attendanceReviewQueue.note": "Nota privada del administrador (opcional)",
+    "attendanceReviewQueue.uphold": "Mantener el resultado registrado",
+    "attendanceReviewQueue.correct": "Corregir el resultado registrado",
+    "attendanceReviewQueue.decided": "Decisión registrada.",
+    "attendanceReviewQueue.decideError": "No pudimos registrar esta decisión. Indica una justificación visible para el estudiante de 10 a 500 caracteres.",
     "progress.loading": "Cargando el progreso del curso…",
     "progress.loadError": "No pudimos cargar el progreso del curso. Inténtalo de nuevo.",
     "progress.title": "Progreso del curso",

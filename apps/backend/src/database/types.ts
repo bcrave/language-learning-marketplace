@@ -93,6 +93,7 @@ export interface AbsenceRequestSessionsTable { absence_request_id: string; class
 export interface AttendanceRecordsTable { id: Generated<string>; booking_id: string; outcome: "ATTENDED" | "NO_SHOW"; submitted_by_user_id: string | null; submitted_at: Generated<Date>; updated_at: Generated<Date> }
 export interface LessonUnitCompletionsTable { id: Generated<string>; student_user_id: string; lesson_unit_id: string; established_by_booking_id: string; earned_at: Date }
 export interface AttendanceRecordCorrectionsTable { id: Generated<string>; booking_id: string; prior_outcome: "ATTENDED" | "NO_SHOW"; corrected_outcome: "ATTENDED" | "NO_SHOW"; corrected_by_user_id: string; reason: string; corrected_at: Date }
+export interface AttendanceReviewRequestsTable { id: Generated<string>; booking_id: string; student_user_id: string; outcome_at_request: "ATTENDED" | "NO_SHOW"; explanation: Generated<string>; state: "PENDING" | "UPHELD" | "CORRECTED"; requested_at: Date; decided_by_user_id: string | null; decided_at: Date | null; decision_outcome: "ATTENDED" | "NO_SHOW" | null; student_visible_rationale: string | null; private_administrator_note: string | null; attendance_record_correction_id: string | null }
 export type FeedbackSkill = "LISTENING" | "READING" | "SPOKEN_INTERACTION" | "SPOKEN_PRODUCTION" | "WRITING" | "VOCABULARY" | "GRAMMAR" | "PRONUNCIATION";
 export type SessionRatingPositiveTag = "CLEAR_EXPLANATIONS" | "SUPPORTIVE" | "ENGAGING" | "USEFUL_PRACTICE";
 export type SessionRatingImprovementTag = "PACING" | "AUDIO_QUALITY" | "MORE_CORRECTION" | "MORE_SPEAKING_TIME";
@@ -147,6 +148,7 @@ export interface DatabaseSchema {
   attendance_records: AttendanceRecordsTable;
   lesson_unit_completions: LessonUnitCompletionsTable;
   attendance_record_corrections: AttendanceRecordCorrectionsTable;
+  attendance_review_requests: AttendanceReviewRequestsTable;
   learning_feedback: LearningFeedbackTable;
   session_ratings: SessionRatingsTable;
   learning_feedback_redactions: LearningFeedbackRedactionsTable;

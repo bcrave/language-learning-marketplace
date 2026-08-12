@@ -59,7 +59,7 @@ union UndoSubscriptionCancellationResult = UndoSubscriptionCancellationSuccess |
 enum ClassSessionState { PUBLISHED CANCELLED }
 type ClassSession { id: ID!, lessonUnitId: ID!, teacherUserId: ID!, startsAt: String!, endsAt: String!, schedulingTimeZone: String!, seatCapacity: Int!, occupiedSeats: Int!, state: ClassSessionState!, cancellationReason: String }
 enum AttendanceOutcome { ATTENDED NO_SHOW }
-type AttendanceRecord { outcome: AttendanceOutcome!, submittedAt: String! }
+type AttendanceRecord { outcome: AttendanceOutcome!, submittedAt: String!, correctedAt: String, correctionCount: Int! }
 type ClassRosterStudent { bookingId: ID!, studentUserId: ID!, displayName: String!, placement: StudentPlacement, attendance: AttendanceRecord }
 type ClassRoster { classSession: ClassSession!, students: [ClassRosterStudent!]! }
 input AttendanceRecordInput { bookingId: ID!, outcome: AttendanceOutcome!, correctionReason: String }
@@ -68,6 +68,44 @@ type RecordAttendanceSuccess { classRoster: ClassRoster! }
 enum AttendanceErrorCode { CLASS_SESSION_NOT_FOUND ATTENDANCE_RECORDING_NOT_OPEN ATTENDANCE_RECORDING_WINDOW_CLOSED ATTENDANCE_ROSTER_MISMATCH ATTENDANCE_CORRECTION_REASON_REQUIRED IDEMPOTENCY_KEY_REUSED }
 type AttendanceError { code: AttendanceErrorCode!, message: String! }
 union RecordAttendanceResult = RecordAttendanceSuccess | AttendanceError
+
+enum AttendanceReviewRequestState { PENDING UPHELD CORRECTED }
+enum AttendanceReviewDecision { UPHOLD CORRECT }
+type AttendanceReviewRequest {
+  id: ID!
+  bookingId: ID!
+  classSessionId: ID!
+  studentDisplayName: String!
+  outcomeAtRequest: AttendanceOutcome!
+  effectiveOutcome: AttendanceOutcome!
+  explanation: String!
+  state: AttendanceReviewRequestState!
+  requestedAt: String!
+  decidedAt: String
+  studentVisibleRationale: String
+  privateAdministratorNote: String
+}
+type StudentAttendanceRecord {
+  bookingId: ID!
+  classSessionId: ID!
+  classSessionStartsAt: String!
+  teacherDisplayName: String!
+  outcome: AttendanceOutcome!
+  publishedAt: String!
+  correctedAt: String
+  correctionCount: Int!
+  reviewDeadline: String!
+  reviewRequestOpen: Boolean!
+  reviewRequest: AttendanceReviewRequest
+}
+input RequestAttendanceReviewInput { idempotencyKey: ID!, bookingId: ID!, explanation: String }
+input DecideAttendanceReviewInput { idempotencyKey: ID!, attendanceReviewRequestId: ID!, decision: AttendanceReviewDecision!, studentVisibleRationale: String!, privateAdministratorNote: String }
+type RequestAttendanceReviewSuccess { attendanceReviewRequest: AttendanceReviewRequest! }
+type DecideAttendanceReviewSuccess { attendanceReviewRequest: AttendanceReviewRequest! }
+enum AttendanceReviewErrorCode { BOOKING_NOT_FOUND ATTENDANCE_NOT_PUBLISHED REVIEW_WINDOW_CLOSED REVIEW_ALREADY_REQUESTED INVALID_EXPLANATION REVIEW_REQUEST_NOT_FOUND REVIEW_ALREADY_DECIDED INVALID_REASON IDEMPOTENCY_KEY_REUSED }
+type AttendanceReviewError { code: AttendanceReviewErrorCode!, message: String! }
+union RequestAttendanceReviewResult = RequestAttendanceReviewSuccess | AttendanceReviewError
+union DecideAttendanceReviewResult = DecideAttendanceReviewSuccess | AttendanceReviewError
 
 enum FeedbackSkill { LISTENING READING SPOKEN_INTERACTION SPOKEN_PRODUCTION WRITING VOCABULARY GRAMMAR PRONUNCIATION }
 enum LearningFeedbackState { DRAFT SUBMITTED }
@@ -379,6 +417,8 @@ type Query {
   administrationClassCredits(studentUserId: ID!): ClassCreditAccount
   administrationClassSessions: [ClassSession!]!
   classRoster(classSessionId: ID!, actingRole: UserRole!): ClassRoster
+  studentAttendanceRecords: [StudentAttendanceRecord!]!
+  administrationAttendanceReviewRequests: [AttendanceReviewRequest!]!
   teacherClassSessions: [ClassSession!]!
   teacherAttendanceClassSessions: [ClassSession!]!
   teacherFeedbackWork: [FeedbackAndRatingItem!]!
@@ -419,6 +459,8 @@ type Mutation {
   cancelClassSession(input: CancelClassSessionInput!): CancelClassSessionResult!
   recordAttendance(input: RecordAttendanceInput!): RecordAttendanceResult!
   administerAttendance(input: RecordAttendanceInput!): RecordAttendanceResult!
+  requestAttendanceReview(input: RequestAttendanceReviewInput!): RequestAttendanceReviewResult!
+  decideAttendanceReview(input: DecideAttendanceReviewInput!): DecideAttendanceReviewResult!
   saveLearningFeedback(input: SaveLearningFeedbackInput!): SaveLearningFeedbackResult!
   redactLearningFeedback(input: RedactLearningFeedbackInput!): RedactLearningFeedbackResult!
   saveSessionRating(input: SaveSessionRatingInput!): SaveSessionRatingResult!

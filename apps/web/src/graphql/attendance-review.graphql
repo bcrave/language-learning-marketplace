@@ -1,0 +1,28 @@
+query StudentAttendanceRecords {
+  studentAttendanceRecords {
+    bookingId classSessionId classSessionStartsAt teacherDisplayName outcome publishedAt correctedAt correctionCount reviewDeadline reviewRequestOpen
+    reviewRequest { id bookingId state outcomeAtRequest effectiveOutcome explanation requestedAt decidedAt studentVisibleRationale }
+  }
+}
+
+mutation RequestAttendanceReview($input: RequestAttendanceReviewInput!) {
+  requestAttendanceReview(input: $input) {
+    __typename
+    ... on RequestAttendanceReviewSuccess { attendanceReviewRequest { id bookingId state outcomeAtRequest effectiveOutcome explanation requestedAt decidedAt studentVisibleRationale } }
+    ... on AttendanceReviewError { code message }
+  }
+}
+
+query AdministrationAttendanceReviewRequests {
+  administrationAttendanceReviewRequests {
+    id bookingId classSessionId studentDisplayName outcomeAtRequest effectiveOutcome explanation state requestedAt decidedAt studentVisibleRationale privateAdministratorNote
+  }
+}
+
+mutation DecideAttendanceReview($input: DecideAttendanceReviewInput!) {
+  decideAttendanceReview(input: $input) {
+    __typename
+    ... on DecideAttendanceReviewSuccess { attendanceReviewRequest { id bookingId state effectiveOutcome decidedAt studentVisibleRationale privateAdministratorNote } }
+    ... on AttendanceReviewError { code message }
+  }
+}

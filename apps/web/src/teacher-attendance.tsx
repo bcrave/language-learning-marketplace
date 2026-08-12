@@ -69,6 +69,10 @@ export function TeacherAttendancePanel() {
     {roster.data?.classRoster && <form onSubmit={(event) => void submit(event)}>
       {roster.data.classRoster.students.map((student) => <fieldset key={student.bookingId}>
         <legend>{student.displayName}{student.placement ? ` — ${student.placement.targetLanguage.toUpperCase()} ${student.placement.curriculumLevel}` : ""}</legend>
+        {student.attendance?.correctedAt && <p>{intl.formatMessage({ id: "attendanceReview.corrected" }, {
+          correctedAt: intl.formatDate(new Date(student.attendance.correctedAt), { dateStyle: "long", timeStyle: "short" }),
+          correctionCount: student.attendance.correctionCount,
+        })}</p>}
         <label><input type="radio" name={`attendance-${student.bookingId}`} checked={outcomes[student.bookingId] === "ATTENDED"} onChange={() => setOutcomes((current) => ({ ...current, [student.bookingId]: "ATTENDED" }))} />{intl.formatMessage({ id: "attendance.attended" })}</label>
         <label><input type="radio" name={`attendance-${student.bookingId}`} checked={outcomes[student.bookingId] === "NO_SHOW"} onChange={() => setOutcomes((current) => ({ ...current, [student.bookingId]: "NO_SHOW" }))} />{intl.formatMessage({ id: "attendance.noShow" })}</label>
         {student.attendance && outcomes[student.bookingId] && student.attendance.outcome !== outcomes[student.bookingId] && <label>{intl.formatMessage({ id: "attendance.correctionReason" })}<textarea value={correctionReasons[student.bookingId] ?? ""} onChange={(event) => setCorrectionReasons((current) => ({ ...current, [student.bookingId]: event.target.value }))} /></label>}
