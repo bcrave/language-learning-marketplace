@@ -10,7 +10,6 @@
 #   API_PRIVATE_ORIGIN        the API's Railway private address, e.g. api.railway.internal:4000
 #   API_TRUSTED_PROXY_SECRET  shared with the API as API_TRUSTED_PROXY_SECRET
 #   WEB_ROOT                  directory holding the built Vite assets
-
 {
 	# Nothing sits in front of Caddy, so no proxy is trusted and {client_ip}
 	# always resolves to the peer that actually connected.

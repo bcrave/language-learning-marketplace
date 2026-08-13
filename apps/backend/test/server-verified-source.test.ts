@@ -8,9 +8,19 @@ const TRUSTED_PROXY_SECRET = "caddy-shared-secret-for-verified-source-context";
 
 const runningServers: { close: () => void }[] = [];
 
-const unreachableApi = (() => {
-  throw new Error("liveness must answer without reaching the GraphQL API");
-}) as unknown as Parameters<typeof createMarketplaceServer>[0]["api"];
+type ServerOptions = Parameters<typeof createMarketplaceServer>[0];
+
+const answeringApi = ((
+  _request: unknown,
+  response: { writeHead: (status: number) => void; end: () => void },
+) => {
+  response.writeHead(200);
+  response.end();
+}) as unknown as ServerOptions["api"];
+
+// These limit checks answer before routing reaches GraphQL or PostgreSQL.
+const unusedDatabase = {} as unknown as ServerOptions["db"];
+const silentLogger = { warn: () => undefined } as unknown as ServerOptions["logger"];
 
 afterEach(() => {
   for (const server of runningServers.splice(0)) server.close();
@@ -21,11 +31,9 @@ async function startServer(options: {
   trustedProxySecret?: string;
 }) {
   const server = createMarketplaceServer({
-    // Liveness answers before routing reaches GraphQL or PostgreSQL, so these
-    // limit checks need neither.
-    api: unreachableApi,
-    db: {} as never,
-    logger: { warn: () => undefined } as never,
+    api: answeringApi,
+    db: unusedDatabase,
+    logger: silentLogger,
     sourceRequestLimit: options.sourceRequestLimit,
     ...(options.trustedProxySecret
       ? { trustedProxySecret: options.trustedProxySecret }
@@ -36,8 +44,8 @@ async function startServer(options: {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
 
-  return async (headers: Record<string, string> = {}) => {
-    const response = await fetch(`http://127.0.0.1:${port}/health/live`, { headers });
+  return async (headers: Record<string, string> = {}, path = "/graphql") => {
+    const response = await fetch(`http://127.0.0.1:${port}${path}`, { headers });
     await response.arrayBuffer();
     return response.status;
   };
@@ -92,6 +100,26 @@ describe("per-source request limits behind the single public origin", () => {
     expect(await request(caddyContext(""))).toBe(403);
 
     expect(await request(caddyContext("2001:db8::1"))).toBe(200);
+  });
+
+  it("keeps refused requests inside the budget of the connection they arrived on", async () => {
+    const request = await startServer({
+      sourceRequestLimit: 2,
+      trustedProxySecret: TRUSTED_PROXY_SECRET,
+    });
+
+    expect(await request({ "x-forwarded-for": "203.0.113.4" })).toBe(403);
+    expect(await request({ "x-forwarded-for": "198.51.100.7" })).toBe(403);
+    expect(await request({ "x-forwarded-for": "192.0.2.9" })).toBe(429);
+  });
+
+  it("answers internal health probes that never pass through the public origin", async () => {
+    const request = await startServer({
+      sourceRequestLimit: 100,
+      trustedProxySecret: TRUSTED_PROXY_SECRET,
+    });
+
+    expect(await request({}, "/health/live")).toBe(200);
   });
 
   it("keys on the connection itself when no trusted proxy is configured", async () => {

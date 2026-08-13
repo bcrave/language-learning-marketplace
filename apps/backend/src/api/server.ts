@@ -6,11 +6,13 @@ import type { Logger } from "pino";
 
 import type { Database } from "../database/database.js";
 import type { createApi } from "./app.js";
-import { createVerifiedSourceReader } from "./verified-source.js";
+import { connectionSourceFor, createVerifiedSourceReader } from "./verified-source.js";
 
 const GRAPHQL_BODY_LIMIT_BYTES = 1_000_000;
 const RATE_LIMIT_WINDOW_MILLISECONDS = 60_000;
 const CURRENT_SCHEMA_MIGRATION = "0005_curriculum_administration.sql";
+const LIVENESS_PATH = "/health/live";
+const READINESS_PATH = "/health/ready";
 
 class SourceRateLimiter {
   readonly #counters = new Map<string, { count: number; startedAt: number }>();
@@ -50,31 +52,40 @@ export function createMarketplaceServer(options: {
   trustedProxySecret?: string;
 }) {
   const rateLimiter = new SourceRateLimiter(options.sourceRequestLimit);
-  const verifiedSourceFor = createVerifiedSourceReader(
-    options.trustedProxySecret === undefined
-      ? {}
-      : { trustedProxySecret: options.trustedProxySecret },
-  );
+  const verifiedSourceFor = createVerifiedSourceReader(options.trustedProxySecret);
 
   return createServer(async (request, response) => {
-    const source = verifiedSourceFor(request);
+    const path = new URL(request.url ?? "/", "http://localhost").pathname;
+
+    // The platform probes liveness and readiness over private networking
+    // rather than through Caddy, and ADR-0038 verifies the API before the
+    // public origin is deployed at all, so probes key on the connection they
+    // arrive on. Everything else must carry context Caddy verified.
+    const probesHealth =
+      request.method === "GET" && (path === LIVENESS_PATH || path === READINESS_PATH);
+    const source = probesHealth
+      ? connectionSourceFor(request)
+      : verifiedSourceFor(request);
+
+    // Refusals stay inside a budget too. A misconfigured origin would
+    // otherwise buy an unbounded path through the API and an unbounded run of
+    // log lines by simply presenting nothing.
+    if (!rateLimiter.accepts(source ?? connectionSourceFor(request) ?? "unattributable")) {
+      response.setHeader("retry-after", "60");
+      sendJson(response, 429, { error: "Request limit exceeded" });
+      return;
+    }
     if (source === null) {
       options.logger.warn({ event: "source.unverified" });
       sendJson(response, 403, { error: "Request source could not be verified" });
       return;
     }
-    if (!rateLimiter.accepts(source)) {
-      response.setHeader("retry-after", "60");
-      sendJson(response, 429, { error: "Request limit exceeded" });
-      return;
-    }
 
-    const path = new URL(request.url ?? "/", "http://localhost").pathname;
-    if (request.method === "GET" && path === "/health/live") {
+    if (request.method === "GET" && path === LIVENESS_PATH) {
       sendJson(response, 200, { status: "live" });
       return;
     }
-    if (request.method === "GET" && path === "/health/ready") {
+    if (request.method === "GET" && path === READINESS_PATH) {
       try {
         await sql`select 1`.execute(options.db);
         await options.db
