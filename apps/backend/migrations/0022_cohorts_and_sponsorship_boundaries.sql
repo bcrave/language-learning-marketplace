@@ -20,6 +20,9 @@ alter table sponsorships
 
 -- Replaces the one-Sponsorship-per-Student constraint from 0020: at most one
 -- Sponsorship may be active, so a Student may be invited again after one ends.
+-- Both swaps below relax rather than contract, so ADR 0021 still holds: every
+-- row the previously deployed version writes is ACTIVE, and the partial indexes
+-- keep enforcing exactly the uniqueness and the anniversary scan it relies on.
 alter table sponsorships drop constraint sponsorships_student_user_id_key;
 
 create unique index sponsorships_active_student_idx

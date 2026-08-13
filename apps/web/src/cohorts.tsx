@@ -13,6 +13,10 @@ import {
 } from "./generated/graphql.js";
 import { useFragment as readFragment } from "./generated/fragment-masking.js";
 
+function longInstant(intl: ReturnType<typeof useIntl>, instant: string) {
+  return intl.formatDate(instant, { dateStyle: "long", timeStyle: "short", timeZone: "UTC" });
+}
+
 const cohortErrorMessageIds: Record<string, string> = {
   COHORT_NAME_TAKEN: "cohorts.error.COHORT_NAME_TAKEN",
   COHORT_NOT_FOUND: "cohorts.error.COHORT_NOT_FOUND",
@@ -203,11 +207,11 @@ export function OrganizationCohortsPanel({
                         <p>{intl.formatMessage({ id: "sponsorship.student" }, { name: membership.studentDisplayName })}</p>
                         <p>{membership.effectiveUntil
                           ? intl.formatMessage({ id: "cohorts.memberships.window.bounded" }, {
-                            from: intl.formatDate(membership.effectiveFrom, { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }),
-                            until: intl.formatDate(membership.effectiveUntil, { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }),
+                            from: longInstant(intl, membership.effectiveFrom),
+                            until: longInstant(intl, membership.effectiveUntil),
                           })
                           : intl.formatMessage({ id: "cohorts.memberships.window.open" }, {
-                            from: intl.formatDate(membership.effectiveFrom, { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }),
+                            from: longInstant(intl, membership.effectiveFrom),
                           })}</p>
                         <p>{intl.formatMessage({ id: "cohorts.attributedActivity" }, {
                           attended: membership.attributedActivity.attendedCount,

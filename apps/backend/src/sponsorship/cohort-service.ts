@@ -424,6 +424,12 @@ export async function closeCohortMembershipsAtSponsorshipEnd(
   sponsorshipId: string,
   endedAt: Date,
 ) {
+  // A membership scheduled to begin at or after the end instant never covers
+  // any activity, so it is discarded rather than closed before it starts.
+  await transaction.deleteFrom("cohort_memberships")
+    .where("sponsorship_id", "=", sponsorshipId)
+    .where("effective_from", ">=", endedAt)
+    .execute();
   await transaction.updateTable("cohort_memberships")
     .set({ effective_until: endedAt, updated_at: endedAt })
     .where("sponsorship_id", "=", sponsorshipId)

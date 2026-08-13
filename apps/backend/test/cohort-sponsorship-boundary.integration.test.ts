@@ -165,6 +165,10 @@ describe("Cohorts and Sponsorship boundaries GraphQL API", () => {
 
   it("ends Sponsorship prospectively without taking the Student's Class Credits", async () => {
     now = SPONSORSHIP_END;
+    // A membership scheduled to begin after the Sponsorship ends never takes
+    // effect, so ending must discard it rather than close it before it starts.
+    const scheduledMembership = await addMembershipResult(pilotCohortId, sponsorshipId, { effectiveFrom: "2026-06-01T00:00:00.000Z" }) as { id: string };
+
     const ended = await endSponsorshipAsOrganizationResult(sponsorshipId);
     expect(ended).toEqual({
       sponsorship: {
@@ -181,6 +185,7 @@ describe("Cohorts and Sponsorship boundaries GraphQL API", () => {
 
     const membership = await db.selectFrom("cohort_memberships").select("effective_until").where("id", "=", engineeringMembershipId).executeTakeFirstOrThrow();
     expect(membership.effective_until?.toISOString()).toBe(SPONSORSHIP_END.toISOString());
+    expect(await db.selectFrom("cohort_memberships").select("id").where("id", "=", scheduledMembership.id).executeTakeFirst()).toBeUndefined();
     expect(await addMembershipResult(engineeringCohortId, sponsorshipId)).toEqual({ code: "SPONSORSHIP_NOT_ACTIVE" });
 
     // Only the ended Sponsorship is due, so a due monthly grant must be skipped.
@@ -275,12 +280,19 @@ describe("Cohorts and Sponsorship boundaries GraphQL API", () => {
     `, { input: { idempotencyKey: randomUUID() } }, managerSubject, deniedEndCorrelation);
     expect(deniedEnd.errors?.[0]?.extensions.code).toBe("FORBIDDEN");
 
+    // A Cohort roster names sponsored Students, so a denied read is itself an
+    // audited event rather than a silently empty list.
+    const deniedReadCorrelation = randomUUID();
+    const deniedRead = await graphql(`query { organizationCohorts { id } }`, undefined, studentSubject, deniedReadCorrelation);
+    expect(deniedRead.errors?.[0]?.extensions.code).toBe("FORBIDDEN");
+
     expect(await db.selectFrom("audit_entries")
       .select(["operation", "outcome", "reason_code"])
-      .where("correlation_id", "in", [deniedCohortCorrelation, deniedEndCorrelation])
+      .where("correlation_id", "in", [deniedCohortCorrelation, deniedEndCorrelation, deniedReadCorrelation])
       .execute()).toEqual(expect.arrayContaining([
         { operation: "cohort.created", outcome: "DENIED", reason_code: "ORGANIZATION_MANAGER_ROLE_REQUIRED" },
         { operation: "sponsorship.terminated", outcome: "DENIED", reason_code: "STUDENT_ROLE_REQUIRED" },
+        { operation: "cohort.read", outcome: "DENIED", reason_code: "ORGANIZATION_MANAGER_ROLE_REQUIRED" },
       ]));
 
     const cohortAudits = await db.selectFrom("audit_entries")
