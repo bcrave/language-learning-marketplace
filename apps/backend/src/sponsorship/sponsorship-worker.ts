@@ -88,6 +88,7 @@ export async function grantDueSponsorshipCredits(db: Database, now: Date, correl
   const dueSponsorships = await db.selectFrom("sponsorships")
     .select("id")
     .where("next_anniversary_at", "<=", now)
+    .where("state", "=", "ACTIVE")
     .orderBy("next_anniversary_at")
     .orderBy("id")
     .execute();
@@ -99,6 +100,7 @@ export async function grantDueSponsorshipCredits(db: Database, now: Date, correl
         const sponsorship = await transaction.selectFrom("sponsorships")
           .selectAll()
           .where("id", "=", dueSponsorship.id)
+          .where("state", "=", "ACTIVE")
           .forUpdate()
           .skipLocked()
           .executeTakeFirst();

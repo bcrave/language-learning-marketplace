@@ -260,7 +260,11 @@ type Organization { id: ID!, name: String! }
 enum SponsorshipInvitationState { PENDING ACCEPTED DECLINED EXPIRED }
 type SponsorshipDisclosure { version: String!, benefitDescription: String!, organizationVisibleDataDescription: String!, excludedPrivateDataDescription: String! }
 type SponsorshipInvitation { id: ID!, organization: Organization!, studentUserId: ID!, studentDisplayName: String!, state: SponsorshipInvitationState!, disclosure: SponsorshipDisclosure!, expiresAt: String!, createdAt: String!, decidedAt: String }
-type Sponsorship { id: ID!, organization: Organization!, studentUserId: ID!, studentDisplayName: String!, acceptedAt: String!, nextAnniversaryAt: String! }
+enum SponsorshipState { ACTIVE ENDED }
+enum SponsorshipEndingParty { STUDENT ORGANIZATION }
+enum CourseProgressSnapshotBoundary { SPONSORSHIP_START SPONSORSHIP_END }
+type CourseProgressSnapshot { boundary: CourseProgressSnapshotBoundary!, courseId: ID!, courseTitle: String!, completedActiveLessonUnitCount: Int!, activeLessonUnitCount: Int!, percentage: Int!, capturedAt: String! }
+type Sponsorship { id: ID!, organization: Organization!, studentUserId: ID!, studentDisplayName: String!, acceptedAt: String!, nextAnniversaryAt: String, state: SponsorshipState!, endedAt: String, endedByParty: SponsorshipEndingParty, reportingFrom: String!, reportingUntil: String, progressSnapshots: [CourseProgressSnapshot!]! }
 input InviteToSponsorshipInput { idempotencyKey: ID!, studentUserId: ID! }
 type InviteToSponsorshipSuccess { invitation: SponsorshipInvitation! }
 enum SponsorshipInvitationErrorCode { STUDENT_NOT_FOUND STUDENT_ALREADY_SPONSORED INVITATION_ALREADY_PENDING IDEMPOTENCY_KEY_REUSED }
@@ -273,6 +277,42 @@ enum SponsorshipInvitationResponseErrorCode { INVITATION_NOT_FOUND INVITATION_NO
 type SponsorshipInvitationResponseError { code: SponsorshipInvitationResponseErrorCode!, message: String! }
 union AcceptSponsorshipInvitationResult = AcceptSponsorshipInvitationSuccess | SponsorshipInvitationResponseError
 union DeclineSponsorshipInvitationResult = DeclineSponsorshipInvitationSuccess | SponsorshipInvitationResponseError
+
+input EndSponsorshipAsOrganizationInput { idempotencyKey: ID!, sponsorshipId: ID! }
+input EndSponsorshipAsStudentInput { idempotencyKey: ID! }
+type EndSponsorshipAsOrganizationSuccess { sponsorship: Sponsorship! }
+type EndSponsorshipAsStudentSuccess { sponsorship: Sponsorship!, account: ClassCreditAccount! }
+enum SponsorshipBoundaryErrorCode { SPONSORSHIP_NOT_FOUND SPONSORSHIP_ALREADY_ENDED IDEMPOTENCY_KEY_REUSED }
+type SponsorshipBoundaryError { code: SponsorshipBoundaryErrorCode!, message: String! }
+union EndSponsorshipAsOrganizationResult = EndSponsorshipAsOrganizationSuccess | SponsorshipBoundaryError
+union EndSponsorshipAsStudentResult = EndSponsorshipAsStudentSuccess | SponsorshipBoundaryError
+
+type CohortAttributedActivity { attendedCount: Int!, noShowCount: Int! }
+type CohortMembership { id: ID!, cohortId: ID!, cohortName: String!, sponsorshipId: ID!, studentUserId: ID!, studentDisplayName: String!, effectiveFrom: String!, effectiveUntil: String, attributedActivity: CohortAttributedActivity! }
+type Cohort { id: ID!, organization: Organization!, name: String!, createdAt: String!, memberships: [CohortMembership!]!, attributedActivity: CohortAttributedActivity! }
+input CreateCohortInput { idempotencyKey: ID!, name: String! }
+input RenameCohortInput { idempotencyKey: ID!, cohortId: ID!, name: String! }
+input AddCohortMembershipInput { idempotencyKey: ID!, cohortId: ID!, sponsorshipId: ID!, effectiveFrom: String, effectiveUntil: String }
+input EndCohortMembershipInput { idempotencyKey: ID!, cohortMembershipId: ID!, effectiveUntil: String }
+type CohortSuccess { cohort: Cohort! }
+type CohortMembershipSuccess { cohort: Cohort!, membership: CohortMembership! }
+enum CohortErrorCode {
+  COHORT_NOT_FOUND
+  COHORT_NAME_TAKEN
+  SPONSORSHIP_NOT_FOUND
+  SPONSORSHIP_NOT_ACTIVE
+  MEMBERSHIP_NOT_FOUND
+  MEMBERSHIP_ALREADY_ENDED
+  MEMBERSHIP_NOT_PROSPECTIVE
+  MEMBERSHIP_WINDOW_INVALID
+  MEMBERSHIP_WINDOW_OVERLAPS
+  IDEMPOTENCY_KEY_REUSED
+}
+type CohortError { code: CohortErrorCode!, message: String! }
+union CreateCohortResult = CohortSuccess | CohortError
+union RenameCohortResult = CohortSuccess | CohortError
+union AddCohortMembershipResult = CohortMembershipSuccess | CohortError
+union EndCohortMembershipResult = CohortMembershipSuccess | CohortError
 
 type User {
   id: ID!
@@ -436,6 +476,7 @@ type Query {
   studentSponsorshipInvitations: [SponsorshipInvitation!]!
   organizationSponsorshipInvitations: [SponsorshipInvitation!]!
   organizationSponsoredStudents: [Sponsorship!]!
+  organizationCohorts: [Cohort!]!
 }
 
 type Mutation {
@@ -487,4 +528,10 @@ type Mutation {
   inviteToSponsorship(input: InviteToSponsorshipInput!): InviteToSponsorshipResult!
   acceptSponsorshipInvitation(input: SponsorshipInvitationResponseInput!): AcceptSponsorshipInvitationResult!
   declineSponsorshipInvitation(input: SponsorshipInvitationResponseInput!): DeclineSponsorshipInvitationResult!
+  endSponsorshipAsOrganization(input: EndSponsorshipAsOrganizationInput!): EndSponsorshipAsOrganizationResult!
+  endSponsorshipAsStudent(input: EndSponsorshipAsStudentInput!): EndSponsorshipAsStudentResult!
+  createCohort(input: CreateCohortInput!): CreateCohortResult!
+  renameCohort(input: RenameCohortInput!): RenameCohortResult!
+  addCohortMembership(input: AddCohortMembershipInput!): AddCohortMembershipResult!
+  endCohortMembership(input: EndCohortMembershipInput!): EndCohortMembershipResult!
 }

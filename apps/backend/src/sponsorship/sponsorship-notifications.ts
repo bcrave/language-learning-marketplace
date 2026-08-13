@@ -16,6 +16,8 @@ type SponsorshipNotification = {
   | { messageId: "sponsorship-invitation.expired.student"; organizationName: string }
   | { messageId: "sponsorship-invitation.expired.manager"; studentDisplayName: string }
   | { messageId: "organization-credit.granted.student"; amount: number; availableBalance: number; nextAnniversaryAt: Date }
+  | { messageId: "sponsorship.terminated.student"; organizationName: string; endedByParty: "STUDENT" | "ORGANIZATION"; endedAt: Date }
+  | { messageId: "sponsorship.terminated.manager"; studentDisplayName: string; endedByParty: "STUDENT" | "ORGANIZATION"; endedAt: Date }
 );
 
 // In-app-only Sponsored-learning policy IDs from docs/notification-policy.md.

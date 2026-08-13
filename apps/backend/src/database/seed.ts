@@ -121,6 +121,7 @@ export async function seedDemoSubscription(db: Database, now = new Date()) {
 const DEMO_ORGANIZATION_ID = "00000000-0000-4000-8000-000000000041";
 const DEMO_SECONDARY_ORGANIZATION_ID = "00000000-0000-4000-8000-000000000042";
 const DEMO_SPONSORSHIP_INVITATION_ID = "00000000-0000-4000-8000-000000000043";
+const DEMO_COHORT_ID = "00000000-0000-4000-8000-000000000044";
 
 export async function seedDemoOrganizations(db: Database) {
   await db.insertInto("organizations").values([
@@ -131,6 +132,14 @@ export async function seedDemoOrganizations(db: Database) {
     { user_id: DEMO_STUDENT_ID, organization_id: DEMO_ORGANIZATION_ID },
     { user_id: DEMO_ENGLISH_STUDENT_ID, organization_id: DEMO_SECONDARY_ORGANIZATION_ID },
   ]).onConflict((conflict) => conflict.column("user_id").doUpdateSet((eb) => ({ organization_id: eb.ref("excluded.organization_id") }))).execute();
+  // One empty Cohort so the Organization Manager workspace opens with a real
+  // reporting group to place an accepting Student into.
+  await db.insertInto("cohorts").values({
+    id: DEMO_COHORT_ID,
+    organization_id: DEMO_ORGANIZATION_ID,
+    name: "Warehouse Operations",
+    created_by_user_id: DEMO_STUDENT_ID,
+  }).onConflict((conflict) => conflict.column("id").doUpdateSet((eb) => ({ name: eb.ref("excluded.name") }))).execute();
 }
 
 export async function seedDemoSponsorship(db: Database, now = new Date()) {

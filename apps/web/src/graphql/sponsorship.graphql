@@ -5,6 +5,11 @@ query StudentSponsorship {
     studentDisplayName
     acceptedAt
     nextAnniversaryAt
+    state
+    endedAt
+    endedByParty
+    reportingFrom
+    reportingUntil
     organization {
       id
       name
@@ -63,9 +68,23 @@ query OrganizationSponsoredStudents {
     studentDisplayName
     acceptedAt
     nextAnniversaryAt
+    state
+    endedAt
+    endedByParty
+    reportingFrom
+    reportingUntil
     organization {
       id
       name
+    }
+    progressSnapshots {
+      boundary
+      courseId
+      courseTitle
+      completedActiveLessonUnitCount
+      activeLessonUnitCount
+      percentage
+      capturedAt
     }
   }
 }
@@ -109,6 +128,11 @@ mutation AcceptSponsorshipInvitation($input: SponsorshipInvitationResponseInput!
         studentDisplayName
         acceptedAt
         nextAnniversaryAt
+        state
+        endedAt
+        endedByParty
+        reportingFrom
+        reportingUntil
         organization {
           id
           name

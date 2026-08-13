@@ -105,7 +105,13 @@ export interface OrganizationsTable { id: Generated<string>; name: string; creat
 export interface OrganizationManagersTable { user_id: string; role: Generated<"ORGANIZATION_MANAGER">; organization_id: string; created_at: Generated<Date> }
 export type SponsorshipInvitationState = "PENDING" | "ACCEPTED" | "DECLINED" | "EXPIRED";
 export interface SponsorshipInvitationsTable { id: Generated<string>; organization_id: string; student_user_id: string; invited_by_user_id: string; state: SponsorshipInvitationState; disclosure_text_version: string; expires_at: Date; decided_at: Date | null; created_at: Generated<Date> }
-export interface SponsorshipsTable { id: Generated<string>; organization_id: string; student_user_id: string; invitation_id: string; accepted_at: Date; grant_count: Generated<number>; next_anniversary_at: Date; updated_at: Generated<Date> }
+export type SponsorshipState = "ACTIVE" | "ENDED";
+export type SponsorshipEndingParty = "STUDENT" | "ORGANIZATION";
+export interface SponsorshipsTable { id: Generated<string>; organization_id: string; student_user_id: string; invitation_id: string; accepted_at: Date; grant_count: Generated<number>; next_anniversary_at: Date; state: Generated<SponsorshipState>; ended_at: Date | null; ended_by_party: SponsorshipEndingParty | null; ended_by_user_id: string | null; updated_at: Generated<Date> }
+export interface CohortsTable { id: Generated<string>; organization_id: string; name: string; created_by_user_id: string; created_at: Generated<Date>; updated_at: Generated<Date> }
+export interface CohortMembershipsTable { id: Generated<string>; cohort_id: string; sponsorship_id: string; effective_from: Date; effective_until: Date | null; created_at: Generated<Date>; updated_at: Generated<Date> }
+export type CourseProgressSnapshotBoundary = "SPONSORSHIP_START" | "SPONSORSHIP_END";
+export interface CourseProgressSnapshotsTable { id: Generated<string>; sponsorship_id: string; boundary: CourseProgressSnapshotBoundary; course_id: string; completed_active_lesson_unit_count: number; active_lesson_unit_count: number; captured_at: Date }
 
 export interface DatabaseSchema {
   users: UsersTable;
@@ -157,4 +163,7 @@ export interface DatabaseSchema {
   organization_managers: OrganizationManagersTable;
   sponsorship_invitations: SponsorshipInvitationsTable;
   sponsorships: SponsorshipsTable;
+  cohorts: CohortsTable;
+  cohort_memberships: CohortMembershipsTable;
+  course_progress_snapshots: CourseProgressSnapshotsTable;
 }

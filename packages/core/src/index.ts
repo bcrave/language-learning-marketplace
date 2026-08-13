@@ -76,6 +76,43 @@ export function waitlistIsOpen(now: Date, startsAt: Date) {
   return now < waitlistExpiresAt(startsAt);
 }
 
+// A Cohort membership and a Sponsorship both cover the half-open instant range
+// [start, end): activity exactly at the end instant already falls outside, so
+// ending either one is prospective and leaves earlier attribution untouched.
+export interface CohortMembershipWindow {
+  cohortId: string;
+  effectiveFrom: Date;
+  effectiveUntil: Date | null;
+}
+
+export function cohortMembershipIsEffectiveAt(membership: CohortMembershipWindow, at: Date) {
+  return membership.effectiveFrom.getTime() <= at.getTime()
+    && (membership.effectiveUntil === null || at.getTime() < membership.effectiveUntil.getTime());
+}
+
+export function attributedCohortIds(memberships: readonly CohortMembershipWindow[], occurredAt: Date) {
+  const attributed = memberships
+    .filter((membership) => cohortMembershipIsEffectiveAt(membership, occurredAt))
+    .map((membership) => membership.cohortId);
+  return [...new Set(attributed)].sort();
+}
+
+export function cohortMembershipWindowsOverlap(first: CohortMembershipWindow, second: CohortMembershipWindow) {
+  const firstEnd = first.effectiveUntil?.getTime() ?? Number.POSITIVE_INFINITY;
+  const secondEnd = second.effectiveUntil?.getTime() ?? Number.POSITIVE_INFINITY;
+  return first.effectiveFrom.getTime() < secondEnd && second.effectiveFrom.getTime() < firstEnd;
+}
+
+export function sponsorshipReportingIncludes(
+  sponsorship: { acceptedAt: Date; endedAt: Date | null },
+  occurredAt: Date,
+) {
+  return cohortMembershipIsEffectiveAt(
+    { cohortId: "", effectiveFrom: sponsorship.acceptedAt, effectiveUntil: sponsorship.endedAt },
+    occurredAt,
+  );
+}
+
 export const INTERFACE_LOCALES = ["en", "es"] as const;
 export type InterfaceLocale = (typeof INTERFACE_LOCALES)[number];
 
@@ -228,6 +265,8 @@ export const interfaceMessages = {
     "sponsorship-invitation.expired.student": "Your Sponsorship Invitation from {organizationName} expired without a response. No Sponsorship, reporting access, or Class Credit grant was created.",
     "sponsorship-invitation.expired.manager": "The Sponsorship Invitation to {studentDisplayName} expired without a response. No Sponsorship or reporting access was created.",
     "organization-credit.granted.student": "Organization Credit Benefit granted {amount, number} Class Credits. Available balance: {availableBalance, number}. Next grant: {nextAnniversaryAt, date, long} at {nextAnniversaryAt, time, short}.",
+    "sponsorship.terminated.student": "Your Sponsorship with {organizationName} ended {endedAt, date, long} at {endedAt, time, short}, {endedByParty, select, STUDENT {ended by you} other {ended by the Organization}}. Future Organization credit grants stop and Organization reporting freezes to the Sponsorship period. Your account and the Class Credits you already own remain yours.",
+    "sponsorship.terminated.manager": "{studentDisplayName}'s Sponsorship ended {endedAt, date, long} at {endedAt, time, short}, {endedByParty, select, STUDENT {ended by the Student} other {ended by your Organization}}. Future Organization credit grants stop and reporting freezes to the Sponsorship period.",
     "sponsorship.studentTitle": "My Sponsorship",
     "sponsorship.loading": "Loading Sponsorship…",
     "sponsorship.loadError": "We couldn't load your Sponsorship. Try again.",
@@ -265,6 +304,48 @@ export const interfaceMessages = {
     "sponsorship.sponsoredStudents.title": "Sponsored Students",
     "sponsorship.sponsoredStudents.empty": "Your Organization does not currently sponsor any Students.",
     "sponsorship.student": "Student: {name}",
+    "sponsorship.state.ACTIVE": "Active",
+    "sponsorship.state.ENDED": "Ended",
+    "sponsorship.endedAt": "Ended {date}",
+    "sponsorship.endedByParty.STUDENT": "Ended by the Student",
+    "sponsorship.endedByParty.ORGANIZATION": "Ended by the Organization",
+    "sponsorship.reporting.open": "Organization reporting covers activity since {from}.",
+    "sponsorship.reporting.frozen": "Organization reporting is frozen to activity from {from} until {until}.",
+    "sponsorship.end.title": "End this Sponsorship",
+    "sponsorship.end.explanation": "Ending stops future Organization credit grants and freezes Organization reporting at that instant. Your account, your history, and the Class Credits you already own stay with you.",
+    "sponsorship.end.submit": "End Sponsorship",
+    "sponsorship.end.ended": "Sponsorship ended. The Class Credits you already own remain yours.",
+    "sponsorship.end.error": "We couldn't end the Sponsorship. Try again with the same request.",
+    "sponsorship.sponsoredStudents.end": "End Sponsorship",
+    "sponsorship.sponsoredStudents.ended": "Sponsorship ended. Reporting is frozen to the Sponsorship period.",
+    "sponsorship.progressSnapshot": "{boundary, select, SPONSORSHIP_START {Baseline} other {Frozen ending}} — {courseTitle}: {completed, number} of {active, number} Lesson Units ({percentage, number}%)",
+    "cohorts.title": "Cohorts",
+    "cohorts.loading": "Loading Cohorts…",
+    "cohorts.loadError": "We couldn't load your Cohorts. Try again.",
+    "cohorts.notice": "A Cohort groups reporting inside your Organization only. It grants no Class Credits, no additional authority, and no Booking restriction.",
+    "cohorts.empty": "Your Organization has no Cohorts yet.",
+    "cohorts.create.title": "Create a Cohort",
+    "cohorts.create.name": "Cohort name",
+    "cohorts.create.submit": "Create Cohort",
+    "cohorts.create.created": "Cohort created.",
+    "cohorts.attributedActivity": "Attributed activity: {attended, number} attended, {noShow, number} no-show",
+    "cohorts.memberships.title": "Members",
+    "cohorts.memberships.empty": "No sponsored Students belong to this Cohort.",
+    "cohorts.memberships.window.open": "In this Cohort since {from}",
+    "cohorts.memberships.window.bounded": "In this Cohort from {from} until {until}",
+    "cohorts.memberships.add.title": "Add a sponsored Student to a Cohort",
+    "cohorts.memberships.add.cohort": "Cohort",
+    "cohorts.memberships.add.sponsorship": "Sponsored Student",
+    "cohorts.memberships.add.submit": "Add to Cohort",
+    "cohorts.memberships.add.added": "Cohort membership added.",
+    "cohorts.memberships.end": "End membership",
+    "cohorts.memberships.ended": "Cohort membership ended.",
+    "cohorts.error": "We couldn't change that Cohort. Review the details and try again.",
+    "cohorts.error.COHORT_NAME_TAKEN": "Your Organization already has a Cohort with that name.",
+    "cohorts.error.COHORT_NOT_FOUND": "The Cohort was not found in your Organization.",
+    "cohorts.error.SPONSORSHIP_NOT_ACTIVE": "That Sponsorship has ended, so its Cohort membership cannot change.",
+    "cohorts.error.MEMBERSHIP_WINDOW_OVERLAPS": "The Student already has an overlapping membership in that Cohort.",
+    "cohorts.error.MEMBERSHIP_NOT_PROSPECTIVE": "Cohort membership changes take effect now or later, so past reporting stays intact.",
     "curriculum.loading": "Loading curriculum administration…",
     "curriculum.error": "We couldn't update the curriculum. Review the details and try again.",
     "curriculum.sampleBadge": "Sample curriculum",
@@ -811,6 +892,8 @@ export const interfaceMessages = {
     "sponsorship-invitation.expired.student": "Tu Invitación de Patrocinio de {organizationName} venció sin respuesta. No se creó ningún Patrocinio, acceso a informes ni concesión de créditos de clase.",
     "sponsorship-invitation.expired.manager": "La Invitación de Patrocinio a {studentDisplayName} venció sin respuesta. No se creó ningún Patrocinio ni acceso a informes.",
     "organization-credit.granted.student": "El beneficio de créditos de la Organización otorgó {amount, number} créditos de clase. Saldo disponible: {availableBalance, number}. Próxima concesión: {nextAnniversaryAt, date, long} a las {nextAnniversaryAt, time, short}.",
+    "sponsorship.terminated.student": "Tu Patrocinio con {organizationName} terminó el {endedAt, date, long} a las {endedAt, time, short}, {endedByParty, select, STUDENT {terminado por ti} other {terminado por la Organización}}. Las futuras concesiones de créditos de la Organización se detienen y los informes de la Organización se congelan al periodo del Patrocinio. Tu cuenta y los créditos de clase que ya posees siguen siendo tuyos.",
+    "sponsorship.terminated.manager": "El Patrocinio de {studentDisplayName} terminó el {endedAt, date, long} a las {endedAt, time, short}, {endedByParty, select, STUDENT {terminado por el Estudiante} other {terminado por tu Organización}}. Las futuras concesiones de créditos de la Organización se detienen y los informes se congelan al periodo del Patrocinio.",
     "sponsorship.studentTitle": "Mi Patrocinio",
     "sponsorship.loading": "Cargando el Patrocinio…",
     "sponsorship.loadError": "No pudimos cargar tu Patrocinio. Inténtalo de nuevo.",
@@ -848,6 +931,48 @@ export const interfaceMessages = {
     "sponsorship.sponsoredStudents.title": "Estudiantes patrocinados",
     "sponsorship.sponsoredStudents.empty": "Tu Organización no patrocina actualmente a ningún Estudiante.",
     "sponsorship.student": "Estudiante: {name}",
+    "sponsorship.state.ACTIVE": "Activo",
+    "sponsorship.state.ENDED": "Terminado",
+    "sponsorship.endedAt": "Terminó el {date}",
+    "sponsorship.endedByParty.STUDENT": "Terminado por el Estudiante",
+    "sponsorship.endedByParty.ORGANIZATION": "Terminado por la Organización",
+    "sponsorship.reporting.open": "Los informes de la Organización cubren la actividad desde el {from}.",
+    "sponsorship.reporting.frozen": "Los informes de la Organización están congelados a la actividad desde el {from} hasta el {until}.",
+    "sponsorship.end.title": "Terminar este Patrocinio",
+    "sponsorship.end.explanation": "Terminarlo detiene las futuras concesiones de créditos de la Organización y congela sus informes en ese instante. Tu cuenta, tu historial y los créditos de clase que ya posees se quedan contigo.",
+    "sponsorship.end.submit": "Terminar el Patrocinio",
+    "sponsorship.end.ended": "Patrocinio terminado. Los créditos de clase que ya posees siguen siendo tuyos.",
+    "sponsorship.end.error": "No pudimos terminar el Patrocinio. Inténtalo de nuevo con la misma solicitud.",
+    "sponsorship.sponsoredStudents.end": "Terminar el Patrocinio",
+    "sponsorship.sponsoredStudents.ended": "Patrocinio terminado. Los informes quedan congelados al periodo del Patrocinio.",
+    "sponsorship.progressSnapshot": "{boundary, select, SPONSORSHIP_START {Línea base} other {Cierre congelado}} — {courseTitle}: {completed, number} de {active, number} unidades de lección ({percentage, number} %)",
+    "cohorts.title": "Cohortes",
+    "cohorts.loading": "Cargando las Cohortes…",
+    "cohorts.loadError": "No pudimos cargar tus Cohortes. Inténtalo de nuevo.",
+    "cohorts.notice": "Una Cohorte agrupa los informes solo dentro de tu Organización. No otorga créditos de clase, ni autoridad adicional, ni restricciones de Reserva.",
+    "cohorts.empty": "Tu Organización aún no tiene Cohortes.",
+    "cohorts.create.title": "Crear una Cohorte",
+    "cohorts.create.name": "Nombre de la Cohorte",
+    "cohorts.create.submit": "Crear la Cohorte",
+    "cohorts.create.created": "Cohorte creada.",
+    "cohorts.attributedActivity": "Actividad atribuida: {attended, number} asistencias, {noShow, number} ausencias",
+    "cohorts.memberships.title": "Integrantes",
+    "cohorts.memberships.empty": "Ningún Estudiante patrocinado pertenece a esta Cohorte.",
+    "cohorts.memberships.window.open": "En esta Cohorte desde el {from}",
+    "cohorts.memberships.window.bounded": "En esta Cohorte desde el {from} hasta el {until}",
+    "cohorts.memberships.add.title": "Agregar un Estudiante patrocinado a una Cohorte",
+    "cohorts.memberships.add.cohort": "Cohorte",
+    "cohorts.memberships.add.sponsorship": "Estudiante patrocinado",
+    "cohorts.memberships.add.submit": "Agregar a la Cohorte",
+    "cohorts.memberships.add.added": "Pertenencia a la Cohorte agregada.",
+    "cohorts.memberships.end": "Terminar la pertenencia",
+    "cohorts.memberships.ended": "Pertenencia a la Cohorte terminada.",
+    "cohorts.error": "No pudimos cambiar esa Cohorte. Revisa los datos e inténtalo de nuevo.",
+    "cohorts.error.COHORT_NAME_TAKEN": "Tu Organización ya tiene una Cohorte con ese nombre.",
+    "cohorts.error.COHORT_NOT_FOUND": "No se encontró la Cohorte en tu Organización.",
+    "cohorts.error.SPONSORSHIP_NOT_ACTIVE": "Ese Patrocinio terminó, así que su pertenencia a la Cohorte no puede cambiar.",
+    "cohorts.error.MEMBERSHIP_WINDOW_OVERLAPS": "El Estudiante ya tiene una pertenencia que se superpone en esa Cohorte.",
+    "cohorts.error.MEMBERSHIP_NOT_PROSPECTIVE": "Los cambios de pertenencia surten efecto ahora o más adelante, así que los informes pasados no se alteran.",
     "curriculum.loading": "Cargando la administración del currículo…",
     "curriculum.error": "No pudimos actualizar el currículo. Revisa los datos e inténtalo de nuevo.",
     "curriculum.sampleBadge": "Currículo de muestra",
