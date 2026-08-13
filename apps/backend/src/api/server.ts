@@ -8,13 +8,17 @@ import type { Database } from "../database/database.js";
 import type { createApi } from "./app.js";
 
 const GRAPHQL_BODY_LIMIT_BYTES = 1_000_000;
-const SOURCE_REQUEST_LIMIT = 120;
 const RATE_LIMIT_WINDOW_MILLISECONDS = 60_000;
 const CURRENT_SCHEMA_MIGRATION = "0005_curriculum_administration.sql";
 
 class SourceRateLimiter {
   readonly #counters = new Map<string, { count: number; startedAt: number }>();
   readonly #salt = randomBytes(32);
+  readonly #limit: number;
+
+  constructor(limit: number) {
+    this.#limit = limit;
+  }
 
   accepts(source: string, now = Date.now()) {
     const key = createHash("sha256").update(this.#salt).update(source).digest("base64url");
@@ -24,7 +28,7 @@ class SourceRateLimiter {
       return true;
     }
     current.count += 1;
-    return current.count <= SOURCE_REQUEST_LIMIT;
+    return current.count <= this.#limit;
   }
 }
 
@@ -41,8 +45,9 @@ export function createMarketplaceServer(options: {
   api: ReturnType<typeof createApi>;
   db: Database;
   logger: Logger;
+  sourceRequestLimit: number;
 }) {
-  const rateLimiter = new SourceRateLimiter();
+  const rateLimiter = new SourceRateLimiter(options.sourceRequestLimit);
 
   return createServer(async (request, response) => {
     const source = request.socket.remoteAddress ?? "unknown";
