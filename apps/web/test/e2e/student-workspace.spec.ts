@@ -69,8 +69,12 @@ test("a multi-role User switches explicitly and returns to each role's last plac
   await expect(page).toHaveURL(/\/student\/learning$/);
   await page.getByRole("combobox", { name: "Rol activo" }).selectOption("TEACHER");
   await expect(page).toHaveURL(/\/teacher\/availability$/);
+  // `name` matches a substring by default, and the availability panel adds
+  // "Disponibilidad docente semanal" and "Excepciones de disponibilidad" once
+  // its query resolves. Only the journey heading is under test here, so match
+  // it exactly; otherwise this passes or fails on how fast the panel loads.
   await expect(
-    page.getByRole("heading", { name: "Disponibilidad" }),
+    page.getByRole("heading", { name: "Disponibilidad", exact: true }),
   ).toBeVisible();
 
   await page.goto("/student");
