@@ -5,6 +5,8 @@ import {
   PRODUCTION_SOURCE_REQUEST_LIMIT,
 } from "../src/config.js";
 
+const TRUSTED_PROXY_SECRET = "caddy-shared-secret-for-verified-source-context";
+
 describe("authentication configuration", () => {
   it("refuses fake authentication in production", () => {
     expect(() =>
@@ -14,6 +16,41 @@ describe("authentication configuration", () => {
         DATABASE_URL: "postgres://example.invalid/marketplace",
       }),
     ).toThrowError("Fake authentication is unavailable in production");
+  });
+});
+
+describe("verified source configuration", () => {
+  it("requires a trusted proxy secret in production", () => {
+    expect(() =>
+      parseAppConfig({
+        NODE_ENV: "production",
+        AUTH_MODE: "auth0",
+        AUTH0_ISSUER: "https://example.invalid/",
+        AUTH0_AUDIENCE: "marketplace",
+        DATABASE_URL: "postgres://example.invalid/marketplace",
+      }),
+    ).toThrowError(
+      "Verified source context requires API_TRUSTED_PROXY_SECRET in production",
+    );
+  });
+
+  it("leaves the trusted proxy secret optional outside production", () => {
+    expect(
+      parseAppConfig({
+        NODE_ENV: "test",
+        DATABASE_URL: "postgres://example.invalid/marketplace",
+      }).API_TRUSTED_PROXY_SECRET,
+    ).toBeUndefined();
+  });
+
+  it("refuses a guessable trusted proxy secret", () => {
+    expect(() =>
+      parseAppConfig({
+        NODE_ENV: "test",
+        DATABASE_URL: "postgres://example.invalid/marketplace",
+        API_TRUSTED_PROXY_SECRET: "short",
+      }),
+    ).toThrowError();
   });
 });
 
@@ -45,6 +82,7 @@ describe("resource consumption configuration", () => {
         AUTH0_ISSUER: "https://example.invalid/",
         AUTH0_AUDIENCE: "marketplace",
         DATABASE_URL: "postgres://example.invalid/marketplace",
+        API_TRUSTED_PROXY_SECRET: TRUSTED_PROXY_SECRET,
         API_SOURCE_REQUEST_LIMIT: String(PRODUCTION_SOURCE_REQUEST_LIMIT + 1),
       }),
     ).toThrowError(
@@ -60,6 +98,7 @@ describe("resource consumption configuration", () => {
         AUTH0_ISSUER: "https://example.invalid/",
         AUTH0_AUDIENCE: "marketplace",
         DATABASE_URL: "postgres://example.invalid/marketplace",
+        API_TRUSTED_PROXY_SECRET: TRUSTED_PROXY_SECRET,
         API_SOURCE_REQUEST_LIMIT: String(PRODUCTION_SOURCE_REQUEST_LIMIT),
       }).API_SOURCE_REQUEST_LIMIT,
     ).toBe(PRODUCTION_SOURCE_REQUEST_LIMIT);

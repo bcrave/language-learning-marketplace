@@ -6,6 +6,7 @@ import type { Logger } from "pino";
 
 import type { Database } from "../database/database.js";
 import type { createApi } from "./app.js";
+import { createVerifiedSourceReader } from "./verified-source.js";
 
 const GRAPHQL_BODY_LIMIT_BYTES = 1_000_000;
 const RATE_LIMIT_WINDOW_MILLISECONDS = 60_000;
@@ -46,11 +47,22 @@ export function createMarketplaceServer(options: {
   db: Database;
   logger: Logger;
   sourceRequestLimit: number;
+  trustedProxySecret?: string;
 }) {
   const rateLimiter = new SourceRateLimiter(options.sourceRequestLimit);
+  const verifiedSourceFor = createVerifiedSourceReader(
+    options.trustedProxySecret === undefined
+      ? {}
+      : { trustedProxySecret: options.trustedProxySecret },
+  );
 
   return createServer(async (request, response) => {
-    const source = request.socket.remoteAddress ?? "unknown";
+    const source = verifiedSourceFor(request);
+    if (source === null) {
+      options.logger.warn({ event: "source.unverified" });
+      sendJson(response, 403, { error: "Request source could not be verified" });
+      return;
+    }
     if (!rateLimiter.accepts(source)) {
       response.setHeader("retry-after", "60");
       sendJson(response, 429, { error: "Request limit exceeded" });

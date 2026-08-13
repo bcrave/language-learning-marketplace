@@ -66,7 +66,7 @@ Use Sentry email for application, worker, reconciliation, third-party-integratio
 ### Abusive traffic and credential exposure
 
 - **Detect:** shared demo credentials, public Auth0 client configuration, and browser Sentry DSN are not exposures. Owner attention follows one verified source hitting a limit in three consecutive one-minute windows, 300 aggregate HTTP 429 responses in five minutes, or 50 denied authorization attempts across sources in five minutes. Alert immediately when a runtime secret leaves its approved store, an internal/owner-only endpoint is publicly reached, authorization fails open, or an unauthorized mutation commits.
-- **Contain:** availability may be sacrificed. Retain limits, disable the affected shared identity or operation, revoke exposed secrets, and set readiness false whenever safety is uncertain.
+- **Contain:** availability may be sacrificed. Retain limits, disable the affected shared identity or operation, revoke exposed secrets, and set readiness false whenever safety is uncertain. Broad HTTP 403 responses with `source.unverified` are a Caddy trusted-proxy misconfiguration failing closed, not abuse: restore matching proxy-secret configuration on both services rather than relaxing the limit.
 - **Clear:** 30 minutes below every abuse threshold plus an authorization smoke. Exposure also requires rotation/revocation, any needed redeployment, and proof that the old credential fails. Retain aggregate counts and correlations, not source addresses or attack payloads.
 
 ### Deployment-cost ceiling
