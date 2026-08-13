@@ -1,0 +1,142 @@
+fragment CohortDetails on Cohort {
+  id
+  name
+  createdAt
+  organization {
+    id
+    name
+  }
+  attributedActivity {
+    attendedCount
+    noShowCount
+  }
+  memberships {
+    id
+    cohortId
+    cohortName
+    sponsorshipId
+    studentUserId
+    studentDisplayName
+    effectiveFrom
+    effectiveUntil
+    attributedActivity {
+      attendedCount
+      noShowCount
+    }
+  }
+}
+
+query OrganizationCohorts {
+  organizationCohorts {
+    ...CohortDetails
+  }
+}
+
+mutation CreateCohort($input: CreateCohortInput!) {
+  createCohort(input: $input) {
+    ... on CohortSuccess {
+      cohort {
+        ...CohortDetails
+      }
+    }
+    ... on CohortError {
+      code
+      message
+    }
+  }
+}
+
+mutation AddCohortMembership($input: AddCohortMembershipInput!) {
+  addCohortMembership(input: $input) {
+    ... on CohortMembershipSuccess {
+      cohort {
+        ...CohortDetails
+      }
+    }
+    ... on CohortError {
+      code
+      message
+    }
+  }
+}
+
+mutation EndCohortMembership($input: EndCohortMembershipInput!) {
+  endCohortMembership(input: $input) {
+    ... on CohortMembershipSuccess {
+      cohort {
+        ...CohortDetails
+      }
+    }
+    ... on CohortError {
+      code
+      message
+    }
+  }
+}
+
+mutation EndSponsorshipAsOrganization($input: EndSponsorshipAsOrganizationInput!) {
+  endSponsorshipAsOrganization(input: $input) {
+    ... on EndSponsorshipAsOrganizationSuccess {
+      sponsorship {
+        id
+        studentUserId
+        studentDisplayName
+        acceptedAt
+        nextAnniversaryAt
+        state
+        endedAt
+        endedByParty
+        reportingFrom
+        reportingUntil
+        organization {
+          id
+          name
+        }
+        progressSnapshots {
+          boundary
+          courseId
+          courseTitle
+          completedActiveLessonUnitCount
+          activeLessonUnitCount
+          percentage
+          capturedAt
+        }
+      }
+    }
+    ... on SponsorshipBoundaryError {
+      code
+      message
+    }
+  }
+}
+
+mutation EndSponsorshipAsStudent($input: EndSponsorshipAsStudentInput!) {
+  endSponsorshipAsStudent(input: $input) {
+    ... on EndSponsorshipAsStudentSuccess {
+      sponsorship {
+        id
+        studentUserId
+        studentDisplayName
+        acceptedAt
+        nextAnniversaryAt
+        state
+        endedAt
+        endedByParty
+        reportingFrom
+        reportingUntil
+        organization {
+          id
+          name
+        }
+      }
+      account {
+        studentUserId
+        availableBalance
+      }
+    }
+    ... on SponsorshipBoundaryError {
+      code
+      message
+    }
+  }
+}

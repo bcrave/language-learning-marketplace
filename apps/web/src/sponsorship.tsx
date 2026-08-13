@@ -5,17 +5,21 @@ import { useIntl } from "react-intl";
 import {
   AcceptSponsorshipInvitationDocument,
   DeclineSponsorshipInvitationDocument,
+  EndSponsorshipAsOrganizationDocument,
+  EndSponsorshipAsStudentDocument,
   InviteToSponsorshipDocument,
   OrganizationSponsoredStudentsDocument,
   OrganizationSponsorshipInvitationsDocument,
   StudentSponsorshipDocument,
   StudentSponsorshipInvitationsDocument,
+  type OrganizationSponsoredStudentsQuery,
   type StudentSponsorshipInvitationsQuery,
   type StudentSponsorshipQuery,
 } from "./generated/graphql.js";
 
 type Sponsorship = NonNullable<StudentSponsorshipQuery["studentSponsorship"]>;
 type SponsorshipInvitation = StudentSponsorshipInvitationsQuery["studentSponsorshipInvitations"][number];
+type SponsoredStudent = OrganizationSponsoredStudentsQuery["organizationSponsoredStudents"][number];
 
 const invitationStateMessageIds = {
   PENDING: "sponsorship.invitations.state.PENDING",
@@ -24,17 +28,39 @@ const invitationStateMessageIds = {
   EXPIRED: "sponsorship.invitations.state.EXPIRED",
 } as const;
 
+function longInstant(intl: ReturnType<typeof useIntl>, instant: string) {
+  return intl.formatDate(instant, { dateStyle: "long", timeStyle: "short", timeZone: "UTC" });
+}
+
+// Shows what an ended Sponsorship still means: reporting frozen to its own
+// period, no further grants, and nothing taken from the Student.
+function SponsorshipReportingWindow({ sponsorship }: { sponsorship: Pick<Sponsorship, "reportingFrom" | "reportingUntil"> }) {
+  const intl = useIntl();
+  return (
+    <p>{sponsorship.reportingUntil
+      ? intl.formatMessage({ id: "sponsorship.reporting.frozen" }, {
+        from: longInstant(intl, sponsorship.reportingFrom),
+        until: longInstant(intl, sponsorship.reportingUntil),
+      })
+      : intl.formatMessage({ id: "sponsorship.reporting.open" }, { from: longInstant(intl, sponsorship.reportingFrom) })}</p>
+  );
+}
+
 function SponsorshipSummary({ sponsorship }: { sponsorship: Sponsorship }) {
   const intl = useIntl();
   return (
     <div className="sponsorship-summary">
       <p>{intl.formatMessage({ id: "sponsorship.organization" }, { name: sponsorship.organization.name })}</p>
-      <p>{intl.formatMessage({ id: "sponsorship.acceptedAt" }, {
-        date: intl.formatDate(sponsorship.acceptedAt, { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }),
-      })}</p>
-      <p>{intl.formatMessage({ id: "sponsorship.nextAnniversary" }, {
-        date: intl.formatDate(sponsorship.nextAnniversaryAt, { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }),
-      })}</p>
+      <p><strong>{intl.formatMessage({ id: sponsorship.state === "ENDED" ? "sponsorship.state.ENDED" : "sponsorship.state.ACTIVE" })}</strong></p>
+      <p>{intl.formatMessage({ id: "sponsorship.acceptedAt" }, { date: longInstant(intl, sponsorship.acceptedAt) })}</p>
+      {sponsorship.nextAnniversaryAt && <p>{intl.formatMessage({ id: "sponsorship.nextAnniversary" }, {
+        date: longInstant(intl, sponsorship.nextAnniversaryAt),
+      })}</p>}
+      {sponsorship.endedAt && <p>{intl.formatMessage({ id: "sponsorship.endedAt" }, { date: longInstant(intl, sponsorship.endedAt) })}</p>}
+      {sponsorship.endedByParty && <p>{intl.formatMessage({
+        id: sponsorship.endedByParty === "STUDENT" ? "sponsorship.endedByParty.STUDENT" : "sponsorship.endedByParty.ORGANIZATION",
+      })}</p>}
+      <SponsorshipReportingWindow sponsorship={sponsorship} />
     </div>
   );
 }
@@ -63,11 +89,15 @@ export function StudentSponsorshipPanel({
   const invitationsQuery = useQuery(StudentSponsorshipInvitationsDocument);
   const [accept, { loading: accepting }] = useMutation(AcceptSponsorshipInvitationDocument);
   const [decline, { loading: declining }] = useMutation(DeclineSponsorshipInvitationDocument);
+  const [endSponsorship, { loading: endingSponsorship }] = useMutation(EndSponsorshipAsStudentDocument);
   const [sponsorship, setSponsorship] = useState<Sponsorship | null>();
   const [invitations, setInvitations] = useState<SponsorshipInvitation[]>();
   const [announcement, setAnnouncement] = useState<"accepted" | "declined" | null>(null);
   const [failure, setFailure] = useState(false);
+  const [ended, setEnded] = useState(false);
+  const [endFailure, setEndFailure] = useState(false);
   const [pendingAttempt, setPendingAttempt] = useState<{ action: "accept" | "decline"; invitationId: string; key: string } | null>(null);
+  const [pendingEndKey, setPendingEndKey] = useState<string | null>(null);
 
   const currentSponsorship = sponsorship === undefined ? sponsorshipQuery.data?.studentSponsorship ?? null : sponsorship;
   const currentInvitations = invitations ?? invitationsQuery.data?.studentSponsorshipInvitations ?? [];
@@ -107,6 +137,27 @@ export function StudentSponsorshipPanel({
     }
   }
 
+  async function endOwnSponsorship() {
+    setEnded(false);
+    setEndFailure(false);
+    const key = pendingEndKey ?? idempotencyKeyFactory();
+    setPendingEndKey(key);
+    try {
+      const result = await endSponsorship({ variables: { input: { idempotencyKey: key } } });
+      const outcome = result.data?.endSponsorshipAsStudent;
+      if (outcome && "sponsorship" in outcome) {
+        setSponsorship(outcome.sponsorship);
+        setEnded(true);
+        setPendingEndKey(null);
+        return;
+      }
+      setPendingEndKey(null);
+      setEndFailure(true);
+    } catch {
+      setEndFailure(true);
+    }
+  }
+
   if (sponsorshipQuery.loading || invitationsQuery.loading) return <p role="status">{intl.formatMessage({ id: "sponsorship.loading" })}</p>;
   if (sponsorshipQuery.error || invitationsQuery.error) return <p role="alert">{intl.formatMessage({ id: "sponsorship.loadError" })}</p>;
 
@@ -114,6 +165,15 @@ export function StudentSponsorshipPanel({
     <section className="workspace-card" aria-labelledby="student-sponsorship-title">
       <h2 id="student-sponsorship-title">{intl.formatMessage({ id: "sponsorship.studentTitle" })}</h2>
       {currentSponsorship ? <SponsorshipSummary sponsorship={currentSponsorship} /> : <p>{intl.formatMessage({ id: "sponsorship.none" })}</p>}
+      {currentSponsorship && currentSponsorship.state === "ACTIVE" && <>
+        <h3>{intl.formatMessage({ id: "sponsorship.end.title" })}</h3>
+        <p>{intl.formatMessage({ id: "sponsorship.end.explanation" })}</p>
+        <button disabled={endingSponsorship} type="button" onClick={() => void endOwnSponsorship()}>
+          {intl.formatMessage({ id: "sponsorship.end.submit" })}
+        </button>
+      </>}
+      {ended && <p role="status">{intl.formatMessage({ id: "sponsorship.end.ended" })}</p>}
+      {endFailure && <p role="alert">{intl.formatMessage({ id: "sponsorship.end.error" })}</p>}
       <h3>{intl.formatMessage({ id: "sponsorship.invitations.title" })}</h3>
       {currentInvitations.length === 0 ? (
         <p>{intl.formatMessage({ id: "sponsorship.invitations.empty" })}</p>
@@ -163,14 +223,19 @@ export function OrganizationSponsorshipPanel({
   const invitationsQuery = useQuery(OrganizationSponsorshipInvitationsDocument);
   const sponsoredStudentsQuery = useQuery(OrganizationSponsoredStudentsDocument);
   const [invite, { loading: inviting }] = useMutation(InviteToSponsorshipDocument);
+  const [endSponsorship, { loading: endingSponsorship }] = useMutation(EndSponsorshipAsOrganizationDocument);
   const [studentUserId, setStudentUserId] = useState("");
   const [invitations, setInvitations] = useState<SponsorshipInvitation[]>();
+  const [endedSponsorships, setEndedSponsorships] = useState<Map<string, SponsoredStudent>>(new Map());
   const [succeeded, setSucceeded] = useState(false);
+  const [ended, setEnded] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const [endFailure, setEndFailure] = useState(false);
   const [pendingAttempt, setPendingAttempt] = useState<{ fingerprint: string; key: string } | null>(null);
 
   const currentInvitations = invitations ?? invitationsQuery.data?.organizationSponsorshipInvitations ?? [];
-  const sponsoredStudents = sponsoredStudentsQuery.data?.organizationSponsoredStudents ?? [];
+  const sponsoredStudents = (sponsoredStudentsQuery.data?.organizationSponsoredStudents ?? [])
+    .map((sponsorship) => endedSponsorships.get(sponsorship.id) ?? sponsorship);
 
   async function submitInvite(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -193,6 +258,28 @@ export function OrganizationSponsorshipPanel({
       setFailure(outcome && "code" in outcome ? outcome.code : "UNEXPECTED");
     } catch {
       setFailure("UNEXPECTED");
+    }
+  }
+
+  async function endSponsoredStudent(sponsorshipId: string) {
+    setEnded(false);
+    setEndFailure(false);
+    const fingerprint = JSON.stringify({ endSponsorship: sponsorshipId });
+    const idempotencyKey = pendingAttempt?.fingerprint === fingerprint ? pendingAttempt.key : idempotencyKeyFactory();
+    setPendingAttempt({ fingerprint, key: idempotencyKey });
+    try {
+      const result = await endSponsorship({ variables: { input: { idempotencyKey, sponsorshipId } } });
+      const outcome = result.data?.endSponsorshipAsOrganization;
+      if (outcome && "sponsorship" in outcome) {
+        setEndedSponsorships((current) => new Map(current).set(outcome.sponsorship.id, outcome.sponsorship));
+        setEnded(true);
+        setPendingAttempt(null);
+        return;
+      }
+      setPendingAttempt(null);
+      setEndFailure(true);
+    } catch {
+      setEndFailure(true);
     }
   }
 
@@ -235,13 +322,34 @@ export function OrganizationSponsorshipPanel({
             {sponsoredStudents.map((sponsorship) => (
               <li key={sponsorship.id}>
                 <p>{intl.formatMessage({ id: "sponsorship.student" }, { name: sponsorship.studentDisplayName })}</p>
-                <p>{intl.formatMessage({ id: "sponsorship.acceptedAt" }, {
-                  date: intl.formatDate(sponsorship.acceptedAt, { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }),
-                })}</p>
+                <p><strong>{intl.formatMessage({
+                  id: sponsorship.state === "ENDED" ? "sponsorship.state.ENDED" : "sponsorship.state.ACTIVE",
+                })}</strong></p>
+                <p>{intl.formatMessage({ id: "sponsorship.acceptedAt" }, { date: longInstant(intl, sponsorship.acceptedAt) })}</p>
+                <SponsorshipReportingWindow sponsorship={sponsorship} />
+                {sponsorship.endedByParty && <p>{intl.formatMessage({
+                  id: sponsorship.endedByParty === "STUDENT" ? "sponsorship.endedByParty.STUDENT" : "sponsorship.endedByParty.ORGANIZATION",
+                })}</p>}
+                {sponsorship.progressSnapshots.map((snapshot) => (
+                  <p key={`${snapshot.boundary}-${snapshot.courseId}`}>{intl.formatMessage({ id: "sponsorship.progressSnapshot" }, {
+                    boundary: snapshot.boundary,
+                    courseTitle: snapshot.courseTitle,
+                    completed: snapshot.completedActiveLessonUnitCount,
+                    active: snapshot.activeLessonUnitCount,
+                    percentage: snapshot.percentage,
+                  })}</p>
+                ))}
+                {sponsorship.state === "ACTIVE" && (
+                  <button disabled={endingSponsorship} type="button" onClick={() => void endSponsoredStudent(sponsorship.id)}>
+                    {intl.formatMessage({ id: "sponsorship.sponsoredStudents.end" })}
+                  </button>
+                )}
               </li>
             ))}
           </ul>
         )}
+        {ended && <p role="status">{intl.formatMessage({ id: "sponsorship.sponsoredStudents.ended" })}</p>}
+        {endFailure && <p role="alert">{intl.formatMessage({ id: "sponsorship.end.error" })}</p>}
       </section>
     </>
   );

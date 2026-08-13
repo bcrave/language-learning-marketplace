@@ -1,8 +1,10 @@
 import { interfaceMessages } from "@marketplace/core";
+import { sql } from "kysely";
 
 import type { Database } from "../database/database.js";
 import { projectClassCreditAccount } from "../class-credit/class-credit-service.js";
 import { monthlySubscriptionAnniversary } from "../subscription/subscription-time.js";
+import { closeCohortMembershipsAtSponsorshipEnd } from "./cohort-service.js";
 import { notifySponsorshipUser } from "./sponsorship-notifications.js";
 
 export const CURRENT_SPONSORSHIP_DISCLOSURE_VERSION = "1";
@@ -105,6 +107,9 @@ const sponsorshipColumns = [
   "users.display_name as student_display_name",
   "sponsorships.accepted_at",
   "sponsorships.next_anniversary_at",
+  "sponsorships.state",
+  "sponsorships.ended_at",
+  "sponsorships.ended_by_party",
 ] as const;
 
 function baseSponsorshipQuery(db: Database) {
@@ -117,19 +122,94 @@ function baseSponsorshipQuery(db: Database) {
 type SponsorshipRow = Awaited<ReturnType<ReturnType<typeof baseSponsorshipQuery>["execute"]>>[number];
 
 function projectSponsorship(row: SponsorshipRow) {
+  const ended = row.state === "ENDED";
   return {
     id: row.id,
     organization: { id: row.organization_id, name: row.organization_name },
     studentUserId: row.student_user_id,
     studentDisplayName: row.student_display_name,
     acceptedAt: row.accepted_at.toISOString(),
-    nextAnniversaryAt: row.next_anniversary_at.toISOString(),
+    // An ended Sponsorship has no further anniversary: its grants stopped at the
+    // end instant even though the pointer stays for history.
+    nextAnniversaryAt: ended ? null : row.next_anniversary_at.toISOString(),
+    state: row.state,
+    endedAt: row.ended_at?.toISOString() ?? null,
+    endedByParty: row.ended_by_party,
+    reportingFrom: row.accepted_at.toISOString(),
+    reportingUntil: row.ended_at?.toISOString() ?? null,
   };
 }
 
 export async function sponsorshipForStudent(db: Database, studentId: string) {
-  const row = await baseSponsorshipQuery(db).where("sponsorships.student_user_id", "=", studentId).executeTakeFirst();
+  const row = await baseSponsorshipQuery(db)
+    .where("sponsorships.student_user_id", "=", studentId)
+    .where("sponsorships.state", "=", "ACTIVE")
+    .executeTakeFirst();
   return row ? projectSponsorship(row) : null;
+}
+
+export async function courseProgressSnapshotsForSponsorship(db: Database, sponsorshipId: string) {
+  const rows = await db.selectFrom("course_progress_snapshots")
+    .innerJoin("courses", "courses.id", "course_progress_snapshots.course_id")
+    .select([
+      "course_progress_snapshots.boundary",
+      "course_progress_snapshots.course_id",
+      "courses.title as course_title",
+      "course_progress_snapshots.completed_active_lesson_unit_count",
+      "course_progress_snapshots.active_lesson_unit_count",
+      "course_progress_snapshots.captured_at",
+    ])
+    .where("course_progress_snapshots.sponsorship_id", "=", sponsorshipId)
+    .orderBy("course_progress_snapshots.boundary")
+    .orderBy("courses.title")
+    .execute();
+  return rows.map((row) => ({
+    boundary: row.boundary,
+    courseId: row.course_id,
+    courseTitle: row.course_title,
+    completedActiveLessonUnitCount: row.completed_active_lesson_unit_count,
+    activeLessonUnitCount: row.active_lesson_unit_count,
+    percentage: row.active_lesson_unit_count === 0
+      ? 0
+      : Math.round(100 * row.completed_active_lesson_unit_count / row.active_lesson_unit_count),
+    capturedAt: row.captured_at.toISOString(),
+  }));
+}
+
+// Freezes the aggregate Course Progress that an Organization may report for one
+// Sponsorship boundary, including the active Lesson Unit denominator as it stood
+// at capture time. Courses the Student never touched carry no reportable fact.
+export async function captureCourseProgressSnapshot(
+  transaction: Database,
+  sponsorship: { id: string; student_user_id: string },
+  boundary: "SPONSORSHIP_START" | "SPONSORSHIP_END",
+  capturedAt: Date,
+) {
+  const courses = await transaction.selectFrom("courses")
+    .innerJoin("lesson_units", "lesson_units.course_id", "courses.id")
+    .leftJoin("lesson_unit_completions", (join) => join
+      .onRef("lesson_unit_completions.lesson_unit_id", "=", "lesson_units.id")
+      .on("lesson_unit_completions.student_user_id", "=", sponsorship.student_user_id))
+    .select([
+      "courses.id",
+      sql<number>`count(*) filter (where lesson_units.state = 'ACTIVE')::integer`.as("active_count"),
+      sql<number>`count(lesson_unit_completions.id) filter (where lesson_units.state = 'ACTIVE')::integer`.as("completed_active_count"),
+    ])
+    .groupBy("courses.id")
+    .having(sql<number>`count(lesson_unit_completions.id)`, ">", 0)
+    .execute();
+  if (courses.length === 0) return;
+  await transaction.insertInto("course_progress_snapshots")
+    .values(courses.map((course) => ({
+      sponsorship_id: sponsorship.id,
+      boundary,
+      course_id: course.id,
+      completed_active_lesson_unit_count: course.completed_active_count,
+      active_lesson_unit_count: course.active_count,
+      captured_at: capturedAt,
+    })))
+    .onConflict((conflict) => conflict.columns(["sponsorship_id", "boundary", "course_id"]).doNothing())
+    .execute();
 }
 
 export async function sponsorshipsForOrganization(db: Database, organizationManager: { organizationId: string }) {
@@ -179,9 +259,10 @@ export async function inviteToSponsorship(
   const existingSponsorship = await transaction.selectFrom("sponsorships")
     .select("id")
     .where("student_user_id", "=", student.id)
+    .where("state", "=", "ACTIVE")
     .executeTakeFirst();
   if (existingSponsorship) {
-    return auditedInviteConflict(transaction, organizationManager, correlationId, "STUDENT_ALREADY_SPONSORED", "The Student already has a Sponsorship.");
+    return auditedInviteConflict(transaction, organizationManager, correlationId, "STUDENT_ALREADY_SPONSORED", "The Student already has an active Sponsorship.");
   }
   const existingPending = await transaction.selectFrom("sponsorship_invitations")
     .select("id")
@@ -350,10 +431,11 @@ export async function acceptSponsorshipInvitation(
   const existingSponsorship = await transaction.selectFrom("sponsorships")
     .select("id")
     .where("student_user_id", "=", student.id)
+    .where("state", "=", "ACTIVE")
     .forUpdate()
     .executeTakeFirst();
   if (existingSponsorship) {
-    return auditedResponseConflict(transaction, student, "sponsorship-invitation.accepted", invitation.id, correlationId, "SPONSORSHIP_ALREADY_ACTIVE", "The Student already has a Sponsorship.");
+    return auditedResponseConflict(transaction, student, "sponsorship-invitation.accepted", invitation.id, correlationId, "SPONSORSHIP_ALREADY_ACTIVE", "The Student already has an active Sponsorship.");
   }
 
   const nextAnniversaryAt = monthlySubscriptionAnniversary(now, 1);
@@ -387,6 +469,7 @@ export async function acceptSponsorshipInvitation(
     .set({ state: "ACCEPTED", decided_at: now })
     .where("id", "=", invitation.id)
     .executeTakeFirstOrThrow();
+  await captureCourseProgressSnapshot(transaction, { id: sponsorship.id, student_user_id: student.id }, "SPONSORSHIP_START", now);
 
   const [organization, studentRow] = await Promise.all([
     transaction.selectFrom("organizations").select("name").where("id", "=", invitation.organization_id).executeTakeFirstOrThrow(),
@@ -484,5 +567,140 @@ export async function declineSponsorshipInvitation(
       created_at: invitation.created_at,
       decided_at: now,
     }, studentRow.interface_locale ?? "en"),
+  };
+}
+
+type SponsorshipBoundaryErrorCode = "SPONSORSHIP_NOT_FOUND" | "SPONSORSHIP_ALREADY_ENDED";
+
+async function auditedBoundaryConflict(
+  db: Database,
+  actor: { id: string; role: "STUDENT" | "ORGANIZATION_MANAGER" },
+  targetId: string,
+  correlationId: string,
+  code: SponsorshipBoundaryErrorCode,
+  message: string,
+) {
+  await db.insertInto("audit_entries").values({
+    actor_user_id: actor.id,
+    acting_role: actor.role,
+    operation: "sponsorship.terminated",
+    target_type: "Sponsorship",
+    target_id: targetId,
+    outcome: "DENIED",
+    reason_code: code,
+    correlation_id: correlationId,
+  }).execute();
+  return { __typename: "SponsorshipBoundaryError" as const, code, message };
+}
+
+// Ending a Sponsorship is prospective for both parties: the relationship, future
+// Organization grants, and Organization reporting stop at this instant, while the
+// User, their Role Assignments, and their owned Class Credits continue untouched.
+async function endActiveSponsorship(
+  transaction: Database,
+  sponsorship: { id: string; organization_id: string; student_user_id: string },
+  endedByParty: "STUDENT" | "ORGANIZATION",
+  actorUserId: string,
+  correlationId: string,
+  now: Date,
+) {
+  await transaction.updateTable("sponsorships")
+    .set({ state: "ENDED", ended_at: now, ended_by_party: endedByParty, ended_by_user_id: actorUserId, updated_at: now })
+    .where("id", "=", sponsorship.id)
+    .executeTakeFirstOrThrow();
+  await closeCohortMembershipsAtSponsorshipEnd(transaction, sponsorship.id, now);
+  await captureCourseProgressSnapshot(transaction, sponsorship, "SPONSORSHIP_END", now);
+
+  const [organization, studentRow, managers] = await Promise.all([
+    transaction.selectFrom("organizations").select("name").where("id", "=", sponsorship.organization_id).executeTakeFirstOrThrow(),
+    transaction.selectFrom("users").select("display_name").where("id", "=", sponsorship.student_user_id).executeTakeFirstOrThrow(),
+    transaction.selectFrom("organization_managers").select("user_id").where("organization_id", "=", sponsorship.organization_id).execute(),
+  ]);
+  const sourceReference = `sponsorship.terminated:${sponsorship.id}`;
+  await notifySponsorshipUser(transaction, {
+    recipientUserId: sponsorship.student_user_id,
+    messageId: "sponsorship.terminated.student",
+    organizationName: organization.name,
+    endedByParty,
+    endedAt: now,
+    sourceReference,
+  });
+  for (const manager of managers) {
+    await notifySponsorshipUser(transaction, {
+      recipientUserId: manager.user_id,
+      messageId: "sponsorship.terminated.manager",
+      studentDisplayName: studentRow.display_name,
+      endedByParty,
+      endedAt: now,
+      sourceReference,
+    });
+  }
+  await transaction.insertInto("audit_entries").values({
+    actor_user_id: actorUserId,
+    acting_role: endedByParty === "STUDENT" ? "STUDENT" : "ORGANIZATION_MANAGER",
+    operation: "sponsorship.terminated",
+    target_type: "Sponsorship",
+    target_id: sponsorship.id,
+    outcome: "SUCCEEDED",
+    reason_code: endedByParty === "STUDENT" ? "SPONSORSHIP_TERMINATED_BY_STUDENT" : "SPONSORSHIP_TERMINATED_BY_ORGANIZATION",
+    correlation_id: correlationId,
+  }).execute();
+}
+
+async function endedSponsorshipProjection(db: Database, sponsorshipId: string) {
+  const row = await baseSponsorshipQuery(db).where("sponsorships.id", "=", sponsorshipId).executeTakeFirstOrThrow();
+  return projectSponsorship(row);
+}
+
+export async function endSponsorshipAsOrganization(
+  transaction: Database,
+  organizationManager: OrganizationManagerActor,
+  input: { sponsorshipId: string },
+  correlationId: string,
+  now: Date,
+) {
+  const actor = { id: organizationManager.id, role: "ORGANIZATION_MANAGER" as const };
+  const sponsorship = await transaction.selectFrom("sponsorships")
+    .select(["id", "organization_id", "student_user_id", "state"])
+    .where("id", "=", input.sponsorshipId)
+    .where("organization_id", "=", organizationManager.organizationId)
+    .forUpdate()
+    .executeTakeFirst();
+  if (!sponsorship) {
+    return auditedBoundaryConflict(transaction, actor, input.sponsorshipId, correlationId, "SPONSORSHIP_NOT_FOUND", "The Sponsorship was not found in your Organization.");
+  }
+  if (sponsorship.state !== "ACTIVE") {
+    return auditedBoundaryConflict(transaction, actor, sponsorship.id, correlationId, "SPONSORSHIP_ALREADY_ENDED", "The Sponsorship already ended.");
+  }
+
+  await endActiveSponsorship(transaction, sponsorship, "ORGANIZATION", organizationManager.id, correlationId, now);
+  return {
+    __typename: "EndSponsorshipAsOrganizationSuccess" as const,
+    sponsorship: await endedSponsorshipProjection(transaction, sponsorship.id),
+  };
+}
+
+export async function endSponsorshipAsStudent(
+  transaction: Database,
+  student: StudentActor,
+  correlationId: string,
+  now: Date,
+) {
+  const actor = { id: student.id, role: "STUDENT" as const };
+  const sponsorship = await transaction.selectFrom("sponsorships")
+    .select(["id", "organization_id", "student_user_id", "state"])
+    .where("student_user_id", "=", student.id)
+    .where("state", "=", "ACTIVE")
+    .forUpdate()
+    .executeTakeFirst();
+  if (!sponsorship) {
+    return auditedBoundaryConflict(transaction, actor, student.id, correlationId, "SPONSORSHIP_NOT_FOUND", "You do not have an active Sponsorship.");
+  }
+
+  await endActiveSponsorship(transaction, sponsorship, "STUDENT", student.id, correlationId, now);
+  return {
+    __typename: "EndSponsorshipAsStudentSuccess" as const,
+    sponsorship: await endedSponsorshipProjection(transaction, sponsorship.id),
+    account: await projectClassCreditAccount(transaction, student.id),
   };
 }

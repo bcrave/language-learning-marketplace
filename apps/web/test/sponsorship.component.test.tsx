@@ -10,6 +10,8 @@ import { OrganizationSponsorshipPanel, StudentSponsorshipPanel } from "../src/sp
 import {
   AcceptSponsorshipInvitationDocument,
   DeclineSponsorshipInvitationDocument,
+  EndSponsorshipAsOrganizationDocument,
+  EndSponsorshipAsStudentDocument,
   InviteToSponsorshipDocument,
   OrganizationSponsoredStudentsDocument,
   OrganizationSponsorshipInvitationsDocument,
@@ -39,6 +41,37 @@ const pendingInvitation = {
   organization,
   disclosure,
 };
+const sponsorshipId = "00000000-0000-4000-8000-000000000060";
+const activeSponsorship = {
+  id: sponsorshipId,
+  studentUserId,
+  studentDisplayName: "Casey Nguyen",
+  acceptedAt: "2026-08-11T18:05:00.000Z",
+  nextAnniversaryAt: "2026-09-11T18:05:00.000Z",
+  state: "ACTIVE" as const,
+  endedAt: null,
+  endedByParty: null,
+  reportingFrom: "2026-08-11T18:05:00.000Z",
+  reportingUntil: null,
+  organization,
+  progressSnapshots: [],
+};
+const endedSponsorship = {
+  ...activeSponsorship,
+  nextAnniversaryAt: null,
+  state: "ENDED" as const,
+  endedAt: "2026-08-20T12:00:00.000Z",
+  reportingUntil: "2026-08-20T12:00:00.000Z",
+  progressSnapshots: [{
+    boundary: "SPONSORSHIP_END" as const,
+    courseId: "00000000-0000-4000-8000-000000000070",
+    courseTitle: "Spanish B2",
+    completedActiveLessonUnitCount: 3,
+    activeLessonUnitCount: 4,
+    percentage: 75,
+    capturedAt: "2026-08-20T12:00:00.000Z",
+  }],
+};
 
 describe("Sponsorship", () => {
   it("lets a Student review the disclosure and accept a pending Sponsorship Invitation", async () => {
@@ -52,7 +85,7 @@ describe("Sponsorship", () => {
         {
           request: { query: AcceptSponsorshipInvitationDocument, variables: { input: { idempotencyKey: "accept-key", invitationId } } },
           result: { data: { acceptSponsorshipInvitation: {
-            sponsorship: { id: "00000000-0000-4000-8000-000000000060", studentUserId, studentDisplayName: "Casey Nguyen", acceptedAt: "2026-08-11T18:05:00.000Z", nextAnniversaryAt: "2026-09-11T18:05:00.000Z", organization },
+            sponsorship: activeSponsorship,
             account: { studentUserId, availableBalance: 8 },
           } } },
         },
@@ -140,6 +173,62 @@ describe("Sponsorship", () => {
     await user.click(screen.getByRole("button", { name: "Send Sponsorship Invitation" }));
 
     expect(await screen.findByText("The Student already has a Sponsorship.")).toHaveAttribute("role", "alert");
+  });
+
+  it("lets a Student end their own Sponsorship and keeps their Class Credits", async () => {
+    const user = userEvent.setup();
+    renderWithLocale(
+      <StudentSponsorshipPanel idempotencyKeyFactory={() => "end-key"} />,
+      "en",
+      [
+        { request: { query: StudentSponsorshipDocument }, result: { data: { studentSponsorship: activeSponsorship } } },
+        { request: { query: StudentSponsorshipInvitationsDocument }, result: { data: { studentSponsorshipInvitations: [] } } },
+        {
+          request: { query: EndSponsorshipAsStudentDocument, variables: { input: { idempotencyKey: "end-key" } } },
+          result: { data: { endSponsorshipAsStudent: {
+            sponsorship: endedSponsorship,
+            account: { studentUserId, availableBalance: 8 },
+          } } },
+        },
+      ],
+    );
+
+    expect(await screen.findByRole("heading", { name: "End this Sponsorship" })).toBeVisible();
+    expect(screen.getByText(/Organization reporting covers activity since/)).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "End Sponsorship" }));
+
+    expect(await screen.findByText("Sponsorship ended. The Class Credits you already own remain yours.")).toHaveAttribute("role", "status");
+    expect(screen.getByText("Ended")).toBeVisible();
+    expect(screen.getByText(/Organization reporting is frozen to activity from/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "End Sponsorship" })).not.toBeInTheDocument();
+  });
+
+  it("lets an Organization Manager end a sponsored Student's Sponsorship and freeze its reporting", async () => {
+    const user = userEvent.setup();
+    renderWithLocale(
+      <OrganizationSponsorshipPanel idempotencyKeyFactory={() => "end-key"} />,
+      "en",
+      [
+        { request: { query: OrganizationSponsorshipInvitationsDocument }, result: { data: { organizationSponsorshipInvitations: [] } } },
+        { request: { query: OrganizationSponsoredStudentsDocument }, result: { data: { organizationSponsoredStudents: [activeSponsorship] } } },
+        {
+          request: { query: EndSponsorshipAsOrganizationDocument, variables: { input: { idempotencyKey: "end-key", sponsorshipId } } },
+          result: { data: { endSponsorshipAsOrganization: { sponsorship: endedSponsorship } } },
+        },
+      ],
+    );
+
+    expect(await screen.findByRole("heading", { name: "Sponsored Students" })).toBeVisible();
+    expect(await screen.findByText("Student: Casey Nguyen")).toBeVisible();
+    expect(screen.getByText("Active")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "End Sponsorship" }));
+
+    expect(await screen.findByText("Sponsorship ended. Reporting is frozen to the Sponsorship period.")).toHaveAttribute("role", "status");
+    expect(screen.getByText("Ended")).toBeVisible();
+    expect(screen.getByText("Frozen ending — Spanish B2: 3 of 4 Lesson Units (75%)")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "End Sponsorship" })).not.toBeInTheDocument();
   });
 
   it("has no serious or critical automated accessibility violations", async () => {

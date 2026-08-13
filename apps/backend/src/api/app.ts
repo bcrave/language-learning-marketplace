@@ -70,13 +70,23 @@ import {
 } from "../subscription/subscription-service.js";
 import {
   acceptSponsorshipInvitation,
+  courseProgressSnapshotsForSponsorship,
   declineSponsorshipInvitation,
+  endSponsorshipAsOrganization,
+  endSponsorshipAsStudent,
   inviteToSponsorship,
   sponsorshipForStudent,
   sponsorshipInvitationsForOrganization,
   sponsorshipInvitationsForStudent,
   sponsorshipsForOrganization,
 } from "../sponsorship/sponsorship-service.js";
+import {
+  addCohortMembership,
+  cohortsForOrganization,
+  createCohort,
+  endCohortMembership,
+  renameCohort,
+} from "../sponsorship/cohort-service.js";
 import { joinWaitlist, waitlistEntriesForStudent, withdrawWaitlist } from "../waitlist/waitlist-service.js";
 import { notificationsForUser, openAdministratorTasks, resolveAdministratorTask, updateNotificationState, userForNotificationAccess } from "../notification/notification-service.js";
 import { createSimulatedClassroomProvider, enterClassroom, learningAccessClassSessionsForViewer, learningAccessLessonUnitsForViewer, lessonMaterialsForViewer, type ClassroomProvider } from "../learning-access/learning-access-service.js";
@@ -158,6 +168,32 @@ const withdrawWaitlistInputSchema = z.object({
   idempotencyKey: z.string().min(1).max(200),
   waitlistEntryId: z.uuid(),
 });
+const cohortNameSchema = z.string().trim().min(1).max(120);
+const createCohortInputSchema = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  name: cohortNameSchema,
+});
+const renameCohortInputSchema = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  cohortId: z.uuid(),
+  name: cohortNameSchema,
+});
+const addCohortMembershipInputSchema = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  cohortId: z.uuid(),
+  sponsorshipId: z.uuid(),
+  effectiveFrom: z.iso.datetime().nullish(),
+  effectiveUntil: z.iso.datetime().nullish(),
+});
+const endCohortMembershipInputSchema = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  cohortMembershipId: z.uuid(),
+  effectiveUntil: z.iso.datetime().nullish(),
+});
+const endSponsorshipAsOrganizationInputSchema = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  sponsorshipId: z.uuid(),
+});
 
 function graphQLInterfaceLocale(locale: "en" | "es" | null) {
   if (locale === null) return null;
@@ -230,6 +266,16 @@ export function createApi(options: {
       InviteToSponsorshipResult: { __resolveType: (value) => value.__typename! },
       AcceptSponsorshipInvitationResult: { __resolveType: (value) => value.__typename! },
       DeclineSponsorshipInvitationResult: { __resolveType: (value) => value.__typename! },
+      EndSponsorshipAsOrganizationResult: { __resolveType: (value) => value.__typename! },
+      EndSponsorshipAsStudentResult: { __resolveType: (value) => value.__typename! },
+      CreateCohortResult: { __resolveType: (value) => value.__typename! },
+      RenameCohortResult: { __resolveType: (value) => value.__typename! },
+      AddCohortMembershipResult: { __resolveType: (value) => value.__typename! },
+      EndCohortMembershipResult: { __resolveType: (value) => value.__typename! },
+      Sponsorship: {
+        progressSnapshots: async (parent, _arguments, context) =>
+          graphQLResult(await courseProgressSnapshotsForSponsorship(context.db, parent.id)),
+      },
       Query: {
         notifications: async (_parent, _arguments, context) => {
           const user = await authenticateNotificationUser(context);
@@ -280,6 +326,10 @@ export function createApi(options: {
         organizationSponsoredStudents: async (_parent, _arguments, context) => {
           const organizationManager = await authenticateOrganizationManager(context, "sponsorship.read");
           return graphQLResult(await sponsorshipsForOrganization(context.db, organizationManager));
+        },
+        organizationCohorts: async (_parent, _arguments, context) => {
+          const organizationManager = await authenticateOrganizationManager(context, "cohort.read", "Cohort");
+          return graphQLResult(await cohortsForOrganization(context.db, organizationManager));
         },
         discoverClassSessions: async (_parent, { input }, context) => {
           const student = await authenticateStudent(context, "class-session-discovery.read", "ClassSessionDiscovery");
@@ -654,6 +704,104 @@ export function createApi(options: {
             (transaction) => declineSponsorshipInvitation(transaction, student, input, context.correlationId, options.now?.() ?? new Date()),
             { __typename: "SponsorshipInvitationResponseError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
             "SponsorshipInvitation",
+          ));
+        },
+        endSponsorshipAsOrganization: async (_parent, { input }, context) => {
+          const organizationManager = await authenticateOrganizationManager(context, "sponsorship.terminated", "Sponsorship");
+          const validatedInput = endSponsorshipAsOrganizationInputSchema.safeParse(input);
+          if (!validatedInput.success) {
+            throw createGraphQLError("Provide a valid Sponsorship identifier", { extensions: { code: "BAD_USER_INPUT" } });
+          }
+          return graphQLResult(await idempotentOrganizationManagerMutation(
+            context,
+            organizationManager,
+            "sponsorship.terminated",
+            validatedInput.data.idempotencyKey,
+            validatedInput.data,
+            (transaction) => endSponsorshipAsOrganization(transaction, organizationManager, validatedInput.data, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "SponsorshipBoundaryError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "Sponsorship",
+          ));
+        },
+        endSponsorshipAsStudent: async (_parent, { input }, context) => {
+          const student = await authenticateStudent(context, "sponsorship.terminated", "Sponsorship");
+          return graphQLResult(await idempotentStudentMutation(
+            context,
+            student,
+            "sponsorship.terminated",
+            input.idempotencyKey,
+            input,
+            (transaction) => endSponsorshipAsStudent(transaction, student, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "SponsorshipBoundaryError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "Sponsorship",
+          ));
+        },
+        createCohort: async (_parent, { input }, context) => {
+          const organizationManager = await authenticateOrganizationManager(context, "cohort.created", "Cohort");
+          const validatedInput = createCohortInputSchema.safeParse(input);
+          if (!validatedInput.success) {
+            throw createGraphQLError("Provide a Cohort name of 1 to 120 characters", { extensions: { code: "BAD_USER_INPUT" } });
+          }
+          return graphQLResult(await idempotentOrganizationManagerMutation(
+            context,
+            organizationManager,
+            "cohort.created",
+            validatedInput.data.idempotencyKey,
+            validatedInput.data,
+            (transaction) => createCohort(transaction, organizationManager, validatedInput.data, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "CohortError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "Cohort",
+          ));
+        },
+        renameCohort: async (_parent, { input }, context) => {
+          const organizationManager = await authenticateOrganizationManager(context, "cohort.renamed", "Cohort");
+          const validatedInput = renameCohortInputSchema.safeParse(input);
+          if (!validatedInput.success) {
+            throw createGraphQLError("Provide a Cohort identifier and a name of 1 to 120 characters", { extensions: { code: "BAD_USER_INPUT" } });
+          }
+          return graphQLResult(await idempotentOrganizationManagerMutation(
+            context,
+            organizationManager,
+            "cohort.renamed",
+            validatedInput.data.idempotencyKey,
+            validatedInput.data,
+            (transaction) => renameCohort(transaction, organizationManager, validatedInput.data, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "CohortError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "Cohort",
+          ));
+        },
+        addCohortMembership: async (_parent, { input }, context) => {
+          const organizationManager = await authenticateOrganizationManager(context, "cohort-membership.created", "CohortMembership");
+          const validatedInput = addCohortMembershipInputSchema.safeParse(input);
+          if (!validatedInput.success) {
+            throw createGraphQLError("Provide a Cohort, a Sponsorship, and valid membership instants", { extensions: { code: "BAD_USER_INPUT" } });
+          }
+          return graphQLResult(await idempotentOrganizationManagerMutation(
+            context,
+            organizationManager,
+            "cohort-membership.created",
+            validatedInput.data.idempotencyKey,
+            validatedInput.data,
+            (transaction) => addCohortMembership(transaction, organizationManager, validatedInput.data, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "CohortError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "CohortMembership",
+          ));
+        },
+        endCohortMembership: async (_parent, { input }, context) => {
+          const organizationManager = await authenticateOrganizationManager(context, "cohort-membership.ended", "CohortMembership");
+          const validatedInput = endCohortMembershipInputSchema.safeParse(input);
+          if (!validatedInput.success) {
+            throw createGraphQLError("Provide a Cohort membership identifier and a valid end instant", { extensions: { code: "BAD_USER_INPUT" } });
+          }
+          return graphQLResult(await idempotentOrganizationManagerMutation(
+            context,
+            organizationManager,
+            "cohort-membership.ended",
+            validatedInput.data.idempotencyKey,
+            validatedInput.data,
+            (transaction) => endCohortMembership(transaction, organizationManager, validatedInput.data, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "CohortError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "CohortMembership",
           ));
         },
         setStudentPlacement: async (_parent, { input }, context) => {
