@@ -21,7 +21,12 @@ const api = createApi({
   ...(config.AUTH0_AUDIENCE ? { auth0Audience: config.AUTH0_AUDIENCE } : {}),
   ...(config.AUTH0_ISSUER ? { auth0Issuer: config.AUTH0_ISSUER } : {}),
 });
-const server = createMarketplaceServer({ api, db, logger });
+const server = createMarketplaceServer({
+  api,
+  db,
+  logger,
+  sourceRequestLimit: config.API_SOURCE_REQUEST_LIMIT,
+});
 
 server.listen(config.API_PORT, "0.0.0.0", () => {
   logger.info({ event: "api.started", port: config.API_PORT });

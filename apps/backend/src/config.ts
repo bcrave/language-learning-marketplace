@@ -1,10 +1,23 @@
 import { z } from "zod";
 
+/**
+ * ADR-0025 bounds public API resource consumption at 120 requests per minute
+ * per source address. Automated suites drive every browser through loopback,
+ * so one source legitimately carries the traffic of many people; they raise
+ * this outside production rather than share a single person's budget.
+ */
+export const PRODUCTION_SOURCE_REQUEST_LIMIT = 120;
+
 const baseConfigSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   AUTH_MODE: z.enum(["fake", "auth0"]).default("fake"),
   DATABASE_URL: z.url(),
   API_PORT: z.coerce.number().int().positive().default(4000),
+  API_SOURCE_REQUEST_LIMIT: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(PRODUCTION_SOURCE_REQUEST_LIMIT),
   AUTH0_ISSUER: z.url().optional(),
   AUTH0_AUDIENCE: z.string().min(1).optional(),
 });
@@ -23,6 +36,15 @@ export function parseAppConfig(environment: Record<string, string | undefined>):
     (!config.AUTH0_ISSUER || !config.AUTH0_AUDIENCE)
   ) {
     throw new Error("Auth0 authentication requires AUTH0_ISSUER and AUTH0_AUDIENCE");
+  }
+
+  if (
+    config.NODE_ENV === "production" &&
+    config.API_SOURCE_REQUEST_LIMIT > PRODUCTION_SOURCE_REQUEST_LIMIT
+  ) {
+    throw new Error(
+      `The per-source request limit cannot be raised above ${PRODUCTION_SOURCE_REQUEST_LIMIT} in production`,
+    );
   }
 
   return config;

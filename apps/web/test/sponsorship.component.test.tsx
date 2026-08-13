@@ -219,7 +219,7 @@ describe("Sponsorship", () => {
       ],
     );
 
-    expect(await screen.findByRole("heading", { name: "Sponsored Students" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "Organization Sponsorships" })).toBeVisible();
     expect(await screen.findByText("Student: Casey Nguyen")).toBeVisible();
     expect(screen.getByText("Active")).toBeVisible();
 

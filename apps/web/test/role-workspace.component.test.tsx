@@ -442,4 +442,54 @@ describe("Role workspace navigation", () => {
       "page",
     );
   });
+
+  it("gives every heading on the Sponsored Students place a distinct name", async () => {
+    render(
+      <MockedProvider
+        mocks={[
+          {
+            request: {
+              query: RoleWorkspaceDocument,
+              variables: { actingRole: "ORGANIZATION_MANAGER" },
+            },
+            result: {
+              data: {
+                roleWorkspace: {
+                  actingRole: "ORGANIZATION_MANAGER",
+                  relationshipScope: "ASSIGNED_ORGANIZATION",
+                  user: {
+                    id: "00000000-0000-4000-8000-000000000010",
+                    displayName: "María Torres",
+                    interfaceLocale: "EN",
+                    displayTimeZone: "America/Denver",
+                  },
+                  rolePlaces: [
+                    { role: "ORGANIZATION_MANAGER", place: "ORGANIZATION_STUDENTS" },
+                  ],
+                },
+              },
+            },
+          },
+        ]}
+      >
+        <RouterProvider
+          router={createMemoryRouter(workspaceRouteObjects, {
+            initialEntries: [
+              {
+                pathname: "/organization/students",
+                state: { explicitRole: "ORGANIZATION_MANAGER" },
+              },
+            ],
+          })}
+        />
+      </MockedProvider>,
+    );
+
+    await screen.findByRole("heading", { name: "Sponsored Students" });
+    const names = screen
+      .getAllByRole("heading")
+      .map((heading) => heading.textContent);
+
+    expect(names).toEqual([...new Set(names)]);
+  });
 });

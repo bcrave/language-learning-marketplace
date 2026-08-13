@@ -4,7 +4,10 @@ const databaseUrl = process.env.TEST_DATABASE_URL;
 const databaseEnvironment = databaseUrl
   ? `DATABASE_URL=${databaseUrl}`
   : "DATABASE_URL=postgres://marketplace:marketplace@127.0.0.1:5433/marketplace E2E_USE_TESTCONTAINERS=true";
-const apiEnvironment = `${databaseEnvironment} AUTH_MODE=fake NODE_ENV=test API_PORT=4000`;
+// Every browser context reaches the API through loopback, so the whole suite
+// shares one source address and one ADR-0025 per-source budget. Raise it here
+// so the suite is not throttled as though it were a single person.
+const apiEnvironment = `${databaseEnvironment} AUTH_MODE=fake NODE_ENV=test API_PORT=4000 API_SOURCE_REQUEST_LIMIT=10000`;
 
 export default defineConfig({
   testDir: "./apps/web/test/e2e",
