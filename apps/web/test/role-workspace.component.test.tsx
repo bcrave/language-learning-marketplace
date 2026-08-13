@@ -486,10 +486,18 @@ describe("Role workspace navigation", () => {
     );
 
     await screen.findByRole("heading", { name: "Sponsored Students" });
+
+    // The journey names the place; the panel names what it lists. Asserting
+    // both by accessible name keeps them distinct *and* correct — dropping
+    // either concept would pass a uniqueness check on its own.
+    expect(screen.getAllByRole("heading", { name: "Sponsored Students" })).toHaveLength(1);
+    expect(
+      screen.getAllByRole("heading", { name: "Organization Sponsorships" }),
+    ).toHaveLength(1);
+
     const names = screen
       .getAllByRole("heading")
       .map((heading) => heading.textContent);
-
     expect(names).toEqual([...new Set(names)]);
   });
 });
