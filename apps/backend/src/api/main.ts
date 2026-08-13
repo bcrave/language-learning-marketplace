@@ -26,6 +26,9 @@ const server = createMarketplaceServer({
   db,
   logger,
   sourceRequestLimit: config.API_SOURCE_REQUEST_LIMIT,
+  ...(config.API_TRUSTED_PROXY_SECRET
+    ? { trustedProxySecret: config.API_TRUSTED_PROXY_SECRET }
+    : {}),
 });
 
 server.listen(config.API_PORT, "0.0.0.0", () => {

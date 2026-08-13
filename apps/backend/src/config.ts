@@ -8,6 +8,13 @@ import { z } from "zod";
  */
 export const PRODUCTION_SOURCE_REQUEST_LIMIT = 120;
 
+/**
+ * ADR-0028 reaches the API only through Railway private networking, so the
+ * shared secret Caddy presents is what distinguishes it from anything else on
+ * that network. Below this length it would be guessable.
+ */
+const MINIMUM_TRUSTED_PROXY_SECRET_LENGTH = 32;
+
 const baseConfigSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   AUTH_MODE: z.enum(["fake", "auth0"]).default("fake"),
@@ -18,6 +25,10 @@ const baseConfigSchema = z.object({
     .int()
     .positive()
     .default(PRODUCTION_SOURCE_REQUEST_LIMIT),
+  API_TRUSTED_PROXY_SECRET: z
+    .string()
+    .min(MINIMUM_TRUSTED_PROXY_SECRET_LENGTH)
+    .optional(),
   AUTH0_ISSUER: z.url().optional(),
   AUTH0_AUDIENCE: z.string().min(1).optional(),
 });
@@ -36,6 +47,12 @@ export function parseAppConfig(environment: Record<string, string | undefined>):
     (!config.AUTH0_ISSUER || !config.AUTH0_AUDIENCE)
   ) {
     throw new Error("Auth0 authentication requires AUTH0_ISSUER and AUTH0_AUDIENCE");
+  }
+
+  if (config.NODE_ENV === "production" && !config.API_TRUSTED_PROXY_SECRET) {
+    throw new Error(
+      "Verified source context requires API_TRUSTED_PROXY_SECRET in production",
+    );
   }
 
   if (

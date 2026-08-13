@@ -1,0 +1,48 @@
+# Caddy is the deployment's only public application origin (ADR-0028). This
+# file covers the source-address half of that role: it discards attacker-
+# supplied forwarding headers and passes the address it verified over Railway
+# private networking, so the API can key ADR-0025's per-source request limits
+# on the person making the request rather than on Caddy. The deterministic
+# global browser-security headers the threat model requires land with #53.
+#
+# Environment values, none of which are stored here:
+#   PUBLIC_DOMAIN             the sole public hostname
+#   API_PRIVATE_ORIGIN        the API's Railway private address, e.g. api.railway.internal:4000
+#   API_TRUSTED_PROXY_SECRET  shared with the API as API_TRUSTED_PROXY_SECRET
+#   WEB_ROOT                  directory holding the built Vite assets
+{
+	# Nothing sits in front of Caddy, so no proxy is trusted and {client_ip}
+	# always resolves to the peer that actually connected.
+	servers {
+		trusted_proxies static
+	}
+}
+
+{$PUBLIC_DOMAIN} {
+	# Discard inbound forwarding context before any handler can read it,
+	# including the two headers Caddy itself uses to speak to the API. A
+	# caller cannot mint a fresh rate-limit bucket with a header it chooses.
+	request_header -X-Forwarded-For
+	request_header -X-Forwarded-Host
+	request_header -X-Forwarded-Proto
+	request_header -Forwarded
+	request_header -X-Real-IP
+	request_header -X-Verified-Source
+	request_header -X-Proxy-Authorization
+
+	handle /graphql {
+		reverse_proxy {$API_PRIVATE_ORIGIN} {
+			# Exactly one verified address, never a chain: the API fails
+			# closed on anything else.
+			header_up X-Verified-Source {client_ip}
+			header_up X-Proxy-Authorization {$API_TRUSTED_PROXY_SECRET}
+			header_up -X-Forwarded-For
+		}
+	}
+
+	handle {
+		root * {$WEB_ROOT}
+		try_files {path} /index.html
+		file_server
+	}
+}
