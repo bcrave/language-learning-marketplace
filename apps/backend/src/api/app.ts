@@ -70,7 +70,6 @@ import {
 } from "../subscription/subscription-service.js";
 import {
   acceptSponsorshipInvitation,
-  courseProgressSnapshotsForSponsorship,
   declineSponsorshipInvitation,
   endSponsorshipAsOrganization,
   endSponsorshipAsStudent,
@@ -80,6 +79,8 @@ import {
   sponsorshipInvitationsForStudent,
   sponsorshipsForOrganization,
 } from "../sponsorship/sponsorship-service.js";
+import { courseProgressSnapshotsForSponsorship } from "../sponsorship/course-progress-snapshot.js";
+import { organizationAttendanceAndProgressReport, UnknownCohort } from "../sponsorship/organization-report-service.js";
 import {
   addCohortMembership,
   cohortsForOrganization,
@@ -330,6 +331,34 @@ export function createApi(options: {
         organizationCohorts: async (_parent, _arguments, context) => {
           const organizationManager = await authenticateOrganizationManager(context, "cohort.read", "Cohort");
           return graphQLResult(await cohortsForOrganization(context.db, organizationManager));
+        },
+        organizationAttendanceAndProgressReport: async (_parent, { cohortId }, context) => {
+          const operation = "organization-report.read";
+          const organizationManager = await authenticateOrganizationManager(context, operation, "OrganizationReport");
+          try {
+            return graphQLResult(await organizationAttendanceAndProgressReport(
+              context.db,
+              organizationManager,
+              { cohortId },
+              options.now?.() ?? new Date(),
+            ));
+          } catch (error) {
+            if (!(error instanceof UnknownCohort)) throw error;
+            // A Cohort outside the caller's Organization must not be confirmed by the
+            // shape of the denial, so this reads as Not Found while the Audit Entry
+            // keeps the real reason.
+            await context.db.insertInto("audit_entries").values({
+              actor_user_id: organizationManager.id,
+              acting_role: "ORGANIZATION_MANAGER",
+              operation,
+              target_type: "Cohort",
+              target_id: cohortId!,
+              outcome: "DENIED",
+              reason_code: "COHORT_OUTSIDE_ORGANIZATION",
+              correlation_id: context.correlationId,
+            }).execute();
+            throw createGraphQLError("The Cohort was not found", { extensions: { code: "NOT_FOUND" } });
+          }
         },
         discoverClassSessions: async (_parent, { input }, context) => {
           const student = await authenticateStudent(context, "class-session-discovery.read", "ClassSessionDiscovery");

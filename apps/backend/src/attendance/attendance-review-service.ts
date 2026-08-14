@@ -238,6 +238,7 @@ export async function decideAttendanceReview(
       priorOutcome: effectiveOutcome,
       outcome: decidedOutcome,
       earnedAt: classSessionEndsAt(context.starts_at),
+      now,
     });
   }
 

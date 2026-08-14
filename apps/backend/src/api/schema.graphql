@@ -263,7 +263,7 @@ type SponsorshipInvitation { id: ID!, organization: Organization!, studentUserId
 enum SponsorshipState { ACTIVE ENDED }
 enum SponsorshipEndingParty { STUDENT ORGANIZATION }
 enum CourseProgressSnapshotBoundary { SPONSORSHIP_START SPONSORSHIP_END }
-type CourseProgressSnapshot { boundary: CourseProgressSnapshotBoundary!, courseId: ID!, courseTitle: String!, completedActiveLessonUnitCount: Int!, activeLessonUnitCount: Int!, percentage: Int!, capturedAt: String! }
+type CourseProgressSnapshot { boundary: CourseProgressSnapshotBoundary!, courseId: ID!, courseTitle: String!, completedActiveLessonUnitCount: Int!, activeLessonUnitCount: Int!, percentage: Int!, capturedAt: String!, revisionCount: Int!, revisedAt: String }
 type Sponsorship { id: ID!, organization: Organization!, studentUserId: ID!, studentDisplayName: String!, acceptedAt: String!, nextAnniversaryAt: String, state: SponsorshipState!, endedAt: String, endedByParty: SponsorshipEndingParty, reportingFrom: String!, reportingUntil: String, progressSnapshots: [CourseProgressSnapshot!]! }
 input InviteToSponsorshipInput { idempotencyKey: ID!, studentUserId: ID! }
 type InviteToSponsorshipSuccess { invitation: SponsorshipInvitation! }
@@ -313,6 +313,70 @@ union CreateCohortResult = CohortSuccess | CohortError
 union RenameCohortResult = CohortSuccess | CohortError
 union AddCohortMembershipResult = CohortMembershipSuccess | CohortError
 union EndCohortMembershipResult = CohortMembershipSuccess | CohortError
+
+"""
+Attendance facts an Organization may report inside a Sponsorship boundary. The
+Attendance Rate is Attended over every recorded outcome, so `attendanceRatePercentage`
+is absent until an outcome exists and `excludedUnrecordedCount` discloses what the
+rate leaves out instead of counting it against the Student.
+"""
+type OrganizationAttendanceSummary {
+  attendedCount: Int!
+  noShowCount: Int!
+  recordedCount: Int!
+  attendanceRatePercentage: Int
+  excludedUnrecordedCount: Int!
+  correctedCount: Int!
+  exceptionCount: Int!
+}
+
+type OrganizationCourseProgressValue { completedActiveLessonUnitCount: Int!, activeLessonUnitCount: Int!, percentage: Int! }
+
+"""
+One Course reported for one Sponsorship. `currentEffective` is present only while the
+Sponsorship is active; once it ends, `endingSnapshot` is the last reportable value and
+reporting stays frozen there. Aggregate counts never carry Lesson Unit identities.
+"""
+type OrganizationCourseProgressReport {
+  courseId: ID!
+  courseTitle: String!
+  baseline: OrganizationCourseProgressValue!
+  baselineCapturedAt: String
+  endingSnapshot: OrganizationCourseProgressValue
+  endingSnapshotCapturedAt: String
+  currentEffective: OrganizationCourseProgressValue
+  completedLessonUnitGain: Int!
+  percentagePointGain: Int!
+  snapshotRevisionCount: Int!
+  lastRevisedAt: String
+}
+
+type OrganizationSponsoredStudentReport {
+  sponsorshipId: ID!
+  studentUserId: ID!
+  studentDisplayName: String!
+  state: SponsorshipState!
+  reportingFrom: String!
+  reportingUntil: String
+  cohortNames: [String!]!
+  attendance: OrganizationAttendanceSummary!
+  courseProgress: [OrganizationCourseProgressReport!]!
+}
+
+type OrganizationCohortReport {
+  cohortId: ID!
+  cohortName: String!
+  sponsoredStudentCount: Int!
+  attendance: OrganizationAttendanceSummary!
+}
+
+type OrganizationAttendanceAndProgressReport {
+  organization: Organization!
+  generatedAt: String!
+  attendance: OrganizationAttendanceSummary!
+  students: [OrganizationSponsoredStudentReport!]!
+  cohorts: [OrganizationCohortReport!]!
+}
 
 type User {
   id: ID!
@@ -477,6 +541,7 @@ type Query {
   organizationSponsorshipInvitations: [SponsorshipInvitation!]!
   organizationSponsoredStudents: [Sponsorship!]!
   organizationCohorts: [Cohort!]!
+  organizationAttendanceAndProgressReport(cohortId: ID): OrganizationAttendanceAndProgressReport!
 }
 
 type Mutation {

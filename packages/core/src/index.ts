@@ -113,6 +113,47 @@ export function sponsorshipReportingIncludes(
   );
 }
 
+// Attendance Rate is Attended outcomes over every recorded outcome. Unrecorded
+// attendance is neither Attended nor No-show, so it stays out of the ratio and is
+// disclosed beside it as an excluded count instead of depressing the rate.
+export function attendanceRatePercentage(counts: { attendedCount: number; noShowCount: number }) {
+  const recordedCount = counts.attendedCount + counts.noShowCount;
+  return recordedCount === 0 ? null : Math.round(100 * counts.attendedCount / recordedCount);
+}
+
+// An exception-first report leads with what needs attention rather than with the
+// activity that went as expected.
+export function reportExceptionCount(counts: {
+  noShowCount: number;
+  excludedUnrecordedCount: number;
+  correctedCount: number;
+}) {
+  return counts.noShowCount + counts.excludedUnrecordedCount + counts.correctedCount;
+}
+
+export interface CourseProgressValue {
+  completedActiveLessonUnitCount: number;
+  activeLessonUnitCount: number;
+}
+
+export function courseProgressPercentage(completedActiveLessonUnitCount: number, activeLessonUnitCount: number) {
+  return activeLessonUnitCount === 0
+    ? 0
+    : Math.round(100 * completedActiveLessonUnitCount / activeLessonUnitCount);
+}
+
+// Both sides of a gain share the boundary's frozen active-unit denominator, so an
+// accepted Attendance correction can move the gain while a later curriculum change
+// cannot. A correction that removes a completion yields a negative gain rather than
+// a rewritten baseline.
+export function courseProgressGain(baseline: CourseProgressValue, ending: CourseProgressValue) {
+  return {
+    completedLessonUnitGain: ending.completedActiveLessonUnitCount - baseline.completedActiveLessonUnitCount,
+    percentagePointGain: courseProgressPercentage(ending.completedActiveLessonUnitCount, ending.activeLessonUnitCount)
+      - courseProgressPercentage(baseline.completedActiveLessonUnitCount, baseline.activeLessonUnitCount),
+  };
+}
+
 export const INTERFACE_LOCALES = ["en", "es"] as const;
 export type InterfaceLocale = (typeof INTERFACE_LOCALES)[number];
 
@@ -346,6 +387,37 @@ export const interfaceMessages = {
     "cohorts.error.SPONSORSHIP_NOT_ACTIVE": "That Sponsorship has ended, so its Cohort membership cannot change.",
     "cohorts.error.MEMBERSHIP_WINDOW_OVERLAPS": "The Student already has an overlapping membership in that Cohort.",
     "cohorts.error.MEMBERSHIP_NOT_PROSPECTIVE": "Cohort membership changes take effect now or later, so past reporting stays intact.",
+    "organizationReport.title": "Attendance and Course Progress",
+    "organizationReport.loading": "Loading your Organization report…",
+    "organizationReport.loadError": "We couldn't load your Organization report. Try again.",
+    "organizationReport.generatedAt": "Current effective values as of {generatedAt}",
+    "organizationReport.notice": "This report covers only sponsored activity inside each Sponsorship. It excludes Class Rosters, private Learning Feedback, Session Ratings, unrelated Students, and Class Credit balances.",
+    "organizationReport.filter.label": "Cohort",
+    "organizationReport.filter.all": "All sponsored Students",
+    "organizationReport.exceptions.title": "Needs attention",
+    "organizationReport.exceptions.summary": "{exceptions, number} exceptions: {noShow, number} no-show, {unrecorded, number} Unrecorded excluded, {corrected, number} corrected",
+    "organizationReport.exceptions.none": "No exceptions in the reported activity.",
+    "organizationReport.attendance.rate": "Attendance Rate {rate, number}% from {recorded, number} recorded outcomes",
+    "organizationReport.attendance.noRate": "No recorded Attendance outcome yet",
+    "organizationReport.attendance.counts": "{attended, number} attended, {noShow, number} no-show",
+    "organizationReport.attendance.excluded": "{unrecorded, number} Unrecorded excluded from the rate",
+    "organizationReport.attendance.corrected": "{corrected, number} corrected Attendance Records",
+    "organizationReport.cohorts.title": "Cohorts",
+    "organizationReport.cohorts.empty": "Your Organization has no Cohorts yet.",
+    "organizationReport.cohorts.students": "{count, number} sponsored Students",
+    "organizationReport.students.title": "Sponsored Students",
+    "organizationReport.students.empty": "No sponsored Students match this report.",
+    "organizationReport.students.cohorts": "Cohorts: {names}",
+    "organizationReport.students.noCohorts": "No Cohort attribution for the reported activity",
+    "organizationReport.state.ACTIVE": "Sponsorship active since {from}",
+    "organizationReport.state.ENDED": "Sponsorship ended {until}; reporting is frozen there",
+    "organizationReport.progress.title": "Course Progress",
+    "organizationReport.progress.empty": "No reportable Course Progress yet.",
+    "organizationReport.progress.baseline": "Baseline at the Sponsorship start: {completed, number} of {active, number} active Lesson Units ({percentage, number}%)",
+    "organizationReport.progress.current": "Current effective: {completed, number} of {active, number} active Lesson Units ({percentage, number}%)",
+    "organizationReport.progress.ending": "Frozen ending snapshot: {completed, number} of {active, number} active Lesson Units ({percentage, number}%)",
+    "organizationReport.progress.gain": "Gain during Sponsorship: {units, number} Lesson Units ({points, number} percentage points)",
+    "organizationReport.progress.revised": "Revised by {count, number} accepted Attendance corrections on {revisedAt}",
     "curriculum.loading": "Loading curriculum administration…",
     "curriculum.error": "We couldn't update the curriculum. Review the details and try again.",
     "curriculum.sampleBadge": "Sample curriculum",
@@ -973,6 +1045,37 @@ export const interfaceMessages = {
     "cohorts.error.SPONSORSHIP_NOT_ACTIVE": "Ese Patrocinio terminó, así que su pertenencia a la Cohorte no puede cambiar.",
     "cohorts.error.MEMBERSHIP_WINDOW_OVERLAPS": "El Estudiante ya tiene una pertenencia que se superpone en esa Cohorte.",
     "cohorts.error.MEMBERSHIP_NOT_PROSPECTIVE": "Los cambios de pertenencia surten efecto ahora o más adelante, así que los informes pasados no se alteran.",
+    "organizationReport.title": "Asistencia y Progreso del Curso",
+    "organizationReport.loading": "Cargando el informe de tu Organización…",
+    "organizationReport.loadError": "No pudimos cargar el informe de tu Organización. Inténtalo de nuevo.",
+    "organizationReport.generatedAt": "Valores efectivos actuales al {generatedAt}",
+    "organizationReport.notice": "Este informe cubre solo la actividad patrocinada dentro de cada Patrocinio. Excluye las Listas de Clase, los Comentarios de Aprendizaje privados, las Valoraciones de Sesión, los Estudiantes ajenos y los saldos de Créditos de Clase.",
+    "organizationReport.filter.label": "Cohorte",
+    "organizationReport.filter.all": "Todos los Estudiantes patrocinados",
+    "organizationReport.exceptions.title": "Requiere atención",
+    "organizationReport.exceptions.summary": "{exceptions, number} excepciones: {noShow, number} ausencias, {unrecorded, number} sin registrar excluidas, {corrected, number} corregidas",
+    "organizationReport.exceptions.none": "No hay excepciones en la actividad informada.",
+    "organizationReport.attendance.rate": "Tasa de Asistencia del {rate, number}% sobre {recorded, number} resultados registrados",
+    "organizationReport.attendance.noRate": "Todavía no hay ningún resultado de Asistencia registrado",
+    "organizationReport.attendance.counts": "{attended, number} asistencias, {noShow, number} ausencias",
+    "organizationReport.attendance.excluded": "{unrecorded, number} sin registrar excluidas de la tasa",
+    "organizationReport.attendance.corrected": "{corrected, number} Registros de Asistencia corregidos",
+    "organizationReport.cohorts.title": "Cohortes",
+    "organizationReport.cohorts.empty": "Tu Organización aún no tiene Cohortes.",
+    "organizationReport.cohorts.students": "{count, number} Estudiantes patrocinados",
+    "organizationReport.students.title": "Estudiantes patrocinados",
+    "organizationReport.students.empty": "Ningún Estudiante patrocinado coincide con este informe.",
+    "organizationReport.students.cohorts": "Cohortes: {names}",
+    "organizationReport.students.noCohorts": "La actividad informada no tiene atribución de Cohorte",
+    "organizationReport.state.ACTIVE": "Patrocinio activo desde el {from}",
+    "organizationReport.state.ENDED": "El Patrocinio terminó el {until}; el informe queda congelado ahí",
+    "organizationReport.progress.title": "Progreso del Curso",
+    "organizationReport.progress.empty": "Todavía no hay Progreso del Curso que informar.",
+    "organizationReport.progress.baseline": "Punto de partida al inicio del Patrocinio: {completed, number} de {active, number} Unidades de Lección activas ({percentage, number}%)",
+    "organizationReport.progress.current": "Valor efectivo actual: {completed, number} de {active, number} Unidades de Lección activas ({percentage, number}%)",
+    "organizationReport.progress.ending": "Instantánea final congelada: {completed, number} de {active, number} Unidades de Lección activas ({percentage, number}%)",
+    "organizationReport.progress.gain": "Avance durante el Patrocinio: {units, number} Unidades de Lección ({points, number} puntos porcentuales)",
+    "organizationReport.progress.revised": "Revisada por {count, number} correcciones de Asistencia aceptadas el {revisedAt}",
     "curriculum.loading": "Cargando la administración del currículo…",
     "curriculum.error": "No pudimos actualizar el currículo. Revisa los datos e inténtalo de nuevo.",
     "curriculum.sampleBadge": "Currículo de muestra",

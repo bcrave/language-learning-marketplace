@@ -241,6 +241,7 @@ async function recordAttendanceAs(
       priorOutcome: current?.outcome ?? null,
       outcome: record.outcome,
       earnedAt: endsAt!,
+      now,
     });
   }
   await recordAudit("SUCCEEDED", existing.length === 0 ? "ATTENDANCE_PUBLISHED" : correctionCount > 0 ? "ATTENDANCE_CORRECTED" : "ATTENDANCE_UNCHANGED");
