@@ -1,13 +1,8 @@
-import { establishesLessonUnitCompletion, type AttendanceOutcome } from "@marketplace/core";
+import { classSessionEndsAt, establishesLessonUnitCompletion, type AttendanceOutcome } from "@marketplace/core";
 import { sql } from "kysely";
 
 import type { Database } from "../database/database.js";
-
-const CLASS_SESSION_DURATION_MILLISECONDS = 60 * 60_000;
-
-export function classSessionEndsAt(startsAt: Date) {
-  return new Date(startsAt.getTime() + CLASS_SESSION_DURATION_MILLISECONDS);
-}
+import { reviseCourseProgressSnapshots } from "../sponsorship/course-progress-snapshot.js";
 
 /**
  * The correction facts every authorized Attendance view shows beside the effective
@@ -42,11 +37,26 @@ export async function lockLessonUnitCompletion(transaction: Database, studentUse
 }
 
 /**
- * Brings Lesson Unit Completion — and with it Course Progress and Lesson Material
+ * Brings Lesson Unit Completion — and with it Course Progress, the frozen Course
+ * Progress Snapshots of any Sponsorship covering the period, and Lesson Material
  * access — back in step with one Booking's effective Attendance outcome. Completion
  * survives while any other Attended Booking still supports it.
  */
 export async function reconcileLessonUnitCompletion(transaction: Database, input: {
+  studentUserId: string;
+  lessonUnitId: string;
+  bookingId: string;
+  priorOutcome: AttendanceOutcome | null;
+  outcome: AttendanceOutcome;
+  earnedAt: Date;
+  now: Date;
+}): Promise<"EARNED" | "REMOVED" | "UNCHANGED"> {
+  const change = await applyLessonUnitCompletion(transaction, input);
+  await reviseCourseProgressSnapshots(transaction, input.studentUserId, input.lessonUnitId, input.now);
+  return change;
+}
+
+async function applyLessonUnitCompletion(transaction: Database, input: {
   studentUserId: string;
   lessonUnitId: string;
   bookingId: string;

@@ -1,10 +1,10 @@
 import { interfaceMessages } from "@marketplace/core";
-import { sql } from "kysely";
 
 import type { Database } from "../database/database.js";
 import { projectClassCreditAccount } from "../class-credit/class-credit-service.js";
 import { monthlySubscriptionAnniversary } from "../subscription/subscription-time.js";
 import { closeCohortMembershipsAtSponsorshipEnd } from "./cohort-service.js";
+import { captureCourseProgressSnapshot } from "./course-progress-snapshot.js";
 import { notifySponsorshipUser } from "./sponsorship-notifications.js";
 
 export const CURRENT_SPONSORSHIP_DISCLOSURE_VERSION = "1";
@@ -146,70 +146,6 @@ export async function sponsorshipForStudent(db: Database, studentId: string) {
     .where("sponsorships.state", "=", "ACTIVE")
     .executeTakeFirst();
   return row ? projectSponsorship(row) : null;
-}
-
-export async function courseProgressSnapshotsForSponsorship(db: Database, sponsorshipId: string) {
-  const rows = await db.selectFrom("course_progress_snapshots")
-    .innerJoin("courses", "courses.id", "course_progress_snapshots.course_id")
-    .select([
-      "course_progress_snapshots.boundary",
-      "course_progress_snapshots.course_id",
-      "courses.title as course_title",
-      "course_progress_snapshots.completed_active_lesson_unit_count",
-      "course_progress_snapshots.active_lesson_unit_count",
-      "course_progress_snapshots.captured_at",
-    ])
-    .where("course_progress_snapshots.sponsorship_id", "=", sponsorshipId)
-    .orderBy("course_progress_snapshots.boundary")
-    .orderBy("courses.title")
-    .execute();
-  return rows.map((row) => ({
-    boundary: row.boundary,
-    courseId: row.course_id,
-    courseTitle: row.course_title,
-    completedActiveLessonUnitCount: row.completed_active_lesson_unit_count,
-    activeLessonUnitCount: row.active_lesson_unit_count,
-    percentage: row.active_lesson_unit_count === 0
-      ? 0
-      : Math.round(100 * row.completed_active_lesson_unit_count / row.active_lesson_unit_count),
-    capturedAt: row.captured_at.toISOString(),
-  }));
-}
-
-// Freezes the aggregate Course Progress that an Organization may report for one
-// Sponsorship boundary, including the active Lesson Unit denominator as it stood
-// at capture time. Courses the Student never touched carry no reportable fact.
-export async function captureCourseProgressSnapshot(
-  transaction: Database,
-  sponsorship: { id: string; student_user_id: string },
-  boundary: "SPONSORSHIP_START" | "SPONSORSHIP_END",
-  capturedAt: Date,
-) {
-  const courses = await transaction.selectFrom("courses")
-    .innerJoin("lesson_units", "lesson_units.course_id", "courses.id")
-    .leftJoin("lesson_unit_completions", (join) => join
-      .onRef("lesson_unit_completions.lesson_unit_id", "=", "lesson_units.id")
-      .on("lesson_unit_completions.student_user_id", "=", sponsorship.student_user_id))
-    .select([
-      "courses.id",
-      sql<number>`count(*) filter (where lesson_units.state = 'ACTIVE')::integer`.as("active_count"),
-      sql<number>`count(lesson_unit_completions.id) filter (where lesson_units.state = 'ACTIVE')::integer`.as("completed_active_count"),
-    ])
-    .groupBy("courses.id")
-    .having(sql<number>`count(lesson_unit_completions.id)`, ">", 0)
-    .execute();
-  if (courses.length === 0) return;
-  await transaction.insertInto("course_progress_snapshots")
-    .values(courses.map((course) => ({
-      sponsorship_id: sponsorship.id,
-      boundary,
-      course_id: course.id,
-      completed_active_lesson_unit_count: course.completed_active_count,
-      active_lesson_unit_count: course.active_count,
-      captured_at: capturedAt,
-    })))
-    .onConflict((conflict) => conflict.columns(["sponsorship_id", "boundary", "course_id"]).doNothing())
-    .execute();
 }
 
 export async function sponsorshipsForOrganization(db: Database, organizationManager: { organizationId: string }) {

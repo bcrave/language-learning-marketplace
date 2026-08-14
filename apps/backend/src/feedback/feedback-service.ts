@@ -2,6 +2,7 @@ import {
   FEEDBACK_SKILLS,
   SESSION_RATING_IMPROVEMENT_TAGS,
   SESSION_RATING_POSITIVE_TAGS,
+  classSessionEndsAt,
   feedbackDeadline,
   feedbackWindowIsOpen,
   sessionRatingDeadline,
@@ -82,9 +83,9 @@ async function bookingFeedbackContext(db: Database, bookingId: string) {
     .orderBy("corrected_at", "desc")
     .orderBy("id", "desc")
     .executeTakeFirst();
-  const classSessionEndsAt = new Date(booking.starts_at.getTime() + 60 * 60_000);
-  const eligibleFrom = latestCorrection?.corrected_outcome === "ATTENDED" ? latestCorrection.corrected_at : classSessionEndsAt;
-  return { ...booking, classSessionEndsAt, eligibleFrom };
+  const endsAt = classSessionEndsAt(booking.starts_at);
+  const eligibleFrom = latestCorrection?.corrected_outcome === "ATTENDED" ? latestCorrection.corrected_at : endsAt;
+  return { ...booking, classSessionEndsAt: endsAt, eligibleFrom };
 }
 
 function learningFeedbackProjection(feedback: {

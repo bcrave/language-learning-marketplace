@@ -111,7 +111,8 @@ export interface SponsorshipsTable { id: Generated<string>; organization_id: str
 export interface CohortsTable { id: Generated<string>; organization_id: string; name: string; created_by_user_id: string; created_at: Generated<Date>; updated_at: Generated<Date> }
 export interface CohortMembershipsTable { id: Generated<string>; cohort_id: string; sponsorship_id: string; effective_from: Date; effective_until: Date | null; created_at: Generated<Date>; updated_at: Generated<Date> }
 export type CourseProgressSnapshotBoundary = "SPONSORSHIP_START" | "SPONSORSHIP_END";
-export interface CourseProgressSnapshotsTable { id: Generated<string>; sponsorship_id: string; boundary: CourseProgressSnapshotBoundary; course_id: string; completed_active_lesson_unit_count: number; active_lesson_unit_count: number; captured_at: Date }
+export interface CourseProgressSnapshotsTable { id: Generated<string>; sponsorship_id: string; boundary: CourseProgressSnapshotBoundary; course_id: string; completed_active_lesson_unit_count: number; active_lesson_unit_count: number; captured_at: Date; revision_count: Generated<number>; revised_at: Date | null }
+export interface CourseProgressSnapshotUnitsTable { snapshot_id: string; lesson_unit_id: string }
 
 export interface DatabaseSchema {
   users: UsersTable;
@@ -166,4 +167,5 @@ export interface DatabaseSchema {
   cohorts: CohortsTable;
   cohort_memberships: CohortMembershipsTable;
   course_progress_snapshots: CourseProgressSnapshotsTable;
+  course_progress_snapshot_units: CourseProgressSnapshotUnitsTable;
 }

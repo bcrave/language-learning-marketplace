@@ -1,0 +1,67 @@
+fragment OrganizationAttendanceSummaryDetails on OrganizationAttendanceSummary {
+  attendedCount
+  noShowCount
+  recordedCount
+  attendanceRatePercentage
+  excludedUnrecordedCount
+  correctedCount
+  exceptionCount
+}
+
+query OrganizationAttendanceAndProgressReport($cohortId: ID) {
+  organizationAttendanceAndProgressReport(cohortId: $cohortId) {
+    organization {
+      id
+      name
+    }
+    generatedAt
+    attendance {
+      ...OrganizationAttendanceSummaryDetails
+    }
+    cohorts {
+      cohortId
+      cohortName
+      sponsoredStudentCount
+      attendance {
+        ...OrganizationAttendanceSummaryDetails
+      }
+    }
+    students {
+      sponsorshipId
+      studentUserId
+      studentDisplayName
+      state
+      reportingFrom
+      reportingUntil
+      cohortNames
+      attendance {
+        ...OrganizationAttendanceSummaryDetails
+      }
+      courseProgress {
+        courseId
+        courseTitle
+        baseline {
+          completedActiveLessonUnitCount
+          activeLessonUnitCount
+          percentage
+        }
+        baselineCapturedAt
+        endingSnapshot {
+          completedActiveLessonUnitCount
+          activeLessonUnitCount
+          percentage
+        }
+        endingSnapshotCapturedAt
+        currentEffective {
+          completedActiveLessonUnitCount
+          activeLessonUnitCount
+          percentage
+        }
+        completedLessonUnitGain
+        percentagePointGain
+        snapshotRevisionCount
+        lastRevisedAt
+      }
+    }
+  }
+}

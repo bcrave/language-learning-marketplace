@@ -629,6 +629,8 @@ export type CourseProgressSnapshot = {
   courseId: Scalars['ID']['output'];
   courseTitle: Scalars['String']['output'];
   percentage: Scalars['Int']['output'];
+  revisedAt?: Maybe<Scalars['String']['output']>;
+  revisionCount: Scalars['Int']['output'];
 };
 
 export enum CourseProgressSnapshotBoundary {
@@ -1285,6 +1287,69 @@ export type Organization = {
   name: Scalars['String']['output'];
 };
 
+export type OrganizationAttendanceAndProgressReport = {
+  __typename?: 'OrganizationAttendanceAndProgressReport';
+  attendance: OrganizationAttendanceSummary;
+  cohorts: Array<OrganizationCohortReport>;
+  generatedAt: Scalars['String']['output'];
+  organization: Organization;
+  students: Array<OrganizationSponsoredStudentReport>;
+};
+
+export type OrganizationAttendanceSummary = {
+  __typename?: 'OrganizationAttendanceSummary';
+  attendanceRatePercentage?: Maybe<Scalars['Int']['output']>;
+  attendedCount: Scalars['Int']['output'];
+  correctedCount: Scalars['Int']['output'];
+  exceptionCount: Scalars['Int']['output'];
+  excludedUnrecordedCount: Scalars['Int']['output'];
+  noShowCount: Scalars['Int']['output'];
+  recordedCount: Scalars['Int']['output'];
+};
+
+export type OrganizationCohortReport = {
+  __typename?: 'OrganizationCohortReport';
+  attendance: OrganizationAttendanceSummary;
+  cohortId: Scalars['ID']['output'];
+  cohortName: Scalars['String']['output'];
+  sponsoredStudentCount: Scalars['Int']['output'];
+};
+
+export type OrganizationCourseProgressReport = {
+  __typename?: 'OrganizationCourseProgressReport';
+  baseline: OrganizationCourseProgressValue;
+  baselineCapturedAt?: Maybe<Scalars['String']['output']>;
+  completedLessonUnitGain: Scalars['Int']['output'];
+  courseId: Scalars['ID']['output'];
+  courseTitle: Scalars['String']['output'];
+  currentEffective?: Maybe<OrganizationCourseProgressValue>;
+  endingSnapshot?: Maybe<OrganizationCourseProgressValue>;
+  endingSnapshotCapturedAt?: Maybe<Scalars['String']['output']>;
+  lastRevisedAt?: Maybe<Scalars['String']['output']>;
+  percentagePointGain: Scalars['Int']['output'];
+  snapshotRevisionCount: Scalars['Int']['output'];
+};
+
+export type OrganizationCourseProgressValue = {
+  __typename?: 'OrganizationCourseProgressValue';
+  activeLessonUnitCount: Scalars['Int']['output'];
+  completedActiveLessonUnitCount: Scalars['Int']['output'];
+  percentage: Scalars['Int']['output'];
+};
+
+export type OrganizationSponsoredStudentReport = {
+  __typename?: 'OrganizationSponsoredStudentReport';
+  attendance: OrganizationAttendanceSummary;
+  cohortNames: Array<Scalars['String']['output']>;
+  courseProgress: Array<OrganizationCourseProgressReport>;
+  reportingFrom: Scalars['String']['output'];
+  reportingUntil?: Maybe<Scalars['String']['output']>;
+  sponsorshipId: Scalars['ID']['output'];
+  state: SponsorshipState;
+  studentDisplayName: Scalars['String']['output'];
+  studentUserId: Scalars['ID']['output'];
+};
+
 export type ProcessSubscriptionProviderEventInput = {
   effectiveAt: Scalars['String']['input'];
   eventType: SubscriptionProviderEventType;
@@ -1348,6 +1413,7 @@ export type Query = {
   learningAccessLessonUnits: Array<LearningAccessLessonUnit>;
   lessonMaterials?: Maybe<Array<LessonMaterial>>;
   notifications: Array<InAppNotification>;
+  organizationAttendanceAndProgressReport: OrganizationAttendanceAndProgressReport;
   organizationCohorts: Array<Cohort>;
   organizationSponsoredStudents: Array<Sponsorship>;
   organizationSponsorshipInvitations: Array<SponsorshipInvitation>;
@@ -1407,6 +1473,11 @@ export type QueryLearningAccessLessonUnitsArgs = {
 export type QueryLessonMaterialsArgs = {
   actingRole: UserRole;
   lessonUnitId: Scalars['ID']['input'];
+};
+
+
+export type QueryOrganizationAttendanceAndProgressReportArgs = {
+  cohortId?: InputMaybe<Scalars['ID']['input']>;
 };
 
 
@@ -2538,6 +2609,12 @@ export type ResolversTypes = {
   Mutation: ResolverTypeWrapper<Record<PropertyKey, never>>;
   NotificationChannel: NotificationChannel;
   Organization: ResolverTypeWrapper<Organization>;
+  OrganizationAttendanceAndProgressReport: ResolverTypeWrapper<OrganizationAttendanceAndProgressReport>;
+  OrganizationAttendanceSummary: ResolverTypeWrapper<OrganizationAttendanceSummary>;
+  OrganizationCohortReport: ResolverTypeWrapper<OrganizationCohortReport>;
+  OrganizationCourseProgressReport: ResolverTypeWrapper<OrganizationCourseProgressReport>;
+  OrganizationCourseProgressValue: ResolverTypeWrapper<OrganizationCourseProgressValue>;
+  OrganizationSponsoredStudentReport: ResolverTypeWrapper<OrganizationSponsoredStudentReport>;
   ProcessSubscriptionProviderEventInput: ProcessSubscriptionProviderEventInput;
   ProcessSubscriptionProviderEventResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ProcessSubscriptionProviderEventResult']>;
   ProcessSubscriptionProviderEventSuccess: ResolverTypeWrapper<ProcessSubscriptionProviderEventSuccess>;
@@ -2786,6 +2863,12 @@ export type ResolversParentTypes = {
   LessonUnit: LessonUnit;
   Mutation: Record<PropertyKey, never>;
   Organization: Organization;
+  OrganizationAttendanceAndProgressReport: OrganizationAttendanceAndProgressReport;
+  OrganizationAttendanceSummary: OrganizationAttendanceSummary;
+  OrganizationCohortReport: OrganizationCohortReport;
+  OrganizationCourseProgressReport: OrganizationCourseProgressReport;
+  OrganizationCourseProgressValue: OrganizationCourseProgressValue;
+  OrganizationSponsoredStudentReport: OrganizationSponsoredStudentReport;
   ProcessSubscriptionProviderEventInput: ProcessSubscriptionProviderEventInput;
   ProcessSubscriptionProviderEventResult: ResolversUnionTypes<ResolversParentTypes>['ProcessSubscriptionProviderEventResult'];
   ProcessSubscriptionProviderEventSuccess: ProcessSubscriptionProviderEventSuccess;
@@ -3273,6 +3356,8 @@ export type CourseProgressSnapshotResolvers<ContextType = any, ParentType extend
   courseId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   courseTitle?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   percentage?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  revisedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  revisionCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
 };
 
 export type CreateCohortResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['CreateCohortResult'] = ResolversParentTypes['CreateCohortResult']> = {
@@ -3544,6 +3629,63 @@ export type OrganizationResolvers<ContextType = any, ParentType extends Resolver
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
 };
 
+export type OrganizationAttendanceAndProgressReportResolvers<ContextType = any, ParentType extends ResolversParentTypes['OrganizationAttendanceAndProgressReport'] = ResolversParentTypes['OrganizationAttendanceAndProgressReport']> = {
+  attendance?: Resolver<ResolversTypes['OrganizationAttendanceSummary'], ParentType, ContextType>;
+  cohorts?: Resolver<Array<ResolversTypes['OrganizationCohortReport']>, ParentType, ContextType>;
+  generatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  organization?: Resolver<ResolversTypes['Organization'], ParentType, ContextType>;
+  students?: Resolver<Array<ResolversTypes['OrganizationSponsoredStudentReport']>, ParentType, ContextType>;
+};
+
+export type OrganizationAttendanceSummaryResolvers<ContextType = any, ParentType extends ResolversParentTypes['OrganizationAttendanceSummary'] = ResolversParentTypes['OrganizationAttendanceSummary']> = {
+  attendanceRatePercentage?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  attendedCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  correctedCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  exceptionCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  excludedUnrecordedCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  noShowCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  recordedCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+};
+
+export type OrganizationCohortReportResolvers<ContextType = any, ParentType extends ResolversParentTypes['OrganizationCohortReport'] = ResolversParentTypes['OrganizationCohortReport']> = {
+  attendance?: Resolver<ResolversTypes['OrganizationAttendanceSummary'], ParentType, ContextType>;
+  cohortId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  cohortName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  sponsoredStudentCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+};
+
+export type OrganizationCourseProgressReportResolvers<ContextType = any, ParentType extends ResolversParentTypes['OrganizationCourseProgressReport'] = ResolversParentTypes['OrganizationCourseProgressReport']> = {
+  baseline?: Resolver<ResolversTypes['OrganizationCourseProgressValue'], ParentType, ContextType>;
+  baselineCapturedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  completedLessonUnitGain?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  courseId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  courseTitle?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  currentEffective?: Resolver<Maybe<ResolversTypes['OrganizationCourseProgressValue']>, ParentType, ContextType>;
+  endingSnapshot?: Resolver<Maybe<ResolversTypes['OrganizationCourseProgressValue']>, ParentType, ContextType>;
+  endingSnapshotCapturedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  lastRevisedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  percentagePointGain?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  snapshotRevisionCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+};
+
+export type OrganizationCourseProgressValueResolvers<ContextType = any, ParentType extends ResolversParentTypes['OrganizationCourseProgressValue'] = ResolversParentTypes['OrganizationCourseProgressValue']> = {
+  activeLessonUnitCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  completedActiveLessonUnitCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  percentage?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+};
+
+export type OrganizationSponsoredStudentReportResolvers<ContextType = any, ParentType extends ResolversParentTypes['OrganizationSponsoredStudentReport'] = ResolversParentTypes['OrganizationSponsoredStudentReport']> = {
+  attendance?: Resolver<ResolversTypes['OrganizationAttendanceSummary'], ParentType, ContextType>;
+  cohortNames?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
+  courseProgress?: Resolver<Array<ResolversTypes['OrganizationCourseProgressReport']>, ParentType, ContextType>;
+  reportingFrom?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  reportingUntil?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  sponsorshipId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  state?: Resolver<ResolversTypes['SponsorshipState'], ParentType, ContextType>;
+  studentDisplayName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  studentUserId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+};
+
 export type ProcessSubscriptionProviderEventResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['ProcessSubscriptionProviderEventResult'] = ResolversParentTypes['ProcessSubscriptionProviderEventResult']> = {
   __resolveType: TypeResolveFn<'ProcessSubscriptionProviderEventSuccess' | 'SubscriptionConflict', ParentType, ContextType>;
 };
@@ -3590,6 +3732,7 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   learningAccessLessonUnits?: Resolver<Array<ResolversTypes['LearningAccessLessonUnit']>, ParentType, ContextType, RequireFields<QueryLearningAccessLessonUnitsArgs, 'actingRole'>>;
   lessonMaterials?: Resolver<Maybe<Array<ResolversTypes['LessonMaterial']>>, ParentType, ContextType, RequireFields<QueryLessonMaterialsArgs, 'actingRole' | 'lessonUnitId'>>;
   notifications?: Resolver<Array<ResolversTypes['InAppNotification']>, ParentType, ContextType>;
+  organizationAttendanceAndProgressReport?: Resolver<ResolversTypes['OrganizationAttendanceAndProgressReport'], ParentType, ContextType, Partial<QueryOrganizationAttendanceAndProgressReportArgs>>;
   organizationCohorts?: Resolver<Array<ResolversTypes['Cohort']>, ParentType, ContextType>;
   organizationSponsoredStudents?: Resolver<Array<ResolversTypes['Sponsorship']>, ParentType, ContextType>;
   organizationSponsorshipInvitations?: Resolver<Array<ResolversTypes['SponsorshipInvitation']>, ParentType, ContextType>;
@@ -4113,6 +4256,12 @@ export type Resolvers<ContextType = any> = {
   LessonUnit?: LessonUnitResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
   Organization?: OrganizationResolvers<ContextType>;
+  OrganizationAttendanceAndProgressReport?: OrganizationAttendanceAndProgressReportResolvers<ContextType>;
+  OrganizationAttendanceSummary?: OrganizationAttendanceSummaryResolvers<ContextType>;
+  OrganizationCohortReport?: OrganizationCohortReportResolvers<ContextType>;
+  OrganizationCourseProgressReport?: OrganizationCourseProgressReportResolvers<ContextType>;
+  OrganizationCourseProgressValue?: OrganizationCourseProgressValueResolvers<ContextType>;
+  OrganizationSponsoredStudentReport?: OrganizationSponsoredStudentReportResolvers<ContextType>;
   ProcessSubscriptionProviderEventResult?: ProcessSubscriptionProviderEventResultResolvers<ContextType>;
   ProcessSubscriptionProviderEventSuccess?: ProcessSubscriptionProviderEventSuccessResolvers<ContextType>;
   PublicTeacherProfile?: PublicTeacherProfileResolvers<ContextType>;
