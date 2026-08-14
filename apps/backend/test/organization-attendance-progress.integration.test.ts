@@ -209,6 +209,21 @@ describe("Organization attendance and progress reporting GraphQL API", () => {
       attendanceRatePercentage: null,
       excludedUnrecordedCount: 1,
     });
+    // The per-Cohort breakdown is an aggregate of each Cohort in its own right, so
+    // drilling into one leaves the others reported exactly as before.
+    expect(pilotOnly.cohorts.map((cohort) => cohort.cohortName)).toEqual(["Engineering", "Spanish Pilot"]);
+    expect(cohortNamed(pilotOnly, "Engineering")).toEqual(cohortNamed(report, "Engineering"));
+  });
+
+  it("counts a Cohort member only once their membership has begun", async () => {
+    const scheduled = await addMembershipResult(pilotCohortId, danaSponsorshipId, {
+      effectiveFrom: new Date(now.getTime() + 7 * 24 * 60 * 60_000).toISOString(),
+    });
+    expect(scheduled).not.toHaveProperty("code");
+
+    const report = await organizationReport();
+    // The membership covers no Class Session yet, so it adds no reportable member.
+    expect(cohortNamed(report, "Spanish Pilot").sponsoredStudentCount).toBe(1);
   });
 
   it("shows the current-effective aggregate while the Sponsorship is active", async () => {
@@ -481,16 +496,25 @@ describe("Organization attendance and progress reporting GraphQL API", () => {
     return (created.data!.createCohort as { cohort: { id: string } }).cohort.id;
   }
 
-  async function addMembership(cohortId: string, sponsorshipId: string) {
+  async function addMembershipResult(
+    cohortId: string,
+    sponsorshipId: string,
+    window: { effectiveFrom?: string } = {},
+  ) {
     const added = await graphql(`
       mutation Add($input: AddCohortMembershipInput!) {
         addCohortMembership(input: $input) {
-          ... on CohortMembershipSuccess { membership { id } }
+          ... on CohortMembershipSuccess { membership { id effectiveFrom } }
           ... on CohortError { code }
         }
       }
-    `, { input: { idempotencyKey: randomUUID(), cohortId, sponsorshipId } }, managerSubject);
-    expect(added.data!.addCohortMembership).not.toHaveProperty("code");
+    `, { input: { idempotencyKey: randomUUID(), cohortId, sponsorshipId, ...window } }, managerSubject);
+    const outcome = added.data!.addCohortMembership as Record<string, unknown>;
+    return "membership" in outcome ? outcome.membership as Record<string, unknown> : outcome;
+  }
+
+  async function addMembership(cohortId: string, sponsorshipId: string) {
+    expect(await addMembershipResult(cohortId, sponsorshipId)).not.toHaveProperty("code");
   }
 
   type StudentReport = {

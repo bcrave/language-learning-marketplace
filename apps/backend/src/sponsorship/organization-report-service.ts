@@ -1,6 +1,7 @@
 import {
   attendanceRatePercentage,
   attributedCohortIds,
+  classSessionEndsAt,
   courseProgressGain,
   courseProgressPercentage,
   reportExceptionCount,
@@ -11,7 +12,6 @@ import {
 import { sql } from "kysely";
 
 import type { Database } from "../database/database.js";
-import { classSessionEndsAt } from "../attendance/attendance-reconciliation.js";
 
 type OrganizationManagerActor = { id: string; organizationId: string };
 
@@ -102,7 +102,8 @@ type CourseAggregate = { courseId: string; courseTitle: string } & CourseProgres
  * of the Lesson Units behind them, so an Organization still cannot learn what its
  * Student studied before the relationship began.
  */
-async function currentCourseProgress(db: Database, studentUserId: string): Promise<CourseAggregate[]> {
+async function currentCourseProgress(db: Database, studentUserId: string, courseIds: readonly string[]): Promise<CourseAggregate[]> {
+  if (courseIds.length === 0) return [];
   const rows = await db.selectFrom("courses")
     .innerJoin("lesson_units", "lesson_units.course_id", "courses.id")
     .leftJoin("lesson_unit_completions", (join) => join
@@ -114,6 +115,7 @@ async function currentCourseProgress(db: Database, studentUserId: string): Promi
       sql<number>`count(*) filter (where lesson_units.state = 'ACTIVE')::integer`.as("active_count"),
       sql<number>`count(lesson_unit_completions.id) filter (where lesson_units.state = 'ACTIVE')::integer`.as("completed_active_count"),
     ])
+    .where("courses.id", "in", [...courseIds])
     .groupBy(["courses.id", "courses.title"])
     .execute();
   return rows.map((row) => ({
@@ -122,6 +124,17 @@ async function currentCourseProgress(db: Database, studentUserId: string): Promi
     completedActiveLessonUnitCount: row.completed_active_count,
     activeLessonUnitCount: row.active_count,
   }));
+}
+
+/** The Courses one Student may carry a reportable fact for, without naming any unit. */
+async function reportableCourseIds(db: Database, studentUserId: string, snapshotCourseIds: readonly string[]) {
+  const completed = await db.selectFrom("lesson_unit_completions")
+    .innerJoin("lesson_units", "lesson_units.id", "lesson_unit_completions.lesson_unit_id")
+    .select("lesson_units.course_id")
+    .distinct()
+    .where("lesson_unit_completions.student_user_id", "=", studentUserId)
+    .execute();
+  return [...new Set([...snapshotCourseIds, ...completed.map((row) => row.course_id)])];
 }
 
 function projectProgressValue(value: CourseProgressValue) {
@@ -144,12 +157,25 @@ type SnapshotRow = {
   revised_at: Date | null;
 };
 
+function snapshotValue(snapshot: SnapshotRow): CourseProgressValue {
+  return {
+    completedActiveLessonUnitCount: snapshot.completed_active_lesson_unit_count,
+    activeLessonUnitCount: snapshot.active_lesson_unit_count,
+  };
+}
+
 async function courseProgressReport(db: Database, sponsorship: ReportedSponsorship, snapshots: readonly SnapshotRow[]) {
   const own = snapshots.filter((snapshot) => snapshot.sponsorship_id === sponsorship.sponsorshipId);
   // Reporting for an ended Sponsorship stays frozen at its ending snapshot. Reading
   // live progress afterwards would turn a closed relationship into ongoing access to
   // the Student's later learning.
-  const current = sponsorship.state === "ACTIVE" ? await currentCourseProgress(db, sponsorship.studentUserId) : [];
+  const current = sponsorship.state === "ACTIVE"
+    ? await currentCourseProgress(
+      db,
+      sponsorship.studentUserId,
+      await reportableCourseIds(db, sponsorship.studentUserId, own.map((snapshot) => snapshot.course_id)),
+    )
+    : [];
 
   // A Course is reportable once it carries a fact: a frozen boundary of this
   // Sponsorship, or a completion the Student holds now. A Course a corrected
@@ -166,18 +192,12 @@ async function courseProgressReport(db: Database, sponsorship: ReportedSponsorsh
       const baselineRow = own.find((snapshot) => snapshot.course_id === courseId && snapshot.boundary === "SPONSORSHIP_START");
       const endingRow = own.find((snapshot) => snapshot.course_id === courseId && snapshot.boundary === "SPONSORSHIP_END");
       const currentValue = current.find((course) => course.courseId === courseId);
-      const effective = sponsorship.state === "ACTIVE" ? currentValue : endingRow && {
-        completedActiveLessonUnitCount: endingRow.completed_active_lesson_unit_count,
-        activeLessonUnitCount: endingRow.active_lesson_unit_count,
-      };
+      const effective = sponsorship.state === "ACTIVE" ? currentValue : endingRow && snapshotValue(endingRow);
       // A Course the Student had not touched when the Sponsorship began has no
       // baseline snapshot: nothing was completed, measured against the same
       // denominator as the value it is compared with.
       const baseline: CourseProgressValue = baselineRow
-        ? {
-          completedActiveLessonUnitCount: baselineRow.completed_active_lesson_unit_count,
-          activeLessonUnitCount: baselineRow.active_lesson_unit_count,
-        }
+        ? snapshotValue(baselineRow)
         : { completedActiveLessonUnitCount: 0, activeLessonUnitCount: effective?.activeLessonUnitCount ?? 0 };
       const revisions = own.filter((snapshot) => snapshot.course_id === courseId);
       const lastRevisedAt = revisions
@@ -190,10 +210,7 @@ async function courseProgressReport(db: Database, sponsorship: ReportedSponsorsh
         courseTitle,
         baseline: projectProgressValue(baseline),
         baselineCapturedAt: baselineRow?.captured_at.toISOString() ?? null,
-        endingSnapshot: endingRow ? projectProgressValue({
-          completedActiveLessonUnitCount: endingRow.completed_active_lesson_unit_count,
-          activeLessonUnitCount: endingRow.active_lesson_unit_count,
-        }) : null,
+        endingSnapshot: endingRow ? projectProgressValue(snapshotValue(endingRow)) : null,
         endingSnapshotCapturedAt: endingRow?.captured_at.toISOString() ?? null,
         currentEffective: sponsorship.state === "ACTIVE" && currentValue ? projectProgressValue(currentValue) : null,
         ...courseProgressGain(baseline, effective ?? baseline),
@@ -229,7 +246,6 @@ export async function organizationAttendanceAndProgressReport(
     .orderBy("name")
     .execute();
   if (input.cohortId && !cohorts.some((cohort) => cohort.id === input.cohortId)) throw new UnknownCohort();
-  const reportedCohorts = input.cohortId ? cohorts.filter((cohort) => cohort.id === input.cohortId) : cohorts;
 
   const sponsorshipRows = await db.selectFrom("sponsorships")
     .innerJoin("users", "users.id", "sponsorships.student_user_id")
@@ -290,11 +306,32 @@ export async function organizationAttendanceAndProgressReport(
     .where("course_progress_snapshots.sponsorship_id", "in", reportedSponsorships.map((sponsorship) => sponsorship.sponsorshipId))
     .execute();
 
-  const activity = await reportedActivity(db, [...new Set(reportedSponsorships.map((sponsorship) => sponsorship.studentUserId))], now);
-  const organizationCounts = emptyCounts();
-  const cohortCounts = new Map<string, AttendanceCounts>(reportedCohorts.map((cohort) => [cohort.id, emptyCounts()]));
-  const cohortStudents = new Map<string, Set<string>>(reportedCohorts.map((cohort) => [cohort.id, new Set()]));
+  const activity = await reportedActivity(db, [...new Set(sponsorships.map((sponsorship) => sponsorship.studentUserId))], now);
 
+  // The Cohort breakdown covers every Cohort of the Organization whether or not a
+  // filter is applied: a per-Cohort aggregate does not change when the reader drills
+  // into one of them, and the reader still needs the whole list to move between them.
+  const cohortCounts = new Map<string, AttendanceCounts>(cohorts.map((cohort) => [cohort.id, emptyCounts()]));
+  const cohortStudents = new Map<string, Set<string>>(cohorts.map((cohort) => [cohort.id, new Set()]));
+  for (const sponsorship of sponsorships) {
+    const windows = membershipsBySponsorship.get(sponsorship.sponsorshipId) ?? [];
+    for (const occurrence of activity) {
+      if (occurrence.studentUserId !== sponsorship.studentUserId) continue;
+      if (!sponsorshipReportingIncludes(sponsorship, occurrence.occurredAt)) continue;
+      for (const cohortId of attributedCohortIds(windows, occurrence.occurredAt)) {
+        const forCohort = cohortCounts.get(cohortId);
+        if (forCohort) countActivity(forCohort, occurrence);
+      }
+    }
+    for (const window of windows) {
+      // A membership scheduled to begin later covers no activity yet, so it does not
+      // make the Student a reportable member of that Cohort.
+      if (window.effectiveFrom.getTime() > now.getTime()) continue;
+      cohortStudents.get(window.cohortId)?.add(sponsorship.sponsorshipId);
+    }
+  }
+
+  const organizationCounts = emptyCounts();
   const students = await Promise.all(reportedSponsorships.map(async (sponsorship) => {
     const windows = membershipsBySponsorship.get(sponsorship.sponsorshipId) ?? [];
     const counts = emptyCounts();
@@ -309,14 +346,7 @@ export async function organizationAttendanceAndProgressReport(
       if (input.cohortId && !occurrenceCohorts.includes(input.cohortId)) continue;
       countActivity(counts, occurrence);
       countActivity(organizationCounts, occurrence);
-      for (const cohortId of occurrenceCohorts) {
-        attributedCohorts.add(cohortId);
-        const forCohort = cohortCounts.get(cohortId);
-        if (forCohort) countActivity(forCohort, occurrence);
-      }
-    }
-    for (const window of windows) {
-      cohortStudents.get(window.cohortId)?.add(sponsorship.sponsorshipId);
+      for (const cohortId of occurrenceCohorts) attributedCohorts.add(cohortId);
     }
 
     return {
@@ -342,7 +372,7 @@ export async function organizationAttendanceAndProgressReport(
     students: students.sort((first, second) =>
       second.attendance.exceptionCount - first.attendance.exceptionCount
       || first.studentDisplayName.localeCompare(second.studentDisplayName)),
-    cohorts: reportedCohorts.map((cohort) => ({
+    cohorts: cohorts.map((cohort) => ({
       cohortId: cohort.id,
       cohortName: cohort.name,
       sponsoredStudentCount: cohortStudents.get(cohort.id)?.size ?? 0,

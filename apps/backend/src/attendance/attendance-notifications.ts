@@ -1,8 +1,7 @@
-import { attendanceReviewDeadline, interfaceMessages, sessionRatingDeadline } from "@marketplace/core";
+import { attendanceReviewDeadline, classSessionEndsAt, interfaceMessages, sessionRatingDeadline } from "@marketplace/core";
 import IntlMessageFormat from "intl-messageformat";
 
 import type { Database } from "../database/database.js";
-import { classSessionEndsAt } from "./attendance-reconciliation.js";
 
 type AttendanceMessageId = "attendance.corrected.student" | "attendance.corrected.teacher" | "attendance.published.student";
 

@@ -1,9 +1,9 @@
-import type { UserIdentity, UserRole } from "@marketplace/core";
+import { classSessionEndsAt, type UserIdentity, type UserRole } from "@marketplace/core";
 
 import type { Database } from "../database/database.js";
 import { classSessionProjection } from "../class-session/class-session-service.js";
 
-import { attendanceCorrectionSummaries, classSessionEndsAt, lockLessonUnitCompletion, reconcileLessonUnitCompletion } from "./attendance-reconciliation.js";
+import { attendanceCorrectionSummaries, lockLessonUnitCompletion, reconcileLessonUnitCompletion } from "./attendance-reconciliation.js";
 import { notifyAttendanceCorrected, notifyAttendancePublished, notifyTeacherAttendanceCorrected } from "./attendance-notifications.js";
 
 export type RosterAccessResult =

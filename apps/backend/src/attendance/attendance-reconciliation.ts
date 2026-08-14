@@ -1,14 +1,8 @@
-import { establishesLessonUnitCompletion, type AttendanceOutcome } from "@marketplace/core";
+import { classSessionEndsAt, establishesLessonUnitCompletion, type AttendanceOutcome } from "@marketplace/core";
 import { sql } from "kysely";
 
 import type { Database } from "../database/database.js";
 import { reviseCourseProgressSnapshots } from "../sponsorship/course-progress-snapshot.js";
-
-const CLASS_SESSION_DURATION_MILLISECONDS = 60 * 60_000;
-
-export function classSessionEndsAt(startsAt: Date) {
-  return new Date(startsAt.getTime() + CLASS_SESSION_DURATION_MILLISECONDS);
-}
 
 /**
  * The correction facts every authorized Attendance view shows beside the effective

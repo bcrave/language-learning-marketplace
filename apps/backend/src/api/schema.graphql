@@ -314,12 +314,6 @@ union RenameCohortResult = CohortSuccess | CohortError
 union AddCohortMembershipResult = CohortMembershipSuccess | CohortError
 union EndCohortMembershipResult = CohortMembershipSuccess | CohortError
 
-"""
-Attendance facts an Organization may report inside a Sponsorship boundary. The
-Attendance Rate is Attended over every recorded outcome, so `attendanceRatePercentage`
-is absent until an outcome exists and `excludedUnrecordedCount` discloses what the
-rate leaves out instead of counting it against the Student.
-"""
 type OrganizationAttendanceSummary {
   attendedCount: Int!
   noShowCount: Int!
@@ -332,11 +326,6 @@ type OrganizationAttendanceSummary {
 
 type OrganizationCourseProgressValue { completedActiveLessonUnitCount: Int!, activeLessonUnitCount: Int!, percentage: Int! }
 
-"""
-One Course reported for one Sponsorship. `currentEffective` is present only while the
-Sponsorship is active; once it ends, `endingSnapshot` is the last reportable value and
-reporting stays frozen there. Aggregate counts never carry Lesson Unit identities.
-"""
 type OrganizationCourseProgressReport {
   courseId: ID!
   courseTitle: String!

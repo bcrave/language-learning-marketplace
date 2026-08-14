@@ -9,9 +9,9 @@ import {
 } from "./generated/graphql.js";
 import { useFragment as readFragment } from "./generated/fragment-masking.js";
 
-type Intl = ReturnType<typeof useIntl>;
+type IntlShape = ReturnType<typeof useIntl>;
 
-function longInstant(intl: Intl, instant: string) {
+function longInstant(intl: IntlShape, instant: string) {
   return intl.formatDate(instant, { dateStyle: "long", timeStyle: "short", timeZone: "UTC" });
 }
 
@@ -20,7 +20,7 @@ function longInstant(intl: Intl, instant: string) {
  * until an outcome is recorded, and the excluded Unrecorded count is always stated
  * beside it so an empty rate is never mistaken for a poor one.
  */
-function AttendanceSummary({ attendance, intl }: { attendance: OrganizationAttendanceSummaryDetailsFragment; intl: Intl }) {
+function AttendanceSummary({ attendance, intl }: { attendance: OrganizationAttendanceSummaryDetailsFragment; intl: IntlShape }) {
   return (
     <>
       <p>{attendance.attendanceRatePercentage === null

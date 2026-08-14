@@ -10,6 +10,24 @@ create table course_progress_snapshot_units (
   primary key (snapshot_id, lesson_unit_id)
 );
 
+-- Revision reads this table by Lesson Unit on every Attendance record and
+-- correction, which the snapshot-leading primary key cannot serve.
+create index course_progress_snapshot_units_lesson_unit_idx
+  on course_progress_snapshot_units (lesson_unit_id);
+
+-- Backfills boundaries captured under 0022, which stored the denominator only as a
+-- count. Reconstructing it from the Course's currently active units is exact
+-- wherever the curriculum has not changed since capture, and without it those
+-- boundaries could never be revised at all. The stored active_lesson_unit_count
+-- stays authoritative as the frozen denominator; this set only drives the recount.
+insert into course_progress_snapshot_units (snapshot_id, lesson_unit_id)
+select course_progress_snapshots.id, lesson_units.id
+from course_progress_snapshots
+join lesson_units
+  on lesson_units.course_id = course_progress_snapshots.course_id
+ and lesson_units.state = 'ACTIVE'
+on conflict do nothing;
+
 -- A revision marker, not a second history: the prior values of a corrected report
 -- belong to the separately authorized correction-history extract of ADR 0056.
 alter table course_progress_snapshots
@@ -19,7 +37,3 @@ alter table course_progress_snapshots
     (revision_count = 0 and revised_at is null)
     or (revision_count > 0 and revised_at is not null)
   );
-
--- Reporting reads every snapshot of one Organization's Sponsorships by course.
-create index course_progress_snapshots_course_idx
-  on course_progress_snapshots (course_id, sponsorship_id);

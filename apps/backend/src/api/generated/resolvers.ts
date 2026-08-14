@@ -1296,12 +1296,6 @@ export type OrganizationAttendanceAndProgressReport = {
   students: Array<OrganizationSponsoredStudentReport>;
 };
 
-/**
- * Attendance facts an Organization may report inside a Sponsorship boundary. The
- * Attendance Rate is Attended over every recorded outcome, so `attendanceRatePercentage`
- * is absent until an outcome exists and `excludedUnrecordedCount` discloses what the
- * rate leaves out instead of counting it against the Student.
- */
 export type OrganizationAttendanceSummary = {
   __typename?: 'OrganizationAttendanceSummary';
   attendanceRatePercentage?: Maybe<Scalars['Int']['output']>;
@@ -1321,11 +1315,6 @@ export type OrganizationCohortReport = {
   sponsoredStudentCount: Scalars['Int']['output'];
 };
 
-/**
- * One Course reported for one Sponsorship. `currentEffective` is present only while the
- * Sponsorship is active; once it ends, `endingSnapshot` is the last reportable value and
- * reporting stays frozen there. Aggregate counts never carry Lesson Unit identities.
- */
 export type OrganizationCourseProgressReport = {
   __typename?: 'OrganizationCourseProgressReport';
   baseline: OrganizationCourseProgressValue;

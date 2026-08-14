@@ -2,8 +2,7 @@ import { courseProgressPercentage } from "@marketplace/core";
 import { sql } from "kysely";
 
 import type { Database } from "../database/database.js";
-
-export type CourseProgressSnapshotBoundary = "SPONSORSHIP_START" | "SPONSORSHIP_END";
+import type { CourseProgressSnapshotBoundary } from "../database/types.js";
 
 /**
  * Freezes the aggregate Course Progress an Organization may report for one
@@ -19,14 +18,27 @@ export async function captureCourseProgressSnapshot(
   boundary: CourseProgressSnapshotBoundary,
   capturedAt: Date,
 ) {
-  const reportableCourses = await transaction.selectFrom("lesson_unit_completions")
-    .innerJoin("lesson_units", "lesson_units.id", "lesson_unit_completions.lesson_unit_id")
-    .select("lesson_units.course_id")
-    .distinct()
-    .where("lesson_unit_completions.student_user_id", "=", sponsorship.student_user_id)
-    .execute();
-  if (reportableCourses.length === 0) return;
-  const courseIds = reportableCourses.map((course) => course.course_id);
+  const [completedCourses, alreadyReported] = await Promise.all([
+    transaction.selectFrom("lesson_unit_completions")
+      .innerJoin("lesson_units", "lesson_units.id", "lesson_unit_completions.lesson_unit_id")
+      .select("lesson_units.course_id")
+      .distinct()
+      .where("lesson_unit_completions.student_user_id", "=", sponsorship.student_user_id)
+      .execute(),
+    // A Course an earlier boundary of this Sponsorship already reports keeps its
+    // place at every later boundary, even once a correction removed the last
+    // completion: the loss belongs in the report rather than the Course vanishing.
+    transaction.selectFrom("course_progress_snapshots")
+      .select("course_id")
+      .distinct()
+      .where("sponsorship_id", "=", sponsorship.id)
+      .execute(),
+  ]);
+  const courseIds = [...new Set([
+    ...completedCourses.map((course) => course.course_id),
+    ...alreadyReported.map((course) => course.course_id),
+  ])];
+  if (courseIds.length === 0) return;
 
   const activeUnits = await transaction.selectFrom("lesson_units")
     .leftJoin("lesson_unit_completions", (join) => join

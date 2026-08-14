@@ -1,6 +1,7 @@
 import {
   attendanceReviewDeadline,
   attendanceReviewWindowIsOpen,
+  classSessionEndsAt,
   decidedAttendanceOutcome,
   type AttendanceOutcome,
   type AttendanceReviewDecision,
@@ -8,7 +9,7 @@ import {
 import { sql } from "kysely";
 
 import type { Database } from "../database/database.js";
-import { attendanceCorrectionSummaries, classSessionEndsAt, lockLessonUnitCompletion, reconcileLessonUnitCompletion } from "./attendance-reconciliation.js";
+import { attendanceCorrectionSummaries, lockLessonUnitCompletion, reconcileLessonUnitCompletion } from "./attendance-reconciliation.js";
 import {
   notifyAttendanceReviewCreatedAdministrators,
   notifyAttendanceReviewCreatedStudent,

@@ -52,6 +52,15 @@ export function decidedAttendanceOutcome(decision: AttendanceReviewDecision, eff
   return effectiveOutcome === "ATTENDED" ? "NO_SHOW" : "ATTENDED";
 }
 
+// A Class Session is a fixed-time, 60-minute occurrence, so its end follows from
+// its start alone. Attendance, feedback and rating windows, and reporting all hang
+// off this instant.
+const CLASS_SESSION_DURATION_MILLISECONDS = 60 * 60_000;
+
+export function classSessionEndsAt(startsAt: Date) {
+  return new Date(startsAt.getTime() + CLASS_SESSION_DURATION_MILLISECONDS);
+}
+
 const BOOKING_DEADLINE_MILLISECONDS = 30 * 60_000;
 const REFUND_DEADLINE_MILLISECONDS = 24 * 60 * 60_000;
 const WAITLIST_DEADLINE_MILLISECONDS = 2 * 60 * 60_000;
@@ -142,10 +151,11 @@ export function courseProgressPercentage(completedActiveLessonUnitCount: number,
     : Math.round(100 * completedActiveLessonUnitCount / activeLessonUnitCount);
 }
 
-// Both sides of a gain share the boundary's frozen active-unit denominator, so an
-// accepted Attendance correction can move the gain while a later curriculum change
-// cannot. A correction that removes a completion yields a negative gain rather than
-// a rewritten baseline.
+// Between two frozen boundaries both sides share the same frozen active-unit
+// denominator, so only a revised completion fact can move the gain. Against a live
+// current value the denominator is the one in force now, because an active
+// Sponsorship reports a current aggregate rather than a frozen one. Either way a
+// removed completion yields a negative gain rather than a rewritten baseline.
 export function courseProgressGain(baseline: CourseProgressValue, ending: CourseProgressValue) {
   return {
     completedLessonUnitGain: ending.completedActiveLessonUnitCount - baseline.completedActiveLessonUnitCount,
@@ -417,7 +427,7 @@ export const interfaceMessages = {
     "organizationReport.progress.current": "Current effective: {completed, number} of {active, number} active Lesson Units ({percentage, number}%)",
     "organizationReport.progress.ending": "Frozen ending snapshot: {completed, number} of {active, number} active Lesson Units ({percentage, number}%)",
     "organizationReport.progress.gain": "Gain during Sponsorship: {units, number} Lesson Units ({points, number} percentage points)",
-    "organizationReport.progress.revised": "Revised by {count, number} accepted Attendance corrections on {revisedAt}",
+    "organizationReport.progress.revised": "Revised {count, number} times by later Attendance records on {revisedAt}",
     "curriculum.loading": "Loading curriculum administration…",
     "curriculum.error": "We couldn't update the curriculum. Review the details and try again.",
     "curriculum.sampleBadge": "Sample curriculum",
@@ -1075,7 +1085,7 @@ export const interfaceMessages = {
     "organizationReport.progress.current": "Valor efectivo actual: {completed, number} de {active, number} Unidades de Lección activas ({percentage, number}%)",
     "organizationReport.progress.ending": "Instantánea final congelada: {completed, number} de {active, number} Unidades de Lección activas ({percentage, number}%)",
     "organizationReport.progress.gain": "Avance durante el Patrocinio: {units, number} Unidades de Lección ({points, number} puntos porcentuales)",
-    "organizationReport.progress.revised": "Revisada por {count, number} correcciones de Asistencia aceptadas el {revisedAt}",
+    "organizationReport.progress.revised": "Revisada {count, number} veces por Registros de Asistencia posteriores el {revisedAt}",
     "curriculum.loading": "Cargando la administración del currículo…",
     "curriculum.error": "No pudimos actualizar el currículo. Revisa los datos e inténtalo de nuevo.",
     "curriculum.sampleBadge": "Currículo de muestra",

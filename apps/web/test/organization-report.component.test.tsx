@@ -143,7 +143,7 @@ describe("Organization attendance and progress report", () => {
     expect(screen.getByText(/Sponsorship ended May 1, 2026.*reporting is frozen there/)).toBeVisible();
     expect(screen.getByText("Frozen ending snapshot: 3 of 4 active Lesson Units (75%)")).toBeVisible();
     expect(screen.queryByText(/Current effective:/)).toBeNull();
-    expect(screen.getByText(/Revised by 1 accepted Attendance corrections on June 20, 2026/)).toBeVisible();
+    expect(screen.getByText(/Revised 1 times by later Attendance records on June 20, 2026/)).toBeVisible();
     const students = within(screen.getByRole("region", { name: "Sponsored Students" }));
     expect(students.getByText("No recorded Attendance outcome yet")).toBeVisible();
     expect(students.getByText("No Cohort attribution for the reported activity")).toBeVisible();
@@ -159,6 +159,9 @@ describe("Organization attendance and progress report", () => {
     await userEvent.selectOptions(screen.getByLabelText("Cohort"), pilotCohortId);
     expect(await screen.findByRole("heading", { name: "Casey Nguyen" })).toBeVisible();
     expect(screen.queryByRole("heading", { name: "Dana Ortiz" })).toBeNull();
+    // Drilling into one Cohort must not strip the others out of the picker.
+    expect(screen.getAllByRole("option").map((option) => option.textContent))
+      .toEqual(["All sponsored Students", "Engineering", "Spanish Pilot"]);
   });
 
   it("renders the report in Spanish", async () => {
