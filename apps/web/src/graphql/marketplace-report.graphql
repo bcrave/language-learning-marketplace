@@ -1,0 +1,74 @@
+query MarketplaceOperationalReport($input: MarketplaceOperationalReportInput) {
+  marketplaceOperationalReport(input: $input) {
+    generatedAt
+    range {
+      fromLocalDate
+      toLocalDate
+      timeZone
+    }
+    attendance {
+      attendedCount
+      noShowCount
+      recordedCount
+      attendanceRatePercentage
+      excludedUnrecordedCount
+      correctedCount
+      exceptionCount
+    }
+    cancellations {
+      studentCancellationCount
+      timelyCount
+      lateCount
+      studentCancellationRatePercentage
+      excludedClassSessionCancellationCount
+      excludedRescheduleCount
+      dailyRates {
+        localDate
+        studentCancellationCount
+        timelyCount
+        lateCount
+        recordedOutcomeCount
+        studentCancellationRatePercentage
+      }
+    }
+    corrections {
+      correctedAttendanceCount
+      lastCorrectedAt
+      pendingAttendanceReviewCount
+    }
+    credits {
+      creditAdjustmentCount
+      grantedCount
+      refundedCount
+      deductedCount
+      netCreditChange
+      bySource {
+        source
+        entryCount
+        netAmount
+      }
+    }
+    courseProgress {
+      courseId
+      courseTitle
+      targetLanguage
+      curriculumLevel
+      activeLessonUnitCount
+      completedActiveLessonUnitCount
+      studentsWithProgressCount
+      averageProgressPercentage
+    }
+    exceptions {
+      totalCount
+      items {
+        kind
+        classSessionId
+        occurredAt
+        courseTitle
+        lessonUnitTitle
+        teacherDisplayName
+        affectedBookingCount
+      }
+    }
+  }
+}

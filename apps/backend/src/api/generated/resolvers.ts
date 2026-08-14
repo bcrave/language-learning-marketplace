@@ -948,6 +948,120 @@ export enum LocalTimeDisambiguation {
   Reject = 'REJECT'
 }
 
+export type MarketplaceAttendanceSummary = {
+  __typename?: 'MarketplaceAttendanceSummary';
+  attendanceRatePercentage?: Maybe<Scalars['Int']['output']>;
+  attendedCount: Scalars['Int']['output'];
+  correctedCount: Scalars['Int']['output'];
+  exceptionCount: Scalars['Int']['output'];
+  excludedUnrecordedCount: Scalars['Int']['output'];
+  noShowCount: Scalars['Int']['output'];
+  recordedCount: Scalars['Int']['output'];
+};
+
+export type MarketplaceCancellationSummary = {
+  __typename?: 'MarketplaceCancellationSummary';
+  dailyRates: Array<MarketplaceDailyCancellationRate>;
+  excludedClassSessionCancellationCount: Scalars['Int']['output'];
+  excludedRescheduleCount: Scalars['Int']['output'];
+  lateCount: Scalars['Int']['output'];
+  studentCancellationCount: Scalars['Int']['output'];
+  studentCancellationRatePercentage?: Maybe<Scalars['Int']['output']>;
+  timelyCount: Scalars['Int']['output'];
+};
+
+export type MarketplaceCorrectionSummary = {
+  __typename?: 'MarketplaceCorrectionSummary';
+  correctedAttendanceCount: Scalars['Int']['output'];
+  lastCorrectedAt?: Maybe<Scalars['String']['output']>;
+  pendingAttendanceReviewCount: Scalars['Int']['output'];
+};
+
+export type MarketplaceCourseProgressReport = {
+  __typename?: 'MarketplaceCourseProgressReport';
+  activeLessonUnitCount: Scalars['Int']['output'];
+  averageProgressPercentage: Scalars['Int']['output'];
+  completedActiveLessonUnitCount: Scalars['Int']['output'];
+  courseId: Scalars['ID']['output'];
+  courseTitle: Scalars['String']['output'];
+  curriculumLevel: CurriculumLevel;
+  studentsWithProgressCount: Scalars['Int']['output'];
+  targetLanguage: Scalars['String']['output'];
+};
+
+export type MarketplaceCreditSourceTotal = {
+  __typename?: 'MarketplaceCreditSourceTotal';
+  entryCount: Scalars['Int']['output'];
+  netAmount: Scalars['Int']['output'];
+  source: ClassCreditLedgerSource;
+};
+
+export type MarketplaceCreditSummary = {
+  __typename?: 'MarketplaceCreditSummary';
+  bySource: Array<MarketplaceCreditSourceTotal>;
+  creditAdjustmentCount: Scalars['Int']['output'];
+  deductedCount: Scalars['Int']['output'];
+  grantedCount: Scalars['Int']['output'];
+  netCreditChange: Scalars['Int']['output'];
+  refundedCount: Scalars['Int']['output'];
+};
+
+export type MarketplaceDailyCancellationRate = {
+  __typename?: 'MarketplaceDailyCancellationRate';
+  lateCount: Scalars['Int']['output'];
+  localDate: Scalars['String']['output'];
+  recordedOutcomeCount: Scalars['Int']['output'];
+  studentCancellationCount: Scalars['Int']['output'];
+  studentCancellationRatePercentage?: Maybe<Scalars['Int']['output']>;
+  timelyCount: Scalars['Int']['output'];
+};
+
+export type MarketplaceExceptionItem = {
+  __typename?: 'MarketplaceExceptionItem';
+  affectedBookingCount: Scalars['Int']['output'];
+  classSessionId: Scalars['ID']['output'];
+  courseTitle: Scalars['String']['output'];
+  kind: MarketplaceExceptionKind;
+  lessonUnitTitle: Scalars['String']['output'];
+  occurredAt: Scalars['String']['output'];
+  teacherDisplayName: Scalars['String']['output'];
+};
+
+export enum MarketplaceExceptionKind {
+  PendingAttendanceReview = 'PENDING_ATTENDANCE_REVIEW',
+  UnrecordedAttendance = 'UNRECORDED_ATTENDANCE'
+}
+
+export type MarketplaceExceptionSummary = {
+  __typename?: 'MarketplaceExceptionSummary';
+  items: Array<MarketplaceExceptionItem>;
+  totalCount: Scalars['Int']['output'];
+};
+
+export type MarketplaceOperationalReport = {
+  __typename?: 'MarketplaceOperationalReport';
+  attendance: MarketplaceAttendanceSummary;
+  cancellations: MarketplaceCancellationSummary;
+  corrections: MarketplaceCorrectionSummary;
+  courseProgress: Array<MarketplaceCourseProgressReport>;
+  credits: MarketplaceCreditSummary;
+  exceptions: MarketplaceExceptionSummary;
+  generatedAt: Scalars['String']['output'];
+  range: MarketplaceReportRange;
+};
+
+export type MarketplaceOperationalReportInput = {
+  fromLocalDate?: InputMaybe<Scalars['String']['input']>;
+  toLocalDate?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type MarketplaceReportRange = {
+  __typename?: 'MarketplaceReportRange';
+  fromLocalDate: Scalars['String']['output'];
+  timeZone: Scalars['String']['output'];
+  toLocalDate: Scalars['String']['output'];
+};
+
 export type Mutation = {
   __typename?: 'Mutation';
   acceptSponsorshipInvitation: AcceptSponsorshipInvitationResult;
@@ -1412,6 +1526,7 @@ export type Query = {
   learningAccessClassSessions: Array<ClassSession>;
   learningAccessLessonUnits: Array<LearningAccessLessonUnit>;
   lessonMaterials?: Maybe<Array<LessonMaterial>>;
+  marketplaceOperationalReport: MarketplaceOperationalReport;
   notifications: Array<InAppNotification>;
   organizationAttendanceAndProgressReport: OrganizationAttendanceAndProgressReport;
   organizationCohorts: Array<Cohort>;
@@ -1473,6 +1588,11 @@ export type QueryLearningAccessLessonUnitsArgs = {
 export type QueryLessonMaterialsArgs = {
   actingRole: UserRole;
   lessonUnitId: Scalars['ID']['input'];
+};
+
+
+export type QueryMarketplaceOperationalReportArgs = {
+  input?: InputMaybe<MarketplaceOperationalReportInput>;
 };
 
 
@@ -2176,6 +2296,7 @@ export type WithdrawWaitlistSuccess = {
 export enum WorkspacePlace {
   AdministrationOperations = 'ADMINISTRATION_OPERATIONS',
   AdministrationPeople = 'ADMINISTRATION_PEOPLE',
+  AdministrationReports = 'ADMINISTRATION_REPORTS',
   OrganizationReports = 'ORGANIZATION_REPORTS',
   OrganizationStudents = 'ORGANIZATION_STUDENTS',
   StudentDiscovery = 'STUDENT_DISCOVERY',
@@ -2606,6 +2727,19 @@ export type ResolversTypes = {
   LessonUnit: ResolverTypeWrapper<LessonUnit>;
   LessonUnitState: LessonUnitState;
   LocalTimeDisambiguation: LocalTimeDisambiguation;
+  MarketplaceAttendanceSummary: ResolverTypeWrapper<MarketplaceAttendanceSummary>;
+  MarketplaceCancellationSummary: ResolverTypeWrapper<MarketplaceCancellationSummary>;
+  MarketplaceCorrectionSummary: ResolverTypeWrapper<MarketplaceCorrectionSummary>;
+  MarketplaceCourseProgressReport: ResolverTypeWrapper<MarketplaceCourseProgressReport>;
+  MarketplaceCreditSourceTotal: ResolverTypeWrapper<MarketplaceCreditSourceTotal>;
+  MarketplaceCreditSummary: ResolverTypeWrapper<MarketplaceCreditSummary>;
+  MarketplaceDailyCancellationRate: ResolverTypeWrapper<MarketplaceDailyCancellationRate>;
+  MarketplaceExceptionItem: ResolverTypeWrapper<MarketplaceExceptionItem>;
+  MarketplaceExceptionKind: MarketplaceExceptionKind;
+  MarketplaceExceptionSummary: ResolverTypeWrapper<MarketplaceExceptionSummary>;
+  MarketplaceOperationalReport: ResolverTypeWrapper<MarketplaceOperationalReport>;
+  MarketplaceOperationalReportInput: MarketplaceOperationalReportInput;
+  MarketplaceReportRange: ResolverTypeWrapper<MarketplaceReportRange>;
   Mutation: ResolverTypeWrapper<Record<PropertyKey, never>>;
   NotificationChannel: NotificationChannel;
   Organization: ResolverTypeWrapper<Organization>;
@@ -2861,6 +2995,18 @@ export type ResolversParentTypes = {
   LearningFeedbackError: LearningFeedbackError;
   LessonMaterial: LessonMaterial;
   LessonUnit: LessonUnit;
+  MarketplaceAttendanceSummary: MarketplaceAttendanceSummary;
+  MarketplaceCancellationSummary: MarketplaceCancellationSummary;
+  MarketplaceCorrectionSummary: MarketplaceCorrectionSummary;
+  MarketplaceCourseProgressReport: MarketplaceCourseProgressReport;
+  MarketplaceCreditSourceTotal: MarketplaceCreditSourceTotal;
+  MarketplaceCreditSummary: MarketplaceCreditSummary;
+  MarketplaceDailyCancellationRate: MarketplaceDailyCancellationRate;
+  MarketplaceExceptionItem: MarketplaceExceptionItem;
+  MarketplaceExceptionSummary: MarketplaceExceptionSummary;
+  MarketplaceOperationalReport: MarketplaceOperationalReport;
+  MarketplaceOperationalReportInput: MarketplaceOperationalReportInput;
+  MarketplaceReportRange: MarketplaceReportRange;
   Mutation: Record<PropertyKey, never>;
   Organization: Organization;
   OrganizationAttendanceAndProgressReport: OrganizationAttendanceAndProgressReport;
@@ -3567,6 +3713,99 @@ export type LessonUnitResolvers<ContextType = any, ParentType extends ResolversP
   topics?: Resolver<Array<ResolversTypes['Topic']>, ParentType, ContextType>;
 };
 
+export type MarketplaceAttendanceSummaryResolvers<ContextType = any, ParentType extends ResolversParentTypes['MarketplaceAttendanceSummary'] = ResolversParentTypes['MarketplaceAttendanceSummary']> = {
+  attendanceRatePercentage?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  attendedCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  correctedCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  exceptionCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  excludedUnrecordedCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  noShowCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  recordedCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+};
+
+export type MarketplaceCancellationSummaryResolvers<ContextType = any, ParentType extends ResolversParentTypes['MarketplaceCancellationSummary'] = ResolversParentTypes['MarketplaceCancellationSummary']> = {
+  dailyRates?: Resolver<Array<ResolversTypes['MarketplaceDailyCancellationRate']>, ParentType, ContextType>;
+  excludedClassSessionCancellationCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  excludedRescheduleCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  lateCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  studentCancellationCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  studentCancellationRatePercentage?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  timelyCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+};
+
+export type MarketplaceCorrectionSummaryResolvers<ContextType = any, ParentType extends ResolversParentTypes['MarketplaceCorrectionSummary'] = ResolversParentTypes['MarketplaceCorrectionSummary']> = {
+  correctedAttendanceCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  lastCorrectedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  pendingAttendanceReviewCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+};
+
+export type MarketplaceCourseProgressReportResolvers<ContextType = any, ParentType extends ResolversParentTypes['MarketplaceCourseProgressReport'] = ResolversParentTypes['MarketplaceCourseProgressReport']> = {
+  activeLessonUnitCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  averageProgressPercentage?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  completedActiveLessonUnitCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  courseId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  courseTitle?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  curriculumLevel?: Resolver<ResolversTypes['CurriculumLevel'], ParentType, ContextType>;
+  studentsWithProgressCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  targetLanguage?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
+export type MarketplaceCreditSourceTotalResolvers<ContextType = any, ParentType extends ResolversParentTypes['MarketplaceCreditSourceTotal'] = ResolversParentTypes['MarketplaceCreditSourceTotal']> = {
+  entryCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  netAmount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  source?: Resolver<ResolversTypes['ClassCreditLedgerSource'], ParentType, ContextType>;
+};
+
+export type MarketplaceCreditSummaryResolvers<ContextType = any, ParentType extends ResolversParentTypes['MarketplaceCreditSummary'] = ResolversParentTypes['MarketplaceCreditSummary']> = {
+  bySource?: Resolver<Array<ResolversTypes['MarketplaceCreditSourceTotal']>, ParentType, ContextType>;
+  creditAdjustmentCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  deductedCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  grantedCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  netCreditChange?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  refundedCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+};
+
+export type MarketplaceDailyCancellationRateResolvers<ContextType = any, ParentType extends ResolversParentTypes['MarketplaceDailyCancellationRate'] = ResolversParentTypes['MarketplaceDailyCancellationRate']> = {
+  lateCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  localDate?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  recordedOutcomeCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  studentCancellationCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  studentCancellationRatePercentage?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  timelyCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+};
+
+export type MarketplaceExceptionItemResolvers<ContextType = any, ParentType extends ResolversParentTypes['MarketplaceExceptionItem'] = ResolversParentTypes['MarketplaceExceptionItem']> = {
+  affectedBookingCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  classSessionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  courseTitle?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  kind?: Resolver<ResolversTypes['MarketplaceExceptionKind'], ParentType, ContextType>;
+  lessonUnitTitle?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  occurredAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  teacherDisplayName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
+export type MarketplaceExceptionSummaryResolvers<ContextType = any, ParentType extends ResolversParentTypes['MarketplaceExceptionSummary'] = ResolversParentTypes['MarketplaceExceptionSummary']> = {
+  items?: Resolver<Array<ResolversTypes['MarketplaceExceptionItem']>, ParentType, ContextType>;
+  totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+};
+
+export type MarketplaceOperationalReportResolvers<ContextType = any, ParentType extends ResolversParentTypes['MarketplaceOperationalReport'] = ResolversParentTypes['MarketplaceOperationalReport']> = {
+  attendance?: Resolver<ResolversTypes['MarketplaceAttendanceSummary'], ParentType, ContextType>;
+  cancellations?: Resolver<ResolversTypes['MarketplaceCancellationSummary'], ParentType, ContextType>;
+  corrections?: Resolver<ResolversTypes['MarketplaceCorrectionSummary'], ParentType, ContextType>;
+  courseProgress?: Resolver<Array<ResolversTypes['MarketplaceCourseProgressReport']>, ParentType, ContextType>;
+  credits?: Resolver<ResolversTypes['MarketplaceCreditSummary'], ParentType, ContextType>;
+  exceptions?: Resolver<ResolversTypes['MarketplaceExceptionSummary'], ParentType, ContextType>;
+  generatedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  range?: Resolver<ResolversTypes['MarketplaceReportRange'], ParentType, ContextType>;
+};
+
+export type MarketplaceReportRangeResolvers<ContextType = any, ParentType extends ResolversParentTypes['MarketplaceReportRange'] = ResolversParentTypes['MarketplaceReportRange']> = {
+  fromLocalDate?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  timeZone?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  toLocalDate?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
 export type MutationResolvers<ContextType = any, ParentType extends ResolversParentTypes['Mutation'] = ResolversParentTypes['Mutation']> = {
   acceptSponsorshipInvitation?: Resolver<ResolversTypes['AcceptSponsorshipInvitationResult'], ParentType, ContextType, RequireFields<MutationAcceptSponsorshipInvitationArgs, 'input'>>;
   addAvailabilityException?: Resolver<ResolversTypes['AddAvailabilityExceptionResult'], ParentType, ContextType, RequireFields<MutationAddAvailabilityExceptionArgs, 'input'>>;
@@ -3731,6 +3970,7 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   learningAccessClassSessions?: Resolver<Array<ResolversTypes['ClassSession']>, ParentType, ContextType, RequireFields<QueryLearningAccessClassSessionsArgs, 'actingRole'>>;
   learningAccessLessonUnits?: Resolver<Array<ResolversTypes['LearningAccessLessonUnit']>, ParentType, ContextType, RequireFields<QueryLearningAccessLessonUnitsArgs, 'actingRole'>>;
   lessonMaterials?: Resolver<Maybe<Array<ResolversTypes['LessonMaterial']>>, ParentType, ContextType, RequireFields<QueryLessonMaterialsArgs, 'actingRole' | 'lessonUnitId'>>;
+  marketplaceOperationalReport?: Resolver<ResolversTypes['MarketplaceOperationalReport'], ParentType, ContextType, Partial<QueryMarketplaceOperationalReportArgs>>;
   notifications?: Resolver<Array<ResolversTypes['InAppNotification']>, ParentType, ContextType>;
   organizationAttendanceAndProgressReport?: Resolver<ResolversTypes['OrganizationAttendanceAndProgressReport'], ParentType, ContextType, Partial<QueryOrganizationAttendanceAndProgressReportArgs>>;
   organizationCohorts?: Resolver<Array<ResolversTypes['Cohort']>, ParentType, ContextType>;
@@ -4254,6 +4494,17 @@ export type Resolvers<ContextType = any> = {
   LearningFeedbackError?: LearningFeedbackErrorResolvers<ContextType>;
   LessonMaterial?: LessonMaterialResolvers<ContextType>;
   LessonUnit?: LessonUnitResolvers<ContextType>;
+  MarketplaceAttendanceSummary?: MarketplaceAttendanceSummaryResolvers<ContextType>;
+  MarketplaceCancellationSummary?: MarketplaceCancellationSummaryResolvers<ContextType>;
+  MarketplaceCorrectionSummary?: MarketplaceCorrectionSummaryResolvers<ContextType>;
+  MarketplaceCourseProgressReport?: MarketplaceCourseProgressReportResolvers<ContextType>;
+  MarketplaceCreditSourceTotal?: MarketplaceCreditSourceTotalResolvers<ContextType>;
+  MarketplaceCreditSummary?: MarketplaceCreditSummaryResolvers<ContextType>;
+  MarketplaceDailyCancellationRate?: MarketplaceDailyCancellationRateResolvers<ContextType>;
+  MarketplaceExceptionItem?: MarketplaceExceptionItemResolvers<ContextType>;
+  MarketplaceExceptionSummary?: MarketplaceExceptionSummaryResolvers<ContextType>;
+  MarketplaceOperationalReport?: MarketplaceOperationalReportResolvers<ContextType>;
+  MarketplaceReportRange?: MarketplaceReportRangeResolvers<ContextType>;
   Mutation?: MutationResolvers<ContextType>;
   Organization?: OrganizationResolvers<ContextType>;
   OrganizationAttendanceAndProgressReport?: OrganizationAttendanceAndProgressReportResolvers<ContextType>;

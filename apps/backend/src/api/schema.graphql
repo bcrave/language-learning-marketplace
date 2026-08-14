@@ -19,6 +19,7 @@ enum WorkspacePlace {
   ORGANIZATION_REPORTS
   ADMINISTRATION_OPERATIONS
   ADMINISTRATION_PEOPLE
+  ADMINISTRATION_REPORTS
 }
 
 enum WorkspaceRelationshipScope {
@@ -367,6 +368,92 @@ type OrganizationAttendanceAndProgressReport {
   cohorts: [OrganizationCohortReport!]!
 }
 
+type MarketplaceAttendanceSummary {
+  attendedCount: Int!
+  noShowCount: Int!
+  recordedCount: Int!
+  attendanceRatePercentage: Int
+  excludedUnrecordedCount: Int!
+  correctedCount: Int!
+  exceptionCount: Int!
+}
+
+type MarketplaceDailyCancellationRate {
+  localDate: String!
+  studentCancellationCount: Int!
+  timelyCount: Int!
+  lateCount: Int!
+  recordedOutcomeCount: Int!
+  studentCancellationRatePercentage: Int
+}
+
+type MarketplaceCancellationSummary {
+  studentCancellationCount: Int!
+  timelyCount: Int!
+  lateCount: Int!
+  studentCancellationRatePercentage: Int
+  excludedClassSessionCancellationCount: Int!
+  excludedRescheduleCount: Int!
+  dailyRates: [MarketplaceDailyCancellationRate!]!
+}
+
+type MarketplaceCorrectionSummary {
+  correctedAttendanceCount: Int!
+  lastCorrectedAt: String
+  pendingAttendanceReviewCount: Int!
+}
+
+type MarketplaceCreditSourceTotal { source: ClassCreditLedgerSource!, entryCount: Int!, netAmount: Int! }
+
+type MarketplaceCreditSummary {
+  creditAdjustmentCount: Int!
+  grantedCount: Int!
+  refundedCount: Int!
+  deductedCount: Int!
+  netCreditChange: Int!
+  bySource: [MarketplaceCreditSourceTotal!]!
+}
+
+type MarketplaceCourseProgressReport {
+  courseId: ID!
+  courseTitle: String!
+  targetLanguage: String!
+  curriculumLevel: CurriculumLevel!
+  activeLessonUnitCount: Int!
+  completedActiveLessonUnitCount: Int!
+  studentsWithProgressCount: Int!
+  averageProgressPercentage: Int!
+}
+
+enum MarketplaceExceptionKind { UNRECORDED_ATTENDANCE PENDING_ATTENDANCE_REVIEW }
+
+type MarketplaceExceptionItem {
+  kind: MarketplaceExceptionKind!
+  classSessionId: ID!
+  occurredAt: String!
+  courseTitle: String!
+  lessonUnitTitle: String!
+  teacherDisplayName: String!
+  affectedBookingCount: Int!
+}
+
+type MarketplaceExceptionSummary { totalCount: Int!, items: [MarketplaceExceptionItem!]! }
+
+type MarketplaceReportRange { fromLocalDate: String!, toLocalDate: String!, timeZone: String! }
+
+input MarketplaceOperationalReportInput { fromLocalDate: String, toLocalDate: String }
+
+type MarketplaceOperationalReport {
+  generatedAt: String!
+  range: MarketplaceReportRange!
+  attendance: MarketplaceAttendanceSummary!
+  cancellations: MarketplaceCancellationSummary!
+  corrections: MarketplaceCorrectionSummary!
+  credits: MarketplaceCreditSummary!
+  courseProgress: [MarketplaceCourseProgressReport!]!
+  exceptions: MarketplaceExceptionSummary!
+}
+
 type User {
   id: ID!
   displayName: String!
@@ -531,6 +618,7 @@ type Query {
   organizationSponsoredStudents: [Sponsorship!]!
   organizationCohorts: [Cohort!]!
   organizationAttendanceAndProgressReport(cohortId: ID): OrganizationAttendanceAndProgressReport!
+  marketplaceOperationalReport(input: MarketplaceOperationalReportInput): MarketplaceOperationalReport!
 }
 
 type Mutation {
