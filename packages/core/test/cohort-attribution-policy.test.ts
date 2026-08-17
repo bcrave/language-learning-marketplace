@@ -25,7 +25,10 @@ describe("Cohort membership attribution policy", () => {
       const open = membership("open", effectiveFrom, null);
       const bounded = membership("bounded", effectiveFrom, effectiveUntil);
 
-      expect(cohortMembershipIsEffectiveAt(bounded, new Date(effectiveFrom.getTime() + nudge))).toBe(nudge >= 0);
+      // The window is half-open, so a nudge past the start is only still inside it
+      // while it has not also reached the end: for a one-millisecond membership the
+      // two boundary probes are the same instant, and that instant is excluded.
+      expect(cohortMembershipIsEffectiveAt(bounded, new Date(effectiveFrom.getTime() + nudge))).toBe(nudge >= 0 && nudge < duration);
       expect(cohortMembershipIsEffectiveAt(bounded, new Date(effectiveUntil.getTime() + nudge))).toBe(nudge < 0);
       expect(cohortMembershipIsEffectiveAt(open, effectiveUntil)).toBe(true);
       expect(cohortMembershipIsEffectiveAt(open, new Date(effectiveFrom.getTime() - 1))).toBe(false);
