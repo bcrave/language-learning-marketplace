@@ -81,6 +81,7 @@ import {
 } from "../sponsorship/sponsorship-service.js";
 import { courseProgressSnapshotsForSponsorship } from "../sponsorship/course-progress-snapshot.js";
 import { organizationAttendanceAndProgressReport, UnknownCohort } from "../sponsorship/organization-report-service.js";
+import { InvalidReportRange, marketplaceOperationalReport, MissingDisplayTimeZone } from "../reporting/marketplace-report-service.js";
 import {
   addCohortMembership,
   cohortsForOrganization,
@@ -135,6 +136,7 @@ const graphQLWorkspacePlaces: Record<WorkspacePlace, GraphQLWorkspacePlace> = {
   ORGANIZATION_REPORTS: GraphQLWorkspacePlace.OrganizationReports,
   ADMINISTRATION_OPERATIONS: GraphQLWorkspacePlace.AdministrationOperations,
   ADMINISTRATION_PEOPLE: GraphQLWorkspacePlace.AdministrationPeople,
+  ADMINISTRATION_REPORTS: GraphQLWorkspacePlace.AdministrationReports,
 };
 
 const workspacePlacesByGraphQL: Record<GraphQLWorkspacePlace, WorkspacePlace> = {
@@ -146,6 +148,7 @@ const workspacePlacesByGraphQL: Record<GraphQLWorkspacePlace, WorkspacePlace> = 
   [GraphQLWorkspacePlace.OrganizationReports]: "ORGANIZATION_REPORTS",
   [GraphQLWorkspacePlace.AdministrationOperations]: "ADMINISTRATION_OPERATIONS",
   [GraphQLWorkspacePlace.AdministrationPeople]: "ADMINISTRATION_PEOPLE",
+  [GraphQLWorkspacePlace.AdministrationReports]: "ADMINISTRATION_REPORTS",
 };
 
 const relationshipScopesByRole: Record<UserRole, WorkspaceRelationshipScope> = {
@@ -358,6 +361,36 @@ export function createApi(options: {
               correlation_id: context.correlationId,
             }).execute();
             throw createGraphQLError("The Cohort was not found", { extensions: { code: "NOT_FOUND" } });
+          }
+        },
+        marketplaceOperationalReport: async (_parent, { input }, context) => {
+          const operation = "marketplace-report.read";
+          const administrator = await authenticateAdministrator(context, operation, "MarketplaceReport");
+          try {
+            return graphQLResult(await marketplaceOperationalReport(
+              context.db,
+              administrator,
+              input ?? {},
+              options.now?.() ?? new Date(),
+            ));
+          } catch (error) {
+            const reasonCode = error instanceof InvalidReportRange
+              ? "INVALID_REPORT_RANGE"
+              : error instanceof MissingDisplayTimeZone ? "DISPLAY_TIME_ZONE_REQUIRED" : null;
+            if (!reasonCode) throw error;
+            // A refused read of marketplace-wide reporting leaves the same
+            // privacy-safe evidence a role denial does, naming which of the two
+            // reasons refused it.
+            await recordAdministrationAudit(context.db, {
+              administratorId: administrator.id,
+              correlationId: context.correlationId,
+              operation,
+              targetType: "MarketplaceReport",
+              targetId: administrator.id,
+              outcome: "DENIED",
+              reasonCode,
+            });
+            throw createGraphQLError((error as Error).message, { extensions: { code: "BAD_USER_INPUT" } });
           }
         },
         discoverClassSessions: async (_parent, { input }, context) => {

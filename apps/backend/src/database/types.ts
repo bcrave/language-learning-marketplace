@@ -26,7 +26,8 @@ export type WorkspacePlace =
   | "ORGANIZATION_STUDENTS"
   | "ORGANIZATION_REPORTS"
   | "ADMINISTRATION_OPERATIONS"
-  | "ADMINISTRATION_PEOPLE";
+  | "ADMINISTRATION_PEOPLE"
+  | "ADMINISTRATION_REPORTS";
 
 export interface RoleWorkspacePlacesTable {
   user_id: string;

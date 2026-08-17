@@ -61,6 +61,16 @@ export function classSessionEndsAt(startsAt: Date) {
   return new Date(startsAt.getTime() + CLASS_SESSION_DURATION_MILLISECONDS);
 }
 
+/**
+ * The latest start instant a Class Session can have and already be treated as
+ * completed at `now`. Reporting needs the rule in this direction so a whole range
+ * of Class Sessions can be divided into completed and still-upcoming without
+ * examining them one at a time.
+ */
+export function latestCompletedClassSessionStart(now: Date) {
+  return new Date(now.getTime() - CLASS_SESSION_DURATION_MILLISECONDS);
+}
+
 const BOOKING_DEADLINE_MILLISECONDS = 30 * 60_000;
 const REFUND_DEADLINE_MILLISECONDS = 24 * 60 * 60_000;
 const WAITLIST_DEADLINE_MILLISECONDS = 2 * 60 * 60_000;
@@ -128,6 +138,34 @@ export function sponsorshipReportingIncludes(
 export function attendanceRatePercentage(counts: { attendedCount: number; noShowCount: number }) {
   const recordedCount = counts.attendedCount + counts.noShowCount;
   return recordedCount === 0 ? null : Math.round(100 * counts.attendedCount / recordedCount);
+}
+
+// Student Cancellation Rate is Student Cancellations over those cancellations plus
+// every recorded Attendance outcome. A Class Session Cancellation or a Reschedule
+// ends a Booking without the Student giving up the seat, so neither appears on
+// either side, and Unrecorded attendance stays out of the denominator exactly as it
+// does for the Attendance Rate.
+export function studentCancellationRatePercentage(counts: {
+  studentCancellationCount: number;
+  attendedCount: number;
+  noShowCount: number;
+}) {
+  const total = counts.studentCancellationCount + counts.attendedCount + counts.noShowCount;
+  return total === 0 ? null : Math.round(100 * counts.studentCancellationCount / total);
+}
+
+// The reported timing of a Student Cancellation shares the 24-hour boundary the
+// Class Credit return uses but is not the same fact: a Teacher Substitution or a
+// fresh waitlist promotion returns the credit for a cancellation that was still
+// late, so the rate must read the clock rather than the refund. It is a separate
+// constant for that reason, and reporting reads it directly to divide a whole range
+// of cancellations at once.
+export const STUDENT_CANCELLATION_TIMELY_WINDOW_MILLISECONDS = 24 * 60 * 60_000;
+
+export function studentCancellationTiming(cancelledAt: Date, startsAt: Date) {
+  return startsAt.getTime() - cancelledAt.getTime() >= STUDENT_CANCELLATION_TIMELY_WINDOW_MILLISECONDS
+    ? "TIMELY" as const
+    : "LATE" as const;
 }
 
 // An exception-first report leads with what needs attention rather than with the
@@ -235,6 +273,7 @@ export const interfaceMessages = {
     "workspace.journey.organization.reports": "Reports",
     "workspace.journey.administration.operations": "Marketplace operations",
     "workspace.journey.administration.people": "People",
+    "workspace.journey.administration.reports": "Marketplace reports",
     "workspace.place.student.discovery": "Find your next Class Session.",
     "workspace.place.student.learning": "Review your learning journey.",
     "workspace.place.teacher.schedule": "Review your assigned Class Sessions.",
@@ -243,6 +282,7 @@ export const interfaceMessages = {
     "workspace.place.organization.reports": "Open privacy-bounded Sponsorship reports.",
     "workspace.place.administration.operations": "Review marketplace operations.",
     "workspace.place.administration.people": "Manage Users and Role Assignments.",
+    "workspace.place.administration.reports": "Find marketplace-wide exceptions in attendance, cancellations, progress, credits, and corrections.",
     "workspace.loading": "Opening your workspace…",
     "workspace.error": "We couldn't open your workspace. Try again.",
     "workspace.safeReturn": "Return safely",
@@ -428,6 +468,58 @@ export const interfaceMessages = {
     "organizationReport.progress.ending": "Frozen ending snapshot: {completed, number} of {active, number} active Lesson Units ({percentage, number}%)",
     "organizationReport.progress.gain": "Gain during Sponsorship: {units, number} Lesson Units ({points, number} percentage points)",
     "organizationReport.progress.revised": "Revised {count, number} times by later Attendance records on {revisedAt}",
+    "marketplaceReport.title": "Marketplace operational report",
+    "marketplaceReport.loading": "Loading the marketplace report…",
+    "marketplaceReport.loadError": "We couldn't load the marketplace report. Try again.",
+    "marketplaceReport.rangeError": "We couldn't read that range. Choose a range of at most 12 months that starts on or before it ends.",
+    "marketplaceReport.generatedAt": "Current effective values as of {generatedAt}",
+    "marketplaceReport.currentEffective": "These are the values in force now. The range selects which activity is counted, not the moment it is read at, so this report reflects every Attendance correction accepted so far rather than rebuilding the marketplace as it stood on a past date.",
+    "marketplaceReport.range.legend": "Reported activity",
+    "marketplaceReport.range.from": "From",
+    "marketplaceReport.range.to": "To",
+    "marketplaceReport.range.apply": "Update the report",
+    "marketplaceReport.range.summary": "Activity from {from} through {to}, by date in {timeZone}: Class Sessions by their scheduled date, Class Credit movement by when it was recorded.",
+    "marketplaceReport.exceptions.title": "Needs attention",
+    "marketplaceReport.exceptions.none": "No actionable exceptions in the reported activity.",
+    "marketplaceReport.exceptions.total": "{total, number} actionable exceptions, oldest first",
+    "marketplaceReport.exceptions.truncated": "Showing the {shown, number} oldest of {total, number}. Narrow the range to see the rest.",
+    "marketplaceReport.exception.UNRECORDED_ATTENDANCE": "Attendance still Unrecorded",
+    "marketplaceReport.exception.PENDING_ATTENDANCE_REVIEW": "Attendance Review Request awaiting a decision",
+    "marketplaceReport.exception.detail": "{courseTitle}: {lessonUnitTitle}, led by {teacher} on {occurredAt}, {count, number} Bookings affected",
+    "marketplaceReport.attendance.title": "Attendance",
+    "marketplaceReport.attendance.rate": "Attendance Rate {rate, number}% from {recorded, number} recorded outcomes",
+    "marketplaceReport.attendance.noRate": "No recorded Attendance outcome in this range",
+    "marketplaceReport.attendance.counts": "{attended, number} attended, {noShow, number} no-show",
+    "marketplaceReport.attendance.excluded": "{unrecorded, number} Unrecorded excluded from the rate",
+    "marketplaceReport.cancellations.title": "Student Cancellations",
+    "marketplaceReport.cancellations.rate": "Student Cancellation Rate {rate, number}% from {cancellations, number} cancellations and {recorded, number} recorded outcomes",
+    "marketplaceReport.cancellations.noRate": "No Student Cancellation or recorded outcome in this range",
+    "marketplaceReport.cancellations.timing": "{timely, number} timely, {late, number} late",
+    "marketplaceReport.cancellations.excluded": "Excluded from the rate: {sessionCancellations, number} Class Session Cancellations and {reschedules, number} Reschedules",
+    "marketplaceReport.cancellations.daily": "By Class Session date",
+    "marketplaceReport.cancellations.dailyEmpty": "No Class Session date in this range carries a cancellation or a recorded outcome.",
+    "marketplaceReport.cancellations.dailyRow": "{rate, number}% from {cancellations, number} cancellations ({timely, number} timely, {late, number} late) and {recorded, number} recorded outcomes",
+    "marketplaceReport.cancellations.dailyNoRate": "No rate yet: no cancellation and no recorded outcome, with {unrecorded, number} Unrecorded excluded",
+    "marketplaceReport.corrections.title": "Attendance corrections",
+    "marketplaceReport.corrections.none": "No Attendance Record in this range has been corrected.",
+    "marketplaceReport.corrections.count": "{corrected, number} corrected Attendance Records, last corrected {lastCorrectedAt}",
+    "marketplaceReport.corrections.pending": "{pending, number} Attendance Review Requests awaiting a decision",
+    "marketplaceReport.corrections.metadata": "Corrections appear as markers. Prior values belong to the correction-history extract, and the correcting actor and reason stay in the Audit Log.",
+    "marketplaceReport.credits.title": "Class Credits",
+    "marketplaceReport.credits.adjustments": "{adjustments, number} Credit Adjustments issued by a Platform Administrator",
+    "marketplaceReport.credits.movement": "{granted, number} Class Credits granted, {deducted, number} deducted, {refunded, number} refunded",
+    "marketplaceReport.credits.net": "Net change {net, number} Class Credits",
+    "marketplaceReport.credits.source": "{entries, number} entries, net {net, number}",
+    "marketplaceReport.credits.source.CREDIT_ADJUSTMENT": "Credit Adjustment",
+    "marketplaceReport.credits.source.SUBSCRIPTION_GRANT": "Subscription grant",
+    "marketplaceReport.credits.source.ORGANIZATION_CREDIT_GRANT": "Organization Credit Benefit",
+    "marketplaceReport.credits.source.BOOKING_DEDUCTION": "Booking deduction",
+    "marketplaceReport.credits.source.BOOKING_REFUND": "Booking refund",
+    "marketplaceReport.progress.title": "Course Progress",
+    "marketplaceReport.progress.empty": "No Course carries reportable progress yet.",
+    "marketplaceReport.progress.current": "Course Progress is current effective now rather than confined to the reported range.",
+    "marketplaceReport.progress.course": "{title} ({language}, {level})",
+    "marketplaceReport.progress.row": "{students, number} Students with progress, {completed, number} completions across {active, number} active Lesson Units",
     "curriculum.loading": "Loading curriculum administration…",
     "curriculum.error": "We couldn't update the curriculum. Review the details and try again.",
     "curriculum.sampleBadge": "Sample curriculum",
@@ -893,6 +985,7 @@ export const interfaceMessages = {
     "workspace.journey.organization.reports": "Informes",
     "workspace.journey.administration.operations": "Operaciones del mercado",
     "workspace.journey.administration.people": "Personas",
+    "workspace.journey.administration.reports": "Informes del mercado",
     "workspace.place.student.discovery": "Encuentra tu próxima sesión de clase.",
     "workspace.place.student.learning": "Revisa tu recorrido de aprendizaje.",
     "workspace.place.teacher.schedule": "Revisa tus sesiones de clase asignadas.",
@@ -901,6 +994,7 @@ export const interfaceMessages = {
     "workspace.place.organization.reports": "Abre informes de patrocinio con privacidad limitada.",
     "workspace.place.administration.operations": "Revisa las operaciones del mercado.",
     "workspace.place.administration.people": "Gestiona usuarios y asignaciones de rol.",
+    "workspace.place.administration.reports": "Encuentra las excepciones de todo el mercado en asistencia, cancelaciones, progreso, créditos y correcciones.",
     "workspace.loading": "Abriendo tu espacio…",
     "workspace.error": "No pudimos abrir tu espacio. Inténtalo de nuevo.",
     "workspace.safeReturn": "Volver de forma segura",
@@ -1086,6 +1180,58 @@ export const interfaceMessages = {
     "organizationReport.progress.ending": "Instantánea final congelada: {completed, number} de {active, number} Unidades de Lección activas ({percentage, number}%)",
     "organizationReport.progress.gain": "Avance durante el Patrocinio: {units, number} Unidades de Lección ({points, number} puntos porcentuales)",
     "organizationReport.progress.revised": "Revisada {count, number} veces por Registros de Asistencia posteriores el {revisedAt}",
+    "marketplaceReport.title": "Informe operativo del mercado",
+    "marketplaceReport.loading": "Cargando el informe del mercado…",
+    "marketplaceReport.loadError": "No pudimos cargar el informe del mercado. Inténtalo de nuevo.",
+    "marketplaceReport.rangeError": "No pudimos leer ese intervalo. Elige un intervalo de 12 meses como máximo que empiece antes de terminar o el mismo día.",
+    "marketplaceReport.generatedAt": "Valores efectivos actuales al {generatedAt}",
+    "marketplaceReport.currentEffective": "Estos son los valores vigentes ahora. El intervalo elige qué actividad se cuenta, no el momento desde el que se lee, así que este informe refleja todas las correcciones de Asistencia aceptadas hasta ahora en lugar de reconstruir el mercado tal como estaba en una fecha pasada.",
+    "marketplaceReport.range.legend": "Actividad informada",
+    "marketplaceReport.range.from": "Desde",
+    "marketplaceReport.range.to": "Hasta",
+    "marketplaceReport.range.apply": "Actualizar el informe",
+    "marketplaceReport.range.summary": "Actividad del {from} al {to}, por fecha en {timeZone}: las Sesiones de Clase por su fecha programada y el movimiento de Créditos de Clase por su fecha de registro.",
+    "marketplaceReport.exceptions.title": "Requiere atención",
+    "marketplaceReport.exceptions.none": "No hay excepciones accionables en la actividad informada.",
+    "marketplaceReport.exceptions.total": "{total, number} excepciones accionables, de la más antigua a la más reciente",
+    "marketplaceReport.exceptions.truncated": "Se muestran las {shown, number} más antiguas de {total, number}. Reduce el intervalo para ver el resto.",
+    "marketplaceReport.exception.UNRECORDED_ATTENDANCE": "Asistencia todavía sin registrar",
+    "marketplaceReport.exception.PENDING_ATTENDANCE_REVIEW": "Solicitud de Revisión de Asistencia pendiente de decisión",
+    "marketplaceReport.exception.detail": "{courseTitle}: {lessonUnitTitle}, impartida por {teacher} el {occurredAt}, {count, number} Reservas afectadas",
+    "marketplaceReport.attendance.title": "Asistencia",
+    "marketplaceReport.attendance.rate": "Tasa de Asistencia del {rate, number}% sobre {recorded, number} resultados registrados",
+    "marketplaceReport.attendance.noRate": "No hay ningún resultado de Asistencia registrado en este intervalo",
+    "marketplaceReport.attendance.counts": "{attended, number} asistencias, {noShow, number} ausencias",
+    "marketplaceReport.attendance.excluded": "{unrecorded, number} sin registrar excluidas de la tasa",
+    "marketplaceReport.cancellations.title": "Cancelaciones del Estudiante",
+    "marketplaceReport.cancellations.rate": "Tasa de Cancelación del Estudiante del {rate, number}% sobre {cancellations, number} cancelaciones y {recorded, number} resultados registrados",
+    "marketplaceReport.cancellations.noRate": "No hay ninguna Cancelación del Estudiante ni resultado registrado en este intervalo",
+    "marketplaceReport.cancellations.timing": "{timely, number} a tiempo, {late, number} tardías",
+    "marketplaceReport.cancellations.excluded": "Excluidas de la tasa: {sessionCancellations, number} Cancelaciones de Sesión de Clase y {reschedules, number} Reprogramaciones",
+    "marketplaceReport.cancellations.daily": "Por fecha de la Sesión de Clase",
+    "marketplaceReport.cancellations.dailyEmpty": "Ninguna fecha de Sesión de Clase de este intervalo tiene cancelaciones ni resultados registrados.",
+    "marketplaceReport.cancellations.dailyRow": "{rate, number}% sobre {cancellations, number} cancelaciones ({timely, number} a tiempo, {late, number} tardías) y {recorded, number} resultados registrados",
+    "marketplaceReport.cancellations.dailyNoRate": "Todavía sin tasa: ninguna cancelación ni resultado registrado, con {unrecorded, number} sin registrar excluidas",
+    "marketplaceReport.corrections.title": "Correcciones de Asistencia",
+    "marketplaceReport.corrections.none": "Ningún Registro de Asistencia de este intervalo ha sido corregido.",
+    "marketplaceReport.corrections.count": "{corrected, number} Registros de Asistencia corregidos; última corrección el {lastCorrectedAt}",
+    "marketplaceReport.corrections.pending": "{pending, number} Solicitudes de Revisión de Asistencia pendientes de decisión",
+    "marketplaceReport.corrections.metadata": "Las correcciones aparecen como marcas. Los valores anteriores pertenecen al extracto del historial de correcciones, y el actor y el motivo de la corrección permanecen en el Registro de Auditoría.",
+    "marketplaceReport.credits.title": "Créditos de Clase",
+    "marketplaceReport.credits.adjustments": "{adjustments, number} Ajustes de Crédito emitidos por un Administrador de la Plataforma",
+    "marketplaceReport.credits.movement": "{granted, number} Créditos de Clase otorgados, {deducted, number} descontados, {refunded, number} devueltos",
+    "marketplaceReport.credits.net": "Cambio neto de {net, number} Créditos de Clase",
+    "marketplaceReport.credits.source": "{entries, number} movimientos, neto {net, number}",
+    "marketplaceReport.credits.source.CREDIT_ADJUSTMENT": "Ajuste de Crédito",
+    "marketplaceReport.credits.source.SUBSCRIPTION_GRANT": "Otorgamiento por Suscripción",
+    "marketplaceReport.credits.source.ORGANIZATION_CREDIT_GRANT": "Beneficio de Créditos de la Organización",
+    "marketplaceReport.credits.source.BOOKING_DEDUCTION": "Descuento por Reserva",
+    "marketplaceReport.credits.source.BOOKING_REFUND": "Devolución por Reserva",
+    "marketplaceReport.progress.title": "Progreso del Curso",
+    "marketplaceReport.progress.empty": "Todavía no hay ningún Curso con progreso que informar.",
+    "marketplaceReport.progress.current": "El Progreso del Curso es el valor efectivo actual y no se limita al intervalo informado.",
+    "marketplaceReport.progress.course": "{title} ({language}, {level})",
+    "marketplaceReport.progress.row": "{students, number} Estudiantes con progreso; {completed, number} finalizaciones sobre {active, number} Unidades de Lección activas",
     "curriculum.loading": "Cargando la administración del currículo…",
     "curriculum.error": "No pudimos actualizar el currículo. Revisa los datos e inténtalo de nuevo.",
     "curriculum.sampleBadge": "Currículo de muestra",

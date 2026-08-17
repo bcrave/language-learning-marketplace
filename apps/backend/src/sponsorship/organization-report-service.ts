@@ -1,10 +1,8 @@
 import {
-  attendanceRatePercentage,
   attributedCohortIds,
   classSessionEndsAt,
   courseProgressGain,
   courseProgressPercentage,
-  reportExceptionCount,
   sponsorshipReportingIncludes,
   type CohortMembershipWindow,
   type CourseProgressValue,
@@ -12,6 +10,7 @@ import {
 import { sql } from "kysely";
 
 import type { Database } from "../database/database.js";
+import { emptyAttendanceCounts, projectAttendanceSummary, type AttendanceCounts } from "../reporting/attendance-summary.js";
 
 type OrganizationManagerActor = { id: string; organizationId: string };
 
@@ -31,29 +30,11 @@ type ReportedActivity = {
   corrected: boolean;
 };
 
-type AttendanceCounts = { attendedCount: number; noShowCount: number; excludedUnrecordedCount: number; correctedCount: number };
-
-function emptyCounts(): AttendanceCounts {
-  return { attendedCount: 0, noShowCount: 0, excludedUnrecordedCount: 0, correctedCount: 0 };
-}
-
 function countActivity(counts: AttendanceCounts, activity: ReportedActivity) {
   if (activity.outcome === "ATTENDED") counts.attendedCount += 1;
   else if (activity.outcome === "NO_SHOW") counts.noShowCount += 1;
   else counts.excludedUnrecordedCount += 1;
   if (activity.corrected) counts.correctedCount += 1;
-}
-
-function projectAttendance(counts: AttendanceCounts) {
-  return {
-    attendedCount: counts.attendedCount,
-    noShowCount: counts.noShowCount,
-    recordedCount: counts.attendedCount + counts.noShowCount,
-    attendanceRatePercentage: attendanceRatePercentage(counts),
-    excludedUnrecordedCount: counts.excludedUnrecordedCount,
-    correctedCount: counts.correctedCount,
-    exceptionCount: reportExceptionCount(counts),
-  };
 }
 
 /**
@@ -311,7 +292,7 @@ export async function organizationAttendanceAndProgressReport(
   // The Cohort breakdown covers every Cohort of the Organization whether or not a
   // filter is applied: a per-Cohort aggregate does not change when the reader drills
   // into one of them, and the reader still needs the whole list to move between them.
-  const cohortCounts = new Map<string, AttendanceCounts>(cohorts.map((cohort) => [cohort.id, emptyCounts()]));
+  const cohortCounts = new Map<string, AttendanceCounts>(cohorts.map((cohort) => [cohort.id, emptyAttendanceCounts()]));
   const cohortStudents = new Map<string, Set<string>>(cohorts.map((cohort) => [cohort.id, new Set()]));
   for (const sponsorship of sponsorships) {
     const windows = membershipsBySponsorship.get(sponsorship.sponsorshipId) ?? [];
@@ -331,10 +312,10 @@ export async function organizationAttendanceAndProgressReport(
     }
   }
 
-  const organizationCounts = emptyCounts();
+  const organizationCounts = emptyAttendanceCounts();
   const students = await Promise.all(reportedSponsorships.map(async (sponsorship) => {
     const windows = membershipsBySponsorship.get(sponsorship.sponsorshipId) ?? [];
-    const counts = emptyCounts();
+    const counts = emptyAttendanceCounts();
     const attributedCohorts = new Set<string>();
     for (const occurrence of activity) {
       if (occurrence.studentUserId !== sponsorship.studentUserId) continue;
@@ -359,7 +340,7 @@ export async function organizationAttendanceAndProgressReport(
       cohortNames: [...attributedCohorts]
         .flatMap((cohortId) => cohorts.filter((cohort) => cohort.id === cohortId).map((cohort) => cohort.name))
         .sort(),
-      attendance: projectAttendance(counts),
+      attendance: projectAttendanceSummary(counts),
       courseProgress: await courseProgressReport(db, sponsorship, snapshots),
     };
   }));
@@ -367,7 +348,7 @@ export async function organizationAttendanceAndProgressReport(
   return {
     organization,
     generatedAt: now.toISOString(),
-    attendance: projectAttendance(organizationCounts),
+    attendance: projectAttendanceSummary(organizationCounts),
     // Exception-first: the sponsored Students needing attention lead the report.
     students: students.sort((first, second) =>
       second.attendance.exceptionCount - first.attendance.exceptionCount
@@ -376,7 +357,7 @@ export async function organizationAttendanceAndProgressReport(
       cohortId: cohort.id,
       cohortName: cohort.name,
       sponsoredStudentCount: cohortStudents.get(cohort.id)?.size ?? 0,
-      attendance: projectAttendance(cohortCounts.get(cohort.id) ?? emptyCounts()),
+      attendance: projectAttendanceSummary(cohortCounts.get(cohort.id) ?? emptyAttendanceCounts()),
     })),
   };
 }

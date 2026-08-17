@@ -38,6 +38,7 @@ import { TeacherAttendancePanel } from "./teacher-attendance.js";
 import { LearningAccessPanel } from "./learning-access.js";
 import { AdministratorQualityPanel, StudentFeedbackRatingsPanel, TeacherFeedbackPanel } from "./feedback-rating.js";
 import { OrganizationCohortsPanel } from "./cohorts.js";
+import { MarketplaceReportPanel } from "./marketplace-report.js";
 import { OrganizationReportPanel } from "./organization-report.js";
 import { OrganizationSponsorshipPanel, StudentSponsorshipPanel } from "./sponsorship.js";
 import { AdministratorAttendanceReviewPanel, StudentAttendanceReviewPanel } from "./attendance-review.js";
@@ -128,6 +129,12 @@ export const workspacePlacePresentation: Record<
     path: "/administration/people",
     role: "PLATFORM_ADMINISTRATOR",
     summaryId: "workspace.place.administration.people",
+  },
+  ADMINISTRATION_REPORTS: {
+    labelId: "workspace.journey.administration.reports",
+    path: "/administration/reports",
+    role: "PLATFORM_ADMINISTRATOR",
+    summaryId: "workspace.place.administration.reports",
   },
 };
 
@@ -434,6 +441,7 @@ function WorkspaceContent({
           <><OrganizationSponsorshipPanel /><OrganizationCohortsPanel /></>
         )}
         {currentPlace === "ORGANIZATION_REPORTS" && <OrganizationReportPanel />}
+        {currentPlace === "ADMINISTRATION_REPORTS" && <MarketplaceReportPanel />}
         {currentPlace === "STUDENT_DISCOVERY" && hasSavedPreferences && (
           <StudentDiscoveryPanel displayTimeZone={displayTimeZone} />
         )}
