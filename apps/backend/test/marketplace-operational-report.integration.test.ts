@@ -25,12 +25,12 @@ const REPORT_FIELDS = `
     studentCancellationRatePercentage
     excludedClassSessionCancellationCount
     excludedRescheduleCount
-    dailyRates { localDate studentCancellationCount timelyCount lateCount recordedOutcomeCount studentCancellationRatePercentage }
+    dailyRates { localDate studentCancellationCount timelyCount lateCount recordedOutcomeCount excludedUnrecordedCount studentCancellationRatePercentage }
   }
   corrections { correctedAttendanceCount lastCorrectedAt pendingAttendanceReviewCount }
-  credits { creditAdjustmentCount grantedCount refundedCount deductedCount netCreditChange bySource { source entryCount netAmount } }
-  courseProgress { courseTitle targetLanguage curriculumLevel activeLessonUnitCount completedActiveLessonUnitCount studentsWithProgressCount averageProgressPercentage }
-  exceptions { totalCount items { kind classSessionId occurredAt courseTitle lessonUnitTitle teacherDisplayName affectedBookingCount } }
+  credits { creditAdjustmentCount grantedCreditCount refundedCreditCount deductedCreditCount netCreditChange bySource { source entryCount netAmount } }
+  courseProgress { courseTitle targetLanguage curriculumLevel activeLessonUnitCount completedActiveLessonUnitCount studentsWithProgressCount }
+  actionableExceptions { totalCount items { kind classSessionId occurredAt courseTitle lessonUnitTitle teacherDisplayName affectedBookingCount } }
 `;
 
 /**
@@ -125,8 +125,14 @@ describe("Marketplace operational reporting GraphQL API", () => {
     await deliver(lessonUnitIds[1]!, "2026-06-20T15:00:00.000Z", [
       { studentUserId: sofiaId, terminalReason: "RESCHEDULED" },
     ]);
-    // Still ahead of the report instant: neither an outcome nor an exception.
-    await deliver(lessonUnitIds[2]!, "2026-06-28T15:00:00.000Z", [{ studentUserId: sofiaId }]);
+    // Still ahead of the report instant: neither an outcome nor an exception. Its
+    // Student Cancellation is already made and still must not be reported, because
+    // the date whose seat it gave up has not arrived and none of that date's
+    // outcomes exist yet to weigh it against.
+    await deliver(lessonUnitIds[2]!, "2026-06-28T15:00:00.000Z", [
+      { studentUserId: sofiaId },
+      { studentUserId: quinnId, cancelledAt: "2026-06-24T15:00:00.000Z" },
+    ]);
 
     now = new Date("2026-06-10T16:05:00.000Z");
     await administerAttendance(recordedSessionId, [[sofiaId, "ATTENDED"], [danaId, "NO_SHOW"]]);
@@ -203,25 +209,36 @@ describe("Marketplace operational reporting GraphQL API", () => {
     });
   });
 
+  it("leaves a cancellation for a Class Session that has not happened yet out of both rates", async () => {
+    const report = await marketplaceReport();
+
+    // The 2026-06-28 session is inside the reported range and still ahead of the
+    // report instant. Counting its cancellation would report that date as wholly
+    // cancelled while every outcome on it was still to come.
+    expect(report.cancellations.studentCancellationCount).toBe(2);
+    expect(report.cancellations.dailyRates.map((day) => day.localDate)).not.toContain("2026-06-28");
+    expect(report.attendance.excludedUnrecordedCount).toBe(2);
+  });
+
   it("groups both rates by the Class Session's scheduled date in the reader's Display Time Zone", async () => {
     const report = await marketplaceReport();
 
     // The 21:00 Denver session has a UTC date of 2026-06-11 and still belongs to
     // 2026-06-10, the date its reader saw it on.
     expect(report.cancellations.dailyRates).toEqual([
-      { localDate: "2026-06-10", studentCancellationCount: 2, timelyCount: 1, lateCount: 1, recordedOutcomeCount: 2, studentCancellationRatePercentage: 50 },
-      { localDate: "2026-06-12", studentCancellationCount: 0, timelyCount: 0, lateCount: 0, recordedOutcomeCount: 2, studentCancellationRatePercentage: 0 },
+      { localDate: "2026-06-10", studentCancellationCount: 2, timelyCount: 1, lateCount: 1, recordedOutcomeCount: 2, excludedUnrecordedCount: 0, studentCancellationRatePercentage: 50 },
+      { localDate: "2026-06-12", studentCancellationCount: 0, timelyCount: 0, lateCount: 0, recordedOutcomeCount: 2, excludedUnrecordedCount: 0, studentCancellationRatePercentage: 0 },
       // Unrecorded attendance is out of both ratios, so a date carrying only
       // Unrecorded attendance has no rate rather than a rate of zero.
-      { localDate: "2026-06-15", studentCancellationCount: 0, timelyCount: 0, lateCount: 0, recordedOutcomeCount: 0, studentCancellationRatePercentage: null },
+      { localDate: "2026-06-15", studentCancellationCount: 0, timelyCount: 0, lateCount: 0, recordedOutcomeCount: 0, excludedUnrecordedCount: 2, studentCancellationRatePercentage: null },
     ]);
   });
 
   it("leads with the Unrecorded attendance and other actionable exceptions, without raw diagnostics", async () => {
     const report = await marketplaceReport();
 
-    expect(report.exceptions.totalCount).toBe(2);
-    expect(report.exceptions.items).toEqual([
+    expect(report.actionableExceptions.totalCount).toBe(2);
+    expect(report.actionableExceptions.items).toEqual([
       {
         kind: "PENDING_ATTENDANCE_REVIEW",
         classSessionId: correctedSessionId,
@@ -243,9 +260,9 @@ describe("Marketplace operational reporting GraphQL API", () => {
     ]);
     // A Class Session whose outcomes are all recorded, one already cancelled, and one
     // still ahead of the report are not exceptions.
-    expect(report.exceptions.items.map((item) => item.classSessionId))
+    expect(report.actionableExceptions.items.map((item) => item.classSessionId))
       .not.toContain(recordedSessionId);
-    expect(report.exceptions.items.map((item) => item.classSessionId))
+    expect(report.actionableExceptions.items.map((item) => item.classSessionId))
       .not.toContain(eveningSessionId);
   });
 
@@ -279,7 +296,6 @@ describe("Marketplace operational reporting GraphQL API", () => {
       // leaves its Student out of the Course entirely.
       completedActiveLessonUnitCount: 2,
       studentsWithProgressCount: 1,
-      averageProgressPercentage: 50,
     }]);
   });
 
@@ -296,17 +312,19 @@ describe("Marketplace operational reporting GraphQL API", () => {
     // rather than reproducing the earlier reading.
     expect(after.attendance).toMatchObject({ attendedCount: 4, recordedCount: 6, excludedUnrecordedCount: 0 });
     expect(after.generatedAt).toBe("2026-06-26T12:00:00.000Z");
-    expect(after.exceptions.items.map((item) => item.kind)).toEqual(["PENDING_ATTENDANCE_REVIEW"]);
+    expect(after.actionableExceptions.items.map((item) => item.kind)).toEqual(["PENDING_ATTENDANCE_REVIEW"]);
   });
 
   it("reports Class Credit movement by ledger provenance inside the reported range", async () => {
     const report = await marketplaceReport();
 
+    // Class Credits, not ledger rows: eight from a Subscription and eight from an
+    // Organization Credit Benefit, against one deducted and one returned.
     expect(report.credits).toMatchObject({
       creditAdjustmentCount: 1,
-      grantedCount: 2,
-      refundedCount: 1,
-      deductedCount: 1,
+      grantedCreditCount: 16,
+      refundedCreditCount: 1,
+      deductedCreditCount: 1,
       netCreditChange: 18,
     });
     expect(report.credits.bySource).toEqual([
@@ -525,7 +543,7 @@ describe("Marketplace operational reporting GraphQL API", () => {
     corrections: Record<string, number | string | null>;
     credits: Record<string, number> & { bySource: Array<Record<string, number | string>> };
     courseProgress: Array<Record<string, number | string>>;
-    exceptions: { totalCount: number; items: Array<Record<string, string | number>> };
+    actionableExceptions: { totalCount: number; items: Array<Record<string, string | number>> };
   };
 
   async function marketplaceReport(

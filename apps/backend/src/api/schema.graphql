@@ -384,6 +384,7 @@ type MarketplaceDailyCancellationRate {
   timelyCount: Int!
   lateCount: Int!
   recordedOutcomeCount: Int!
+  excludedUnrecordedCount: Int!
   studentCancellationRatePercentage: Int
 }
 
@@ -407,9 +408,9 @@ type MarketplaceCreditSourceTotal { source: ClassCreditLedgerSource!, entryCount
 
 type MarketplaceCreditSummary {
   creditAdjustmentCount: Int!
-  grantedCount: Int!
-  refundedCount: Int!
-  deductedCount: Int!
+  grantedCreditCount: Int!
+  refundedCreditCount: Int!
+  deductedCreditCount: Int!
   netCreditChange: Int!
   bySource: [MarketplaceCreditSourceTotal!]!
 }
@@ -422,7 +423,6 @@ type MarketplaceCourseProgressReport {
   activeLessonUnitCount: Int!
   completedActiveLessonUnitCount: Int!
   studentsWithProgressCount: Int!
-  averageProgressPercentage: Int!
 }
 
 enum MarketplaceExceptionKind { UNRECORDED_ATTENDANCE PENDING_ATTENDANCE_REVIEW }
@@ -437,7 +437,7 @@ type MarketplaceExceptionItem {
   affectedBookingCount: Int!
 }
 
-type MarketplaceExceptionSummary { totalCount: Int!, items: [MarketplaceExceptionItem!]! }
+type MarketplaceActionableExceptions { totalCount: Int!, items: [MarketplaceExceptionItem!]! }
 
 type MarketplaceReportRange { fromLocalDate: String!, toLocalDate: String!, timeZone: String! }
 
@@ -451,7 +451,7 @@ type MarketplaceOperationalReport {
   corrections: MarketplaceCorrectionSummary!
   credits: MarketplaceCreditSummary!
   courseProgress: [MarketplaceCourseProgressReport!]!
-  exceptions: MarketplaceExceptionSummary!
+  actionableExceptions: MarketplaceActionableExceptions!
 }
 
 type User {

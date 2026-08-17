@@ -1,16 +1,14 @@
 import { Temporal } from "@js-temporal/polyfill";
 import {
-  attendanceRatePercentage,
-  classSessionEndsAt,
-  courseProgressPercentage,
-  reportExceptionCount,
+  latestCompletedClassSessionStart,
   studentCancellationRatePercentage,
-  studentCancellationTiming,
+  STUDENT_CANCELLATION_TIMELY_WINDOW_MILLISECONDS,
 } from "@marketplace/core";
 import { sql } from "kysely";
 import { z } from "zod";
 
 import type { Database } from "../database/database.js";
+import { emptyAttendanceCounts, projectAttendanceSummary, type AttendanceCounts } from "./attendance-summary.js";
 
 type AdministratorActor = { id: string };
 
@@ -33,6 +31,13 @@ const rangeInputSchema = z.object({
 export type MarketplaceReportInput = z.input<typeof rangeInputSchema>;
 
 export class InvalidReportRange extends Error {}
+
+/**
+ * A Display Time Zone the reader never saved is not a bad range: there is no date to
+ * interpret at all. It is separated so the refusal a reader sees, and the Audit Entry
+ * behind it, name the thing that is actually missing.
+ */
+export class MissingDisplayTimeZone extends Error {}
 
 type ResolvedRange = {
   fromLocalDate: string;
@@ -78,86 +83,94 @@ function resolveRange(input: MarketplaceReportInput, timeZone: string, now: Date
   }
 }
 
-function localDateOf(instant: Date, timeZone: string) {
-  return Temporal.Instant.from(instant.toISOString()).toZonedDateTimeISO(timeZone).toPlainDate().toString();
-}
-
-type AttendanceCounts = { attendedCount: number; noShowCount: number; excludedUnrecordedCount: number; correctedCount: number };
 type CancellationCounts = { studentCancellationCount: number; timelyCount: number; lateCount: number };
-
-function emptyAttendance(): AttendanceCounts {
-  return { attendedCount: 0, noShowCount: 0, excludedUnrecordedCount: 0, correctedCount: 0 };
-}
 
 function emptyCancellations(): CancellationCounts {
   return { studentCancellationCount: 0, timelyCount: 0, lateCount: 0 };
 }
 
-function projectAttendance(counts: AttendanceCounts) {
-  return {
-    attendedCount: counts.attendedCount,
-    noShowCount: counts.noShowCount,
-    recordedCount: counts.attendedCount + counts.noShowCount,
-    attendanceRatePercentage: attendanceRatePercentage(counts),
-    excludedUnrecordedCount: counts.excludedUnrecordedCount,
-    correctedCount: counts.correctedCount,
-    exceptionCount: reportExceptionCount(counts),
-  };
+// The two tallies are named rather than spread together, so neither can lose a field
+// to the other by sharing a name later.
+function cancellationRate(cancellations: CancellationCounts, attendance: AttendanceCounts) {
+  return studentCancellationRatePercentage({
+    studentCancellationCount: cancellations.studentCancellationCount,
+    attendedCount: attendance.attendedCount,
+    noShowCount: attendance.noShowCount,
+  });
 }
-
-/**
- * Every Booking whose Class Session was scheduled inside the reported range, with
- * only the facts the marketplace rates are defined over. A Booking ended by a Class
- * Session Cancellation or a Reschedule reaches this query too, because both are
- * excluded from the rates by name and the report discloses the exclusion rather than
- * quietly dropping the row.
- */
-async function reportedBookings(db: Database, range: ResolvedRange) {
-  return db.selectFrom("bookings")
-    .innerJoin("class_sessions", "class_sessions.id", "bookings.class_session_id")
-    .leftJoin("attendance_records", "attendance_records.booking_id", "bookings.id")
-    .select([
-      "bookings.id",
-      "bookings.state",
-      "bookings.terminal_reason",
-      "bookings.ended_at",
-      "class_sessions.id as class_session_id",
-      "class_sessions.starts_at",
-      "class_sessions.state as class_session_state",
-      "attendance_records.outcome",
-      sql<number>`(select count(*) from attendance_record_corrections where attendance_record_corrections.booking_id = bookings.id)::integer`.as("correction_count"),
-    ])
-    .where("class_sessions.starts_at", ">=", range.startInstant)
-    .where("class_sessions.starts_at", "<", range.endInstantExclusive)
-    .execute();
-}
-
-type ReportedBooking = Awaited<ReturnType<typeof reportedBookings>>[number];
 
 /**
  * What one Booking contributes to the marketplace rates. Anything a rate excludes by
- * name keeps its own classification so the exclusion can be counted and shown, and a
- * Class Session that has not finished yet contributes nothing at all: it is neither
- * an outcome nor an exception.
+ * name keeps its own classification so the exclusion can be counted and shown rather
+ * than quietly dropped.
+ *
+ * A Class Session that has not finished yet is decided first and contributes nothing
+ * at all, whatever else is true of the Booking. Attendance Rate excludes future
+ * sessions outright, and a Student Cancellation is reported against the date whose
+ * seat it gave up: counting one before that date arrives would report a day as
+ * wholly cancelled while every outcome on it was still to come.
  */
-function classify(booking: ReportedBooking, now: Date) {
-  if (booking.terminal_reason === "STUDENT_CANCELLATION") return "STUDENT_CANCELLATION" as const;
-  if (booking.terminal_reason === "RESCHEDULED") return "RESCHEDULED" as const;
-  if (booking.terminal_reason === "CLASS_SESSION_CANCELLATION" || booking.class_session_state === "CANCELLED") {
-    return "CLASS_SESSION_CANCELLATION" as const;
-  }
-  if (booking.outcome) return booking.outcome;
-  return classSessionEndsAt(booking.starts_at).getTime() <= now.getTime()
-    ? "UNRECORDED" as const
-    : "NOT_YET_REPORTABLE" as const;
+type ReportedClassification =
+  | "NOT_YET_REPORTABLE" | "TIMELY_CANCELLATION" | "LATE_CANCELLATION" | "RESCHEDULED"
+  | "CLASS_SESSION_CANCELLATION" | "ATTENDED" | "NO_SHOW" | "UNRECORDED";
+
+function reportedClassification(now: Date) {
+  return sql<ReportedClassification>`case
+    when class_sessions.starts_at > ${latestCompletedClassSessionStart(now)} then 'NOT_YET_REPORTABLE'
+    when bookings.terminal_reason = 'STUDENT_CANCELLATION' then
+      case
+        when bookings.ended_at is not null
+         and bookings.ended_at <= class_sessions.starts_at - ${STUDENT_CANCELLATION_TIMELY_WINDOW_MILLISECONDS} * interval '1 millisecond'
+        then 'TIMELY_CANCELLATION'
+        -- An ended Booking carries the instant it ended. Without one there is no
+        -- evidence the Student gave the seat up in time, so it is not called timely.
+        else 'LATE_CANCELLATION'
+      end
+    when bookings.terminal_reason = 'RESCHEDULED' then 'RESCHEDULED'
+    when bookings.terminal_reason = 'CLASS_SESSION_CANCELLATION' or class_sessions.state = 'CANCELLED'
+      then 'CLASS_SESSION_CANCELLATION'
+    when attendance_records.outcome is not null then attendance_records.outcome
+    else 'UNRECORDED'
+  end`;
+}
+
+/**
+ * The reported activity, already counted by the database. Each row is one
+ * (Class Session date, classification, corrected) tally rather than one Booking, so
+ * the marketplace report reads a bounded result whatever volume the range covers.
+ *
+ * The date is the Class Session's scheduled date in the reader's own Display Time
+ * Zone, which PostgreSQL derives from the named zone directly: both rates group by
+ * the date their reader saw the session on.
+ */
+async function reportedActivity(db: Database, range: ResolvedRange, now: Date) {
+  return db.selectFrom("bookings")
+    .innerJoin("class_sessions", "class_sessions.id", "bookings.class_session_id")
+    .leftJoin("attendance_records", "attendance_records.booking_id", "bookings.id")
+    .select(({ exists, selectFrom }) => [
+      sql<string>`to_char((class_sessions.starts_at at time zone ${sql.val(range.timeZone)})::date, 'YYYY-MM-DD')`.as("local_date"),
+      reportedClassification(now).as("classification"),
+      exists(selectFrom("attendance_record_corrections")
+        .select("attendance_record_corrections.id")
+        .whereRef("attendance_record_corrections.booking_id", "=", "bookings.id")).as("corrected"),
+      sql<number>`count(*)::integer`.as("booking_count"),
+    ])
+    .where("class_sessions.starts_at", ">=", range.startInstant)
+    .where("class_sessions.starts_at", "<", range.endInstantExclusive)
+    .groupBy(["local_date", "classification", "corrected"])
+    .execute();
 }
 
 /**
  * Course Progress is a current-effective aggregate, so it is measured now rather than
  * inside the reported range: the range scopes which activity is counted, never which
- * moment the values are read at. Only Students who have completed at least one active
- * Lesson Unit of a Course enter its average, so a Course is not reported as failing
- * because most of the marketplace has never studied it.
+ * moment the values are read at.
+ *
+ * Course Progress is defined for one Student against one Course, so the marketplace
+ * altitude reports the counts behind it and stops there. A single cross-Student
+ * percentage would need a denominator the domain does not define — every Student
+ * alive, or only those who have started — and either choice would read as a Course
+ * Progress figure while being something else.
  */
 async function courseProgressReport(db: Database) {
   const rows = await db.selectFrom("courses")
@@ -186,12 +199,10 @@ async function courseProgressReport(db: Database) {
       activeLessonUnitCount: row.active_lesson_unit_count,
       completedActiveLessonUnitCount: row.completed_active_lesson_unit_count,
       studentsWithProgressCount: row.students_with_progress_count,
-      averageProgressPercentage: courseProgressPercentage(
-        row.completed_active_lesson_unit_count,
-        row.active_lesson_unit_count * row.students_with_progress_count,
-      ),
     }))
-    .sort((first, second) => first.averageProgressPercentage - second.averageProgressPercentage
+    // The Courses the marketplace is actually learning lead, so a Course nobody has
+    // started never displaces one that carries real progress.
+    .sort((first, second) => second.studentsWithProgressCount - first.studentsWithProgressCount
       || first.courseTitle.localeCompare(second.courseTitle));
 }
 
@@ -223,11 +234,15 @@ async function creditReport(db: Database, range: ResolvedRange) {
 
   return {
     // A Credit Adjustment is the exception among credit movements: it is the one an
-    // administrator issued by hand, with a Student-visible reason behind it.
+    // administrator issued by hand, with a Student-visible reason behind it. It is
+    // counted as events, because what an administrator reviews is how many were
+    // issued rather than how far they moved a balance.
     creditAdjustmentCount: totalFor("CREDIT_ADJUSTMENT").entryCount,
-    grantedCount: totalFor("SUBSCRIPTION_GRANT").entryCount + totalFor("ORGANIZATION_CREDIT_GRANT").entryCount,
-    refundedCount: totalFor("BOOKING_REFUND").entryCount,
-    deductedCount: totalFor("BOOKING_DEDUCTION").entryCount,
+    // The rest are Class Credits, not ledger rows: these sit beside a net change and
+    // would be read as credits whatever they counted.
+    grantedCreditCount: totalFor("SUBSCRIPTION_GRANT").netAmount + totalFor("ORGANIZATION_CREDIT_GRANT").netAmount,
+    refundedCreditCount: totalFor("BOOKING_REFUND").netAmount,
+    deductedCreditCount: Math.abs(totalFor("BOOKING_DEDUCTION").netAmount),
     netCreditChange: bySource.reduce((total, entry) => total + entry.netAmount, 0),
     bySource,
   };
@@ -302,6 +317,9 @@ async function exceptionItems(db: Database, range: ResolvedRange, now: Date): Pr
     .where("class_sessions.state", "=", "PUBLISHED")
     .where("class_sessions.starts_at", ">=", range.startInstant)
     .where("class_sessions.starts_at", "<", range.endInstantExclusive)
+    // Attendance is Unrecorded only once the Class Session is treated as completed;
+    // before its scheduled end there is nothing for anyone to record.
+    .where("class_sessions.starts_at", "<=", latestCompletedClassSessionStart(now))
     .where("bookings.state", "=", "ACTIVE")
     .where("attendance_records.id", "is", null)
     .groupBy(["class_sessions.id", "class_sessions.starts_at", "courses.title", "lesson_units.title", "users.display_name"])
@@ -338,11 +356,7 @@ async function exceptionItems(db: Database, range: ResolvedRange, now: Date): Pr
   });
 
   return [
-    // Attendance is Unrecorded only once the Class Session is treated as completed;
-    // before its scheduled end there is nothing for anyone to record.
-    ...unrecorded
-      .filter((row) => classSessionEndsAt(row.starts_at).getTime() <= now.getTime())
-      .map(item("UNRECORDED_ATTENDANCE")),
+    ...unrecorded.map(item("UNRECORDED_ATTENDANCE")),
     ...pendingReviews.map(item("PENDING_ATTENDANCE_REVIEW")),
   ].sort((first, second) => first.occurredAt.localeCompare(second.occurredAt)
     || first.kind.localeCompare(second.kind)
@@ -371,50 +385,48 @@ export async function marketplaceOperationalReport(
     .where("id", "=", administrator.id)
     .executeTakeFirstOrThrow();
   if (!user.display_time_zone) {
-    throw new InvalidReportRange("A saved Display Time Zone is required to read the marketplace report.");
+    throw new MissingDisplayTimeZone("A saved Display Time Zone is required to read the marketplace report.");
   }
   const range = resolveRange(input, user.display_time_zone, now);
 
-  const bookings = await reportedBookings(db, range);
-  const attendance = emptyAttendance();
+  const activity = await reportedActivity(db, range, now);
+  const attendance = emptyAttendanceCounts();
   const cancellations = emptyCancellations();
   let excludedClassSessionCancellationCount = 0;
   let excludedRescheduleCount = 0;
   const daily = new Map<string, { attendance: AttendanceCounts; cancellations: CancellationCounts }>();
 
-  for (const booking of bookings) {
-    const classification = classify(booking, now);
-    if (classification === "NOT_YET_REPORTABLE") continue;
-    if (classification === "RESCHEDULED") {
-      excludedRescheduleCount += 1;
+  for (const tally of activity) {
+    if (tally.classification === "NOT_YET_REPORTABLE") continue;
+    if (tally.classification === "RESCHEDULED") {
+      excludedRescheduleCount += tally.booking_count;
       continue;
     }
-    if (classification === "CLASS_SESSION_CANCELLATION") {
-      excludedClassSessionCancellationCount += 1;
+    if (tally.classification === "CLASS_SESSION_CANCELLATION") {
+      excludedClassSessionCancellationCount += tally.booking_count;
       continue;
     }
 
     // Both rates group by the Class Session's scheduled date, so a cancellation made
     // weeks earlier still lands on the date whose seat it gave up.
-    const localDate = localDateOf(booking.starts_at, range.timeZone);
-    const forDate = daily.get(localDate) ?? { attendance: emptyAttendance(), cancellations: emptyCancellations() };
-    daily.set(localDate, forDate);
+    const forDate = daily.get(tally.local_date)
+      ?? { attendance: emptyAttendanceCounts(), cancellations: emptyCancellations() };
+    daily.set(tally.local_date, forDate);
 
-    if (classification === "STUDENT_CANCELLATION") {
-      const timing = studentCancellationTiming(booking.ended_at ?? booking.starts_at, booking.starts_at);
+    if (tally.classification === "TIMELY_CANCELLATION" || tally.classification === "LATE_CANCELLATION") {
       for (const counts of [cancellations, forDate.cancellations]) {
-        counts.studentCancellationCount += 1;
-        if (timing === "TIMELY") counts.timelyCount += 1;
-        else counts.lateCount += 1;
+        counts.studentCancellationCount += tally.booking_count;
+        if (tally.classification === "TIMELY_CANCELLATION") counts.timelyCount += tally.booking_count;
+        else counts.lateCount += tally.booking_count;
       }
       continue;
     }
 
     for (const counts of [attendance, forDate.attendance]) {
-      if (classification === "ATTENDED") counts.attendedCount += 1;
-      else if (classification === "NO_SHOW") counts.noShowCount += 1;
-      else counts.excludedUnrecordedCount += 1;
-      if (booking.correction_count > 0) counts.correctedCount += 1;
+      if (tally.classification === "ATTENDED") counts.attendedCount += tally.booking_count;
+      else if (tally.classification === "NO_SHOW") counts.noShowCount += tally.booking_count;
+      else counts.excludedUnrecordedCount += tally.booking_count;
+      if (tally.corrected) counts.correctedCount += tally.booking_count;
     }
   }
 
@@ -428,10 +440,10 @@ export async function marketplaceOperationalReport(
   return {
     generatedAt: now.toISOString(),
     range: { fromLocalDate: range.fromLocalDate, toLocalDate: range.toLocalDate, timeZone: range.timeZone },
-    attendance: projectAttendance(attendance),
+    attendance: projectAttendanceSummary(attendance),
     cancellations: {
       ...cancellations,
-      studentCancellationRatePercentage: studentCancellationRatePercentage({ ...cancellations, ...attendance }),
+      studentCancellationRatePercentage: cancellationRate(cancellations, attendance),
       excludedClassSessionCancellationCount,
       excludedRescheduleCount,
       dailyRates: [...daily]
@@ -439,10 +451,10 @@ export async function marketplaceOperationalReport(
           localDate,
           ...counts.cancellations,
           recordedOutcomeCount: counts.attendance.attendedCount + counts.attendance.noShowCount,
-          studentCancellationRatePercentage: studentCancellationRatePercentage({
-            ...counts.cancellations,
-            ...counts.attendance,
-          }),
+          // Disclosed beside the rate for the same reason the marketplace total is:
+          // a date with no rate is usually a date still waiting to be recorded.
+          excludedUnrecordedCount: counts.attendance.excludedUnrecordedCount,
+          studentCancellationRatePercentage: cancellationRate(counts.cancellations, counts.attendance),
         }))
         .sort((first, second) => first.localDate.localeCompare(second.localDate)),
     },
@@ -451,6 +463,6 @@ export async function marketplaceOperationalReport(
     courseProgress,
     // Exception-first: the work needing attention leads, oldest first, and the total
     // is disclosed even where the list itself is bounded.
-    exceptions: { totalCount: exceptions.length, items: exceptions.slice(0, EXCEPTION_LIST_LIMIT) },
+    actionableExceptions: { totalCount: exceptions.length, items: exceptions.slice(0, EXCEPTION_LIST_LIMIT) },
   };
 }

@@ -61,6 +61,16 @@ export function classSessionEndsAt(startsAt: Date) {
   return new Date(startsAt.getTime() + CLASS_SESSION_DURATION_MILLISECONDS);
 }
 
+/**
+ * The latest start instant a Class Session can have and already be treated as
+ * completed at `now`. Reporting needs the rule in this direction so a whole range
+ * of Class Sessions can be divided into completed and still-upcoming without
+ * examining them one at a time.
+ */
+export function latestCompletedClassSessionStart(now: Date) {
+  return new Date(now.getTime() - CLASS_SESSION_DURATION_MILLISECONDS);
+}
+
 const BOOKING_DEADLINE_MILLISECONDS = 30 * 60_000;
 const REFUND_DEADLINE_MILLISECONDS = 24 * 60 * 60_000;
 const WAITLIST_DEADLINE_MILLISECONDS = 2 * 60 * 60_000;
@@ -147,9 +157,13 @@ export function studentCancellationRatePercentage(counts: {
 // The reported timing of a Student Cancellation shares the 24-hour boundary the
 // Class Credit return uses but is not the same fact: a Teacher Substitution or a
 // fresh waitlist promotion returns the credit for a cancellation that was still
-// late, so the rate must read the clock rather than the refund.
+// late, so the rate must read the clock rather than the refund. It is a separate
+// constant for that reason, and reporting reads it directly to divide a whole range
+// of cancellations at once.
+export const STUDENT_CANCELLATION_TIMELY_WINDOW_MILLISECONDS = 24 * 60 * 60_000;
+
 export function studentCancellationTiming(cancelledAt: Date, startsAt: Date) {
-  return startsAt.getTime() - cancelledAt.getTime() >= REFUND_DEADLINE_MILLISECONDS
+  return startsAt.getTime() - cancelledAt.getTime() >= STUDENT_CANCELLATION_TIMELY_WINDOW_MILLISECONDS
     ? "TIMELY" as const
     : "LATE" as const;
 }
@@ -464,7 +478,7 @@ export const interfaceMessages = {
     "marketplaceReport.range.from": "From",
     "marketplaceReport.range.to": "To",
     "marketplaceReport.range.apply": "Update the report",
-    "marketplaceReport.range.summary": "Class Sessions scheduled from {from} through {to}, by date in {timeZone}",
+    "marketplaceReport.range.summary": "Activity from {from} through {to}, by date in {timeZone}: Class Sessions by their scheduled date, Class Credit movement by when it was recorded.",
     "marketplaceReport.exceptions.title": "Needs attention",
     "marketplaceReport.exceptions.none": "No actionable exceptions in the reported activity.",
     "marketplaceReport.exceptions.total": "{total, number} actionable exceptions, oldest first",
@@ -485,6 +499,7 @@ export const interfaceMessages = {
     "marketplaceReport.cancellations.daily": "By Class Session date",
     "marketplaceReport.cancellations.dailyEmpty": "No Class Session date in this range carries a cancellation or a recorded outcome.",
     "marketplaceReport.cancellations.dailyRow": "{rate, number}% from {cancellations, number} cancellations ({timely, number} timely, {late, number} late) and {recorded, number} recorded outcomes",
+    "marketplaceReport.cancellations.dailyNoRate": "No rate yet: no cancellation and no recorded outcome, with {unrecorded, number} Unrecorded excluded",
     "marketplaceReport.corrections.title": "Attendance corrections",
     "marketplaceReport.corrections.none": "No Attendance Record in this range has been corrected.",
     "marketplaceReport.corrections.count": "{corrected, number} corrected Attendance Records, last corrected {lastCorrectedAt}",
@@ -492,7 +507,7 @@ export const interfaceMessages = {
     "marketplaceReport.corrections.metadata": "Corrections appear as markers. Prior values belong to the correction-history extract, and the correcting actor and reason stay in the Audit Log.",
     "marketplaceReport.credits.title": "Class Credits",
     "marketplaceReport.credits.adjustments": "{adjustments, number} Credit Adjustments issued by a Platform Administrator",
-    "marketplaceReport.credits.movement": "{granted, number} granted, {deducted, number} deducted, {refunded, number} refunded",
+    "marketplaceReport.credits.movement": "{granted, number} Class Credits granted, {deducted, number} deducted, {refunded, number} refunded",
     "marketplaceReport.credits.net": "Net change {net, number} Class Credits",
     "marketplaceReport.credits.source": "{entries, number} entries, net {net, number}",
     "marketplaceReport.credits.source.CREDIT_ADJUSTMENT": "Credit Adjustment",
@@ -504,7 +519,7 @@ export const interfaceMessages = {
     "marketplaceReport.progress.empty": "No Course carries reportable progress yet.",
     "marketplaceReport.progress.current": "Course Progress is current effective now rather than confined to the reported range.",
     "marketplaceReport.progress.course": "{title} ({language}, {level})",
-    "marketplaceReport.progress.row": "{percentage, number}% average across {students, number} Students with progress, {completed, number} of {active, number} active Lesson Units completed",
+    "marketplaceReport.progress.row": "{students, number} Students with progress, {completed, number} completions across {active, number} active Lesson Units",
     "curriculum.loading": "Loading curriculum administration…",
     "curriculum.error": "We couldn't update the curriculum. Review the details and try again.",
     "curriculum.sampleBadge": "Sample curriculum",
@@ -1175,7 +1190,7 @@ export const interfaceMessages = {
     "marketplaceReport.range.from": "Desde",
     "marketplaceReport.range.to": "Hasta",
     "marketplaceReport.range.apply": "Actualizar el informe",
-    "marketplaceReport.range.summary": "Sesiones de Clase programadas del {from} al {to}, por fecha en {timeZone}",
+    "marketplaceReport.range.summary": "Actividad del {from} al {to}, por fecha en {timeZone}: las Sesiones de Clase por su fecha programada y el movimiento de Créditos de Clase por su fecha de registro.",
     "marketplaceReport.exceptions.title": "Requiere atención",
     "marketplaceReport.exceptions.none": "No hay excepciones accionables en la actividad informada.",
     "marketplaceReport.exceptions.total": "{total, number} excepciones accionables, de la más antigua a la más reciente",
@@ -1196,6 +1211,7 @@ export const interfaceMessages = {
     "marketplaceReport.cancellations.daily": "Por fecha de la Sesión de Clase",
     "marketplaceReport.cancellations.dailyEmpty": "Ninguna fecha de Sesión de Clase de este intervalo tiene cancelaciones ni resultados registrados.",
     "marketplaceReport.cancellations.dailyRow": "{rate, number}% sobre {cancellations, number} cancelaciones ({timely, number} a tiempo, {late, number} tardías) y {recorded, number} resultados registrados",
+    "marketplaceReport.cancellations.dailyNoRate": "Todavía sin tasa: ninguna cancelación ni resultado registrado, con {unrecorded, number} sin registrar excluidas",
     "marketplaceReport.corrections.title": "Correcciones de Asistencia",
     "marketplaceReport.corrections.none": "Ningún Registro de Asistencia de este intervalo ha sido corregido.",
     "marketplaceReport.corrections.count": "{corrected, number} Registros de Asistencia corregidos; última corrección el {lastCorrectedAt}",
@@ -1203,7 +1219,7 @@ export const interfaceMessages = {
     "marketplaceReport.corrections.metadata": "Las correcciones aparecen como marcas. Los valores anteriores pertenecen al extracto del historial de correcciones, y el actor y el motivo de la corrección permanecen en el Registro de Auditoría.",
     "marketplaceReport.credits.title": "Créditos de Clase",
     "marketplaceReport.credits.adjustments": "{adjustments, number} Ajustes de Crédito emitidos por un Administrador de la Plataforma",
-    "marketplaceReport.credits.movement": "{granted, number} otorgados, {deducted, number} descontados, {refunded, number} devueltos",
+    "marketplaceReport.credits.movement": "{granted, number} Créditos de Clase otorgados, {deducted, number} descontados, {refunded, number} devueltos",
     "marketplaceReport.credits.net": "Cambio neto de {net, number} Créditos de Clase",
     "marketplaceReport.credits.source": "{entries, number} movimientos, neto {net, number}",
     "marketplaceReport.credits.source.CREDIT_ADJUSTMENT": "Ajuste de Crédito",
@@ -1215,7 +1231,7 @@ export const interfaceMessages = {
     "marketplaceReport.progress.empty": "Todavía no hay ningún Curso con progreso que informar.",
     "marketplaceReport.progress.current": "El Progreso del Curso es el valor efectivo actual y no se limita al intervalo informado.",
     "marketplaceReport.progress.course": "{title} ({language}, {level})",
-    "marketplaceReport.progress.row": "{percentage, number}% de media entre {students, number} Estudiantes con progreso; {completed, number} de {active, number} Unidades de Lección activas completadas",
+    "marketplaceReport.progress.row": "{students, number} Estudiantes con progreso; {completed, number} finalizaciones sobre {active, number} Unidades de Lección activas",
     "curriculum.loading": "Cargando la administración del currículo…",
     "curriculum.error": "No pudimos actualizar el currículo. Revisa los datos e inténtalo de nuevo.",
     "curriculum.sampleBadge": "Currículo de muestra",

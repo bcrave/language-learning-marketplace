@@ -81,7 +81,7 @@ import {
 } from "../sponsorship/sponsorship-service.js";
 import { courseProgressSnapshotsForSponsorship } from "../sponsorship/course-progress-snapshot.js";
 import { organizationAttendanceAndProgressReport, UnknownCohort } from "../sponsorship/organization-report-service.js";
-import { InvalidReportRange, marketplaceOperationalReport } from "../reporting/marketplace-report-service.js";
+import { InvalidReportRange, marketplaceOperationalReport, MissingDisplayTimeZone } from "../reporting/marketplace-report-service.js";
 import {
   addCohortMembership,
   cohortsForOrganization,
@@ -374,9 +374,13 @@ export function createApi(options: {
               options.now?.() ?? new Date(),
             ));
           } catch (error) {
-            if (!(error instanceof InvalidReportRange)) throw error;
-            // A refused range is still a refused read of marketplace-wide reporting,
-            // so it leaves the same privacy-safe evidence a role denial does.
+            const reasonCode = error instanceof InvalidReportRange
+              ? "INVALID_REPORT_RANGE"
+              : error instanceof MissingDisplayTimeZone ? "DISPLAY_TIME_ZONE_REQUIRED" : null;
+            if (!reasonCode) throw error;
+            // A refused read of marketplace-wide reporting leaves the same
+            // privacy-safe evidence a role denial does, naming which of the two
+            // reasons refused it.
             await recordAdministrationAudit(context.db, {
               administratorId: administrator.id,
               correlationId: context.correlationId,
@@ -384,9 +388,9 @@ export function createApi(options: {
               targetType: "MarketplaceReport",
               targetId: administrator.id,
               outcome: "DENIED",
-              reasonCode: "INVALID_REPORT_RANGE",
+              reasonCode,
             });
-            throw createGraphQLError(error.message, { extensions: { code: "BAD_USER_INPUT" } });
+            throw createGraphQLError((error as Error).message, { extensions: { code: "BAD_USER_INPUT" } });
           }
         },
         discoverClassSessions: async (_parent, { input }, context) => {

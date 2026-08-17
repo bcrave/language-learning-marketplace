@@ -28,6 +28,7 @@ query MarketplaceOperationalReport($input: MarketplaceOperationalReportInput) {
         timelyCount
         lateCount
         recordedOutcomeCount
+        excludedUnrecordedCount
         studentCancellationRatePercentage
       }
     }
@@ -38,9 +39,9 @@ query MarketplaceOperationalReport($input: MarketplaceOperationalReportInput) {
     }
     credits {
       creditAdjustmentCount
-      grantedCount
-      refundedCount
-      deductedCount
+      grantedCreditCount
+      refundedCreditCount
+      deductedCreditCount
       netCreditChange
       bySource {
         source
@@ -56,9 +57,8 @@ query MarketplaceOperationalReport($input: MarketplaceOperationalReportInput) {
       activeLessonUnitCount
       completedActiveLessonUnitCount
       studentsWithProgressCount
-      averageProgressPercentage
     }
-    exceptions {
+    actionableExceptions {
       totalCount
       items {
         kind

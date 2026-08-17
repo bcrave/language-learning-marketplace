@@ -68,6 +68,7 @@ function report(overrides: Record<string, unknown> = {}) {
         timelyCount: 1,
         lateCount: 1,
         recordedOutcomeCount: 4,
+        excludedUnrecordedCount: 0,
         studentCancellationRatePercentage: 33,
       }],
     },
@@ -80,9 +81,9 @@ function report(overrides: Record<string, unknown> = {}) {
     credits: {
       __typename: "MarketplaceCreditSummary",
       creditAdjustmentCount: 2,
-      grantedCount: 16,
-      refundedCount: 3,
-      deductedCount: 9,
+      grantedCreditCount: 16,
+      refundedCreditCount: 3,
+      deductedCreditCount: 9,
       netCreditChange: 12,
       bySource: [
         creditSource("CREDIT_ADJUSTMENT", 2, 3),
@@ -101,10 +102,9 @@ function report(overrides: Record<string, unknown> = {}) {
       activeLessonUnitCount: 4,
       completedActiveLessonUnitCount: 6,
       studentsWithProgressCount: 3,
-      averageProgressPercentage: 50,
     }],
-    exceptions: {
-      __typename: "MarketplaceExceptionSummary",
+    actionableExceptions: {
+      __typename: "MarketplaceActionableExceptions",
       totalCount: 2,
       items: [
         exceptionItem(),
@@ -174,6 +174,35 @@ describe("Marketplace operational report", () => {
     expect(screen.getByText("33% from 2 cancellations (1 timely, 1 late) and 4 recorded outcomes")).toBeVisible();
   });
 
+  it("says a date carrying only Unrecorded attendance has no rate rather than showing 0%", async () => {
+    renderPanel([reportMock(null, {
+      cancellations: {
+        __typename: "MarketplaceCancellationSummary",
+        studentCancellationCount: 0,
+        timelyCount: 0,
+        lateCount: 0,
+        studentCancellationRatePercentage: null,
+        excludedClassSessionCancellationCount: 0,
+        excludedRescheduleCount: 0,
+        dailyRates: [{
+          __typename: "MarketplaceDailyCancellationRate",
+          localDate: "2026-06-15",
+          studentCancellationCount: 0,
+          timelyCount: 0,
+          lateCount: 0,
+          recordedOutcomeCount: 0,
+          excludedUnrecordedCount: 2,
+          studentCancellationRatePercentage: null,
+        }],
+      },
+    })]);
+
+    expect(await screen.findByRole("heading", { name: "Jun 15, 2026" })).toBeVisible();
+    expect(screen.getByText("No rate yet: no cancellation and no recorded outcome, with 2 Unrecorded excluded")).toBeVisible();
+    // A day still waiting to be recorded must never read as a clean day.
+    expect(screen.queryByText(/^0% from/)).toBeNull();
+  });
+
   it("presents current-effective values and correction markers without implying an as-of rebuild", async () => {
     renderPanel([reportMock(null)]);
 
@@ -189,7 +218,7 @@ describe("Marketplace operational report", () => {
 
     const credits = within(await screen.findByRole("region", { name: "Class Credits" }));
     expect(credits.getByText("2 Credit Adjustments issued by a Platform Administrator")).toBeVisible();
-    expect(credits.getByText("16 granted, 9 deducted, 3 refunded")).toBeVisible();
+    expect(credits.getByText("16 Class Credits granted, 9 deducted, 3 refunded")).toBeVisible();
     expect(credits.getByRole("heading", { name: "Organization Credit Benefit" })).toBeVisible();
     expect(credits.getByText("Net change 12 Class Credits")).toBeVisible();
   });
@@ -207,11 +236,11 @@ describe("Marketplace operational report", () => {
       }),
     ]);
 
-    expect(await screen.findByText(/Class Sessions scheduled from May 27, 2026 through Jun 25, 2026/)).toBeVisible();
+    expect(await screen.findByText(/Activity from May 27, 2026 through Jun 25, 2026/)).toBeVisible();
     await userEvent.type(screen.getByLabelText("From"), "2026-06-01");
     await userEvent.type(screen.getByLabelText("To"), "2026-06-30");
     await userEvent.click(screen.getByRole("button", { name: "Update the report" }));
-    expect(await screen.findByText(/Class Sessions scheduled from Jun 1, 2026 through Jun 30, 2026/)).toBeVisible();
+    expect(await screen.findByText(/Activity from Jun 1, 2026 through Jun 30, 2026/)).toBeVisible();
   });
 
   it("tells a refused range apart from a report we could not load", async () => {
@@ -238,7 +267,7 @@ describe("Marketplace operational report", () => {
 
   it.each([
     ["quiet", [reportMock(null, {
-      exceptions: { __typename: "MarketplaceExceptionSummary", totalCount: 0, items: [] },
+      actionableExceptions: { __typename: "MarketplaceActionableExceptions", totalCount: 0, items: [] },
     })], "No actionable exceptions in the reported activity."],
     ["failed", [{
       request: { query: MarketplaceOperationalReportDocument, variables: { input: null } },

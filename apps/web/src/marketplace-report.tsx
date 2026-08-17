@@ -67,7 +67,7 @@ export function MarketplaceReportPanel() {
     );
   }
 
-  const { attendance, cancellations, corrections, credits, courseProgress, exceptions } = report;
+  const { attendance, cancellations, corrections, credits, courseProgress, actionableExceptions } = report;
   const timeZone = report.range.timeZone;
 
   return (
@@ -108,19 +108,19 @@ export function MarketplaceReportPanel() {
 
       <section className="workspace-card" aria-labelledby="marketplace-report-exceptions-title">
         <h2 id="marketplace-report-exceptions-title">{intl.formatMessage({ id: "marketplaceReport.exceptions.title" })}</h2>
-        {exceptions.totalCount === 0 ? (
+        {actionableExceptions.totalCount === 0 ? (
           <p>{intl.formatMessage({ id: "marketplaceReport.exceptions.none" })}</p>
         ) : (
           <>
-            <p>{intl.formatMessage({ id: "marketplaceReport.exceptions.total" }, { total: exceptions.totalCount })}</p>
-            {exceptions.items.length < exceptions.totalCount && (
+            <p>{intl.formatMessage({ id: "marketplaceReport.exceptions.total" }, { total: actionableExceptions.totalCount })}</p>
+            {actionableExceptions.items.length < actionableExceptions.totalCount && (
               <p>{intl.formatMessage({ id: "marketplaceReport.exceptions.truncated" }, {
-                shown: exceptions.items.length,
-                total: exceptions.totalCount,
+                shown: actionableExceptions.items.length,
+                total: actionableExceptions.totalCount,
               })}</p>
             )}
             <ul className="marketplace-report-exceptions">
-              {exceptions.items.map((item) => (
+              {actionableExceptions.items.map((item) => (
                 <li key={`${item.kind}-${item.classSessionId}`}>
                   <h3>{intl.formatMessage({ id: exceptionMessageIds[item.kind] })}</h3>
                   <p>{intl.formatMessage({ id: "marketplaceReport.exception.detail" }, {
@@ -179,13 +179,19 @@ export function MarketplaceReportPanel() {
             {cancellations.dailyRates.map((day) => (
               <li key={day.localDate}>
                 <h4>{localDate(intl, day.localDate)}</h4>
-                <p>{intl.formatMessage({ id: "marketplaceReport.cancellations.dailyRow" }, {
-                  rate: day.studentCancellationRatePercentage ?? 0,
-                  cancellations: day.studentCancellationCount,
-                  timely: day.timelyCount,
-                  late: day.lateCount,
-                  recorded: day.recordedOutcomeCount,
-                })}</p>
+                {/* A date that carried only Unrecorded attendance has no rate at
+                    all, and rendering it as 0% would report a clean day. */}
+                <p>{day.studentCancellationRatePercentage === null
+                  ? intl.formatMessage({ id: "marketplaceReport.cancellations.dailyNoRate" }, {
+                    unrecorded: day.excludedUnrecordedCount,
+                  })
+                  : intl.formatMessage({ id: "marketplaceReport.cancellations.dailyRow" }, {
+                    rate: day.studentCancellationRatePercentage,
+                    cancellations: day.studentCancellationCount,
+                    timely: day.timelyCount,
+                    late: day.lateCount,
+                    recorded: day.recordedOutcomeCount,
+                  })}</p>
               </li>
             ))}
           </ul>
@@ -210,9 +216,9 @@ export function MarketplaceReportPanel() {
         <h2 id="marketplace-report-credits-title">{intl.formatMessage({ id: "marketplaceReport.credits.title" })}</h2>
         <p>{intl.formatMessage({ id: "marketplaceReport.credits.adjustments" }, { adjustments: credits.creditAdjustmentCount })}</p>
         <p>{intl.formatMessage({ id: "marketplaceReport.credits.movement" }, {
-          granted: credits.grantedCount,
-          deducted: credits.deductedCount,
-          refunded: credits.refundedCount,
+          granted: credits.grantedCreditCount,
+          deducted: credits.deductedCreditCount,
+          refunded: credits.refundedCreditCount,
         })}</p>
         <p>{intl.formatMessage({ id: "marketplaceReport.credits.net" }, { net: credits.netCreditChange })}</p>
         <ul className="marketplace-report-credits">
@@ -243,7 +249,6 @@ export function MarketplaceReportPanel() {
                   level: course.curriculumLevel,
                 })}</h3>
                 <p>{intl.formatMessage({ id: "marketplaceReport.progress.row" }, {
-                  percentage: course.averageProgressPercentage,
                   students: course.studentsWithProgressCount,
                   completed: course.completedActiveLessonUnitCount,
                   active: course.activeLessonUnitCount,
