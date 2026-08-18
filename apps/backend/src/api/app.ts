@@ -716,7 +716,7 @@ export function createApi(options: {
             "subscription.cancellation-scheduled",
             input.idempotencyKey,
             input,
-            (transaction) => scheduleSubscriptionCancellation(transaction, student, context.correlationId),
+            (transaction) => scheduleSubscriptionCancellation(transaction, student, context.correlationId, options.now?.() ?? new Date()),
           ));
         },
         undoSubscriptionCancellation: async (_parent, { input }, context) => {
@@ -727,7 +727,7 @@ export function createApi(options: {
             "subscription.cancellation-undone",
             input.idempotencyKey,
             input,
-            (transaction) => undoSubscriptionCancellation(transaction, student, context.correlationId),
+            (transaction) => undoSubscriptionCancellation(transaction, student, context.correlationId, options.now?.() ?? new Date()),
           ));
         },
         inviteToSponsorship: async (_parent, { input }, context) => {

@@ -12,6 +12,8 @@ import { createDatabase, type Database } from "../src/database/database.js";
 import { migrateDatabase } from "../src/database/migrate.js";
 import { DEMO_STUDENT_ID, seedDemoStudents, seedDemoSubscription } from "../src/database/seed.js";
 
+const now = new Date("2027-01-15T00:00:00.000Z");
+
 describe("Subscription management GraphQL API", () => {
   let api: ReturnType<typeof createApi>;
   let db: Database;
@@ -31,7 +33,10 @@ describe("Subscription management GraphQL API", () => {
       `subscriptions_${randomUUID().replaceAll("-", "")}`,
     );
     db = createDatabase(databaseUrl);
-    api = createApi({ db, authMode: "fake", nodeEnv: "test" });
+    // Undoing a scheduled cancellation is the one Subscription rule decided against
+    // the reading clock, so this suite places itself inside its own fixture timeline
+    // rather than depending on the date the suite happens to run on.
+    api = createApi({ db, authMode: "fake", nodeEnv: "test", now: () => now });
     await db.insertInto("users").values([
       { id: administratorId, identity_issuer: "https://fake.local/", identity_subject: administratorSubject, display_name: "Avery Admin", interface_locale: "en", display_time_zone: "America/Denver" },
       { id: studentId, identity_issuer: "https://fake.local/", identity_subject: studentSubject, display_name: "Sofía Rivera", interface_locale: "es", display_time_zone: "America/Denver" },
@@ -181,17 +186,20 @@ describe("Subscription management GraphQL API", () => {
   });
 
   it("seeds the shared Student with an active canonical Subscription and eight owned Class Credits", async () => {
-    const now = new Date("2026-08-05T18:00:00.000Z");
+    const seedInstant = new Date("2026-08-05T18:00:00.000Z");
     await seedDemoStudents(db);
-    await seedDemoSubscription(db, now);
-    await seedDemoSubscription(db, now);
+    await seedDemoSubscription(db, seedInstant);
+    await seedDemoSubscription(db, seedInstant);
 
     expect(await db.selectFrom("subscriptions").select(["state", "next_anniversary_at"]).where("student_user_id", "=", DEMO_STUDENT_ID).executeTakeFirstOrThrow()).toEqual({
       state: "ACTIVE",
       next_anniversary_at: new Date("2026-09-04T18:00:00.000Z"),
     });
     expect(await db.selectFrom("class_credit_accounts").select("available_balance").where("student_user_id", "=", DEMO_STUDENT_ID).executeTakeFirstOrThrow()).toEqual({ available_balance: 8 });
-    const elapsedAnniversary = new Date("2026-08-05T00:00:00.000Z");
+    // An anniversary that has already passed, expressed against the suite's own
+    // clock so the refusal keeps testing an elapsed cancellation rather than a fixed
+    // date that was only in the past when it was written.
+    const elapsedAnniversary = new Date(now.getTime() - 24 * 60 * 60_000);
     await db.updateTable("subscriptions").set({ state: "CANCELLATION_SCHEDULED", next_anniversary_at: elapsedAnniversary, cancellation_effective_at: elapsedAnniversary }).where("student_user_id", "=", DEMO_STUDENT_ID).executeTakeFirstOrThrow();
     expect(await studentMutation("undoSubscriptionCancellation", "UndoSubscriptionCancellationSuccess", DEMO_STUDENT_ID)).toEqual({
       data: { undoSubscriptionCancellation: { conflictCode: "SUBSCRIPTION_CANCELLATION_EFFECTIVE" } },

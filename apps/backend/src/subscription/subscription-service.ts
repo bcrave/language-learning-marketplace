@@ -285,23 +285,25 @@ async function recordProviderAudit(db: Database, administratorId: string, studen
   await db.insertInto("audit_entries").values({ actor_user_id: administratorId, acting_role: "PLATFORM_ADMINISTRATOR", operation: "subscription.provider-event.processed", target_type: "Subscription", target_id: targetId, outcome, reason_code: reasonCode, correlation_id: correlationId }).execute();
 }
 
-export async function scheduleSubscriptionCancellation(db: Database, student: Student, correlationId: string) {
-  return changeCancellation(db, student, correlationId, "schedule");
+export async function scheduleSubscriptionCancellation(db: Database, student: Student, correlationId: string, now: Date) {
+  return changeCancellation(db, student, correlationId, "schedule", now);
 }
 
-export async function undoSubscriptionCancellation(db: Database, student: Student, correlationId: string) {
-  return changeCancellation(db, student, correlationId, "undo");
+export async function undoSubscriptionCancellation(db: Database, student: Student, correlationId: string, now: Date) {
+  return changeCancellation(db, student, correlationId, "undo", now);
 }
 
-async function changeCancellation(db: Database, student: Student, correlationId: string, change: "schedule" | "undo") {
+async function changeCancellation(db: Database, student: Student, correlationId: string, change: "schedule" | "undo", now: Date) {
     const subscription = await db.selectFrom("subscriptions").selectAll().where("student_user_id", "=", student.id).forUpdate().executeTakeFirst();
     const operation = change === "schedule" ? "subscription.cancellation-scheduled" : "subscription.cancellation-undone";
     const expectedState = change === "schedule" ? "ACTIVE" : "CANCELLATION_SCHEDULED";
     if (!subscription) return auditedStudentConflict(db, student.id, correlationId, operation, "SUBSCRIPTION_NOT_FOUND", "The Student does not have a Subscription.");
     if (subscription.state !== expectedState) return auditedStudentConflict(db, student.id, correlationId, operation, "SUBSCRIPTION_NOT_ACTIVE", "The Subscription is not in the required state.");
     if (change === "undo" && subscription.cancellation_effective_at) {
-      const databaseTime = await sql<{ current_time: Date }>`select now() as current_time`.execute(db);
-      if (databaseTime.rows[0]!.current_time.getTime() >= subscription.cancellation_effective_at.getTime()) {
+      // The reading clock, like every other time decision in the platform. Reading
+      // the database clock here instead left the one rule no test could place itself
+      // before or after, which is how a fixture ends up depending on the real date.
+      if (now.getTime() >= subscription.cancellation_effective_at.getTime()) {
         return auditedStudentConflict(db, student.id, correlationId, operation, "SUBSCRIPTION_CANCELLATION_EFFECTIVE", "Subscription cancellation can only be undone before its effective anniversary.");
       }
     }
