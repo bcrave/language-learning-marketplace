@@ -100,6 +100,7 @@ export async function reviseCourseProgressSnapshots(
       "course_progress_snapshots.id",
       "course_progress_snapshots.captured_at",
       "course_progress_snapshots.completed_active_lesson_unit_count",
+      "course_progress_snapshots.revision_count",
     ])
     .where("course_progress_snapshot_units.lesson_unit_id", "=", lessonUnitId)
     .where("sponsorships.student_user_id", "=", studentUserId)
@@ -123,6 +124,17 @@ export async function reviseCourseProgressSnapshots(
       })
       .where("id", "=", snapshot.id)
       .execute();
+    // The marker on the snapshot says a fact was revised; the correction-history
+    // extract of ADR 0056 needs the pair of values behind it. The correcting actor
+    // and reason are deliberately not written here — they stay in the Audit Log.
+    await transaction.insertInto("course_progress_snapshot_revisions").values({
+      snapshot_id: snapshot.id,
+      revision_sequence: snapshot.revision_count + 1,
+      field_code: "completed_unit_count",
+      prior_value: snapshot.completed_active_lesson_unit_count,
+      current_value: recount.completed_count,
+      revised_at: revisedAt,
+    }).execute();
   }
 }
 

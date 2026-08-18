@@ -81,7 +81,17 @@ import {
 } from "../sponsorship/sponsorship-service.js";
 import { courseProgressSnapshotsForSponsorship } from "../sponsorship/course-progress-snapshot.js";
 import { organizationAttendanceAndProgressReport, UnknownCohort } from "../sponsorship/organization-report-service.js";
-import { InvalidReportRange, marketplaceOperationalReport, MissingDisplayTimeZone } from "../reporting/marketplace-report-service.js";
+import { marketplaceOperationalReport } from "../reporting/marketplace-report-service.js";
+import {
+  reportExportArtifact,
+  reportExportAuthorizationFor,
+  reportExportError,
+  reportExportsForRequester,
+  requestReportExport,
+  ReportExportUnavailable,
+  type ReportExportRequester,
+} from "../reporting/report-export-service.js";
+import { InvalidReportRange, MissingDisplayTimeZone } from "../reporting/report-range.js";
 import {
   addCohortMembership,
   cohortsForOrganization,
@@ -194,6 +204,12 @@ const endCohortMembershipInputSchema = z.object({
   cohortMembershipId: z.uuid(),
   effectiveUntil: z.iso.datetime().nullish(),
 });
+const requestReportExportInputSchema = z.object({
+  idempotencyKey: z.string().min(1).max(200),
+  kind: z.enum(["ORDINARY", "CORRECTION_HISTORY"]),
+  fromLocalDate: z.iso.date(),
+  toLocalDate: z.iso.date(),
+});
 const endSponsorshipAsOrganizationInputSchema = z.object({
   idempotencyKey: z.string().min(1).max(200),
   sponsorshipId: z.uuid(),
@@ -276,6 +292,7 @@ export function createApi(options: {
       RenameCohortResult: { __resolveType: (value) => value.__typename! },
       AddCohortMembershipResult: { __resolveType: (value) => value.__typename! },
       EndCohortMembershipResult: { __resolveType: (value) => value.__typename! },
+      RequestReportExportResult: { __resolveType: (value) => value.__typename! },
       Sponsorship: {
         progressSnapshots: async (parent, _arguments, context) =>
           graphQLResult(await courseProgressSnapshotsForSponsorship(context.db, parent.id)),
@@ -391,6 +408,29 @@ export function createApi(options: {
               reasonCode,
             });
             throw createGraphQLError((error as Error).message, { extensions: { code: "BAD_USER_INPUT" } });
+          }
+        },
+        reportExports: async (_parent, _arguments, context) => {
+          const requester = await authenticateReportExportRequester(context, "report-export.read");
+          return graphQLResult(await reportExportsForRequester(context.db, requester, options.now?.() ?? new Date()));
+        },
+        reportExportArtifact: async (_parent, { id }, context) => {
+          const requester = await authenticateReportExportRequester(context, "report-export.downloaded");
+          try {
+            return graphQLResult(await reportExportArtifact(
+              context.db,
+              requester,
+              id,
+              context.correlationId,
+              options.now?.() ?? new Date(),
+            ));
+          } catch (error) {
+            if (!(error instanceof ReportExportUnavailable)) throw error;
+            // The refusal reason is already audited; the caller learns only that the
+            // artifact is unavailable, never whose export the identifier named.
+            throw createGraphQLError(error.message, {
+              extensions: { code: error.code === "REPORT_EXPORT_NOT_FOUND" ? "NOT_FOUND" : "BAD_USER_INPUT" },
+            });
           }
         },
         discoverClassSessions: async (_parent, { input }, context) => {
@@ -847,6 +887,29 @@ export function createApi(options: {
             (transaction) => addCohortMembership(transaction, organizationManager, validatedInput.data, context.correlationId, options.now?.() ?? new Date()),
             { __typename: "CohortError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
             "CohortMembership",
+          ));
+        },
+        requestReportExport: async (_parent, { input }, context) => {
+          const operation = "report-export.requested";
+          const requester = await authenticateReportExportRequester(context, operation);
+          const validatedInput = requestReportExportInputSchema.safeParse(input);
+          if (!validatedInput.success) {
+            throw createGraphQLError("Provide an extract kind and a valid local date range", { extensions: { code: "BAD_USER_INPUT" } });
+          }
+          return graphQLResult(await idempotentReportExportMutation(
+            context,
+            requester,
+            operation,
+            validatedInput.data.idempotencyKey,
+            validatedInput.data,
+            (transaction) => requestReportExport(
+              transaction,
+              requester,
+              validatedInput.data,
+              context.correlationId,
+              options.now?.() ?? new Date(),
+            ),
+            reportExportError("IDEMPOTENCY_KEY_REUSED", "The Idempotency Key was already used with different input."),
           ));
         },
         endCohortMembership: async (_parent, { input }, context) => {
@@ -1400,6 +1463,87 @@ export function createApi(options: {
       throw createGraphQLError("The Teacher Role Assignment is required", { extensions: { code: "FORBIDDEN" } });
     }
     return result.teacher;
+  }
+
+  /**
+   * Report Exports are the one surface both reporting roles reach through the same
+   * operation, so the requester is authenticated once and the authority it resolved
+   * to travels with the request. Marketplace-wide authority wins where a User holds
+   * both, which is what `reportExportAuthorizationFor` decides.
+   */
+  async function authenticateReportExportRequester(context: ApiContext, operation: string): Promise<ReportExportRequester> {
+    const identity = await context.authenticator.authenticate(context.request);
+    if (!identity) {
+      throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+    }
+    const user = await context.db.selectFrom("users")
+      .select("id")
+      .where("identity_issuer", "=", identity.issuer)
+      .where("identity_subject", "=", identity.subject)
+      .executeTakeFirst();
+    if (!user) {
+      throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+    }
+    const requester = await reportExportAuthorizationFor(context.db, user.id);
+    if (!requester) {
+      await context.db.insertInto("audit_entries").values({
+        actor_user_id: user.id,
+        acting_role: null,
+        operation,
+        target_type: "ReportExport",
+        target_id: user.id,
+        outcome: "DENIED",
+        reason_code: "REPORT_EXPORT_ROLE_REQUIRED",
+        correlation_id: context.correlationId,
+      }).execute();
+      throw createGraphQLError("An Organization Manager or Platform Administrator Role Assignment is required", { extensions: { code: "FORBIDDEN" } });
+    }
+    return requester;
+  }
+
+  async function idempotentReportExportMutation<T, C extends { __typename: string; code: string; message: string }>(
+    context: ApiContext,
+    requester: ReportExportRequester,
+    operation: string,
+    idempotencyKey: string,
+    input: object,
+    perform: (transaction: Database) => Promise<T>,
+    idempotencyConflict: C,
+  ): Promise<T | C> {
+    const inputFingerprint = JSON.stringify(input);
+    const audit = (transaction: Database, outcome: "SUCCEEDED" | "DENIED" | "FAILED", reasonCode: string, targetType: string) =>
+      transaction.insertInto("audit_entries").values({
+        actor_user_id: requester.id,
+        acting_role: requester.actingRole,
+        operation,
+        target_type: targetType,
+        target_id: requester.id,
+        outcome,
+        reason_code: reasonCode,
+        correlation_id: context.correlationId,
+      }).execute();
+    try {
+      return await context.db.transaction().execute(async (transaction) => {
+        await sql`select pg_advisory_xact_lock(hashtextextended(${`${requester.id}:${operation}:${idempotencyKey}`}, 0))`.execute(transaction);
+        await transaction.deleteFrom("mutation_idempotency_records").where("actor_user_id", "=", requester.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).where("created_at", "<=", sql<Date>`now() - interval '7 days'`).execute();
+        const existing = await transaction.selectFrom("mutation_idempotency_records").select(["input_fingerprint", "outcome"]).where("actor_user_id", "=", requester.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).executeTakeFirst();
+        if (existing) {
+          if (existing.input_fingerprint !== inputFingerprint) {
+            await audit(transaction as Database, "DENIED", "IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_INPUT", "IdempotencyKey");
+            return idempotencyConflict;
+          }
+          const replaySucceeded = typeof existing.outcome === "object" && existing.outcome !== null && "__typename" in existing.outcome && typeof existing.outcome.__typename === "string" && existing.outcome.__typename.endsWith("Success");
+          await audit(transaction as Database, replaySucceeded ? "SUCCEEDED" : "DENIED", replaySucceeded ? "IDEMPOTENT_REPLAY_SUCCEEDED" : "IDEMPOTENT_REPLAY_DENIED", "IdempotencyKey");
+          return existing.outcome as T;
+        }
+        const outcome = await perform(transaction as Database);
+        await transaction.insertInto("mutation_idempotency_records").values({ actor_user_id: requester.id, operation, idempotency_key: idempotencyKey, input_fingerprint: inputFingerprint, outcome: JSON.stringify(outcome as Record<string, unknown>) }).execute();
+        return outcome;
+      });
+    } catch (error) {
+      await audit(context.db, "FAILED", "UNEXPECTED_MUTATION_FAILURE", "ReportExport");
+      throw error;
+    }
   }
 
   async function authenticateOrganizationManager(context: ApiContext, operation: string, targetType?: string) {

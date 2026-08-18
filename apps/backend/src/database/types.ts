@@ -1,6 +1,6 @@
 import type { Generated, JSONColumnType } from "kysely";
 
-import type { UserRole } from "@marketplace/core";
+import type { ReportExportKind, ReportExportState, UserRole } from "@marketplace/core";
 
 export interface UsersTable {
   id: string;
@@ -39,7 +39,7 @@ export interface RoleWorkspacePlacesTable {
 export interface AuditEntriesTable {
   id: Generated<string>;
   actor_user_id: string | null;
-  system_identity: "CLASS_SESSION_REMINDER_WORKER" | "WAITLIST_WORKER" | "NOTIFICATION_DELIVERY_WORKER" | "NOTIFICATION_MAINTENANCE_WORKER" | "SPONSORSHIP_INVITATION_WORKER" | "SPONSORSHIP_CREDIT_WORKER" | null;
+  system_identity: "CLASS_SESSION_REMINDER_WORKER" | "WAITLIST_WORKER" | "NOTIFICATION_DELIVERY_WORKER" | "NOTIFICATION_MAINTENANCE_WORKER" | "SPONSORSHIP_INVITATION_WORKER" | "SPONSORSHIP_CREDIT_WORKER" | "REPORT_EXPORT_WORKER" | null;
   acting_role: UserRole | null;
   operation: string;
   target_type: string;
@@ -114,6 +114,30 @@ export interface CohortMembershipsTable { id: Generated<string>; cohort_id: stri
 export type CourseProgressSnapshotBoundary = "SPONSORSHIP_START" | "SPONSORSHIP_END";
 export interface CourseProgressSnapshotsTable { id: Generated<string>; sponsorship_id: string; boundary: CourseProgressSnapshotBoundary; course_id: string; completed_active_lesson_unit_count: number; active_lesson_unit_count: number; captured_at: Date; revision_count: Generated<number>; revised_at: Date | null }
 export interface CourseProgressSnapshotUnitsTable { snapshot_id: string; lesson_unit_id: string }
+export interface CourseProgressSnapshotRevisionsTable { id: Generated<string>; snapshot_id: string; revision_sequence: number; field_code: "completed_unit_count"; prior_value: number; current_value: number; revised_at: Date }
+export interface ReportExportsTable {
+  id: Generated<string>;
+  requested_by_user_id: string;
+  acting_role: "ORGANIZATION_MANAGER" | "PLATFORM_ADMINISTRATOR";
+  organization_id: string | null;
+  kind: ReportExportKind;
+  schema_version: string;
+  period_start: string;
+  period_end_exclusive: string;
+  time_zone: string;
+  state: ReportExportState;
+  attempt_count: Generated<number>;
+  requested_at: Date;
+  started_at: Date | null;
+  completed_at: Date | null;
+  expires_at: Date | null;
+  data_as_of: Date | null;
+  row_count: number | null;
+  content_digest: string | null;
+  content: string | null;
+  failure_reason_code: string | null;
+  correlation_id: string;
+}
 
 export interface DatabaseSchema {
   users: UsersTable;
@@ -169,4 +193,6 @@ export interface DatabaseSchema {
   cohort_memberships: CohortMembershipsTable;
   course_progress_snapshots: CourseProgressSnapshotsTable;
   course_progress_snapshot_units: CourseProgressSnapshotUnitsTable;
+  course_progress_snapshot_revisions: CourseProgressSnapshotRevisionsTable;
+  report_exports: ReportExportsTable;
 }

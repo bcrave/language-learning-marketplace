@@ -1101,6 +1101,7 @@ export type Mutation = {
   renameCohort: RenameCohortResult;
   reportAbsence: ReportAbsenceResult;
   requestAttendanceReview: RequestAttendanceReviewResult;
+  requestReportExport: RequestReportExportResult;
   rescheduleBooking: RescheduleBookingResult;
   resolveAdministratorTask: ResolveAdministratorTaskResult;
   retireLessonUnit: RetireLessonUnitResult;
@@ -1303,6 +1304,11 @@ export type MutationReportAbsenceArgs = {
 
 export type MutationRequestAttendanceReviewArgs = {
   input: RequestAttendanceReviewInput;
+};
+
+
+export type MutationRequestReportExportArgs = {
+  input: RequestReportExportInput;
 };
 
 
@@ -1533,6 +1539,8 @@ export type Query = {
   organizationSponsoredStudents: Array<Sponsorship>;
   organizationSponsorshipInvitations: Array<SponsorshipInvitation>;
   publicTeacherProfile?: Maybe<PublicTeacherProfile>;
+  reportExportArtifact: ReportExportArtifact;
+  reportExports: Array<ReportExport>;
   roleWorkspace: RoleWorkspace;
   studentAttendanceRecords: Array<StudentAttendanceRecord>;
   studentBookings: Array<Booking>;
@@ -1604,6 +1612,11 @@ export type QueryOrganizationAttendanceAndProgressReportArgs = {
 export type QueryPublicTeacherProfileArgs = {
   locale: InterfaceLocale;
   teacherUserId: Scalars['ID']['input'];
+};
+
+
+export type QueryReportExportArtifactArgs = {
+  id: Scalars['ID']['input'];
 };
 
 
@@ -1706,6 +1719,75 @@ export type ReportAbsenceSuccess = {
   absenceRequest: AbsenceRequest;
 };
 
+export type ReportExport = {
+  __typename?: 'ReportExport';
+  actingRole: ReportExportActingRole;
+  completedAt?: Maybe<Scalars['String']['output']>;
+  contentDigest?: Maybe<Scalars['String']['output']>;
+  dataAsOf?: Maybe<Scalars['String']['output']>;
+  downloadable: Scalars['Boolean']['output'];
+  expiresAt?: Maybe<Scalars['String']['output']>;
+  failureReasonCode?: Maybe<ReportExportFailureReason>;
+  id: Scalars['ID']['output'];
+  kind: ReportExportKind;
+  periodEndExclusiveLocalDate: Scalars['String']['output'];
+  periodStartLocalDate: Scalars['String']['output'];
+  requestedAt: Scalars['String']['output'];
+  rowCount?: Maybe<Scalars['Int']['output']>;
+  schemaVersion: Scalars['String']['output'];
+  startedAt?: Maybe<Scalars['String']['output']>;
+  state: ReportExportState;
+  timeZone: Scalars['String']['output'];
+};
+
+export enum ReportExportActingRole {
+  OrganizationManager = 'ORGANIZATION_MANAGER',
+  PlatformAdministrator = 'PLATFORM_ADMINISTRATOR'
+}
+
+export type ReportExportArtifact = {
+  __typename?: 'ReportExportArtifact';
+  contentType: Scalars['String']['output'];
+  csv: Scalars['String']['output'];
+  fileName: Scalars['String']['output'];
+  reportExport: ReportExport;
+};
+
+export type ReportExportError = {
+  __typename?: 'ReportExportError';
+  code: ReportExportErrorCode;
+  message: Scalars['String']['output'];
+};
+
+export enum ReportExportErrorCode {
+  CorrectionHistoryNotAuthorized = 'CORRECTION_HISTORY_NOT_AUTHORIZED',
+  DisplayTimeZoneRequired = 'DISPLAY_TIME_ZONE_REQUIRED',
+  ExportAlreadyInProgress = 'EXPORT_ALREADY_IN_PROGRESS',
+  IdempotencyKeyReused = 'IDEMPOTENCY_KEY_REUSED',
+  InvalidReportRange = 'INVALID_REPORT_RANGE',
+  ReportExportNotDownloadable = 'REPORT_EXPORT_NOT_DOWNLOADABLE',
+  ReportExportNotFound = 'REPORT_EXPORT_NOT_FOUND'
+}
+
+export enum ReportExportFailureReason {
+  AuthorizationRevoked = 'AUTHORIZATION_REVOKED',
+  GenerationFailed = 'GENERATION_FAILED',
+  RowLimitExceeded = 'ROW_LIMIT_EXCEEDED'
+}
+
+export enum ReportExportKind {
+  CorrectionHistory = 'CORRECTION_HISTORY',
+  Ordinary = 'ORDINARY'
+}
+
+export enum ReportExportState {
+  Completed = 'COMPLETED',
+  Expired = 'EXPIRED',
+  Failed = 'FAILED',
+  Queued = 'QUEUED',
+  Running = 'RUNNING'
+}
+
 export type RequestAttendanceReviewInput = {
   bookingId: Scalars['ID']['input'];
   explanation?: InputMaybe<Scalars['String']['input']>;
@@ -1717,6 +1799,20 @@ export type RequestAttendanceReviewResult = AttendanceReviewError | RequestAtten
 export type RequestAttendanceReviewSuccess = {
   __typename?: 'RequestAttendanceReviewSuccess';
   attendanceReviewRequest: AttendanceReviewRequest;
+};
+
+export type RequestReportExportInput = {
+  fromLocalDate: Scalars['String']['input'];
+  idempotencyKey: Scalars['ID']['input'];
+  kind: ReportExportKind;
+  toLocalDate: Scalars['String']['input'];
+};
+
+export type RequestReportExportResult = ReportExportError | RequestReportExportSuccess;
+
+export type RequestReportExportSuccess = {
+  __typename?: 'RequestReportExportSuccess';
+  reportExport: ReportExport;
 };
 
 export type RescheduleBookingInput = {
@@ -2521,6 +2617,10 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( AttendanceReviewError )
     | ( RequestAttendanceReviewSuccess )
   ;
+  RequestReportExportResult:
+    | ( ReportExportError )
+    | ( RequestReportExportSuccess )
+  ;
   RescheduleBookingResult:
     | ( BookingError )
     | ( RescheduleBookingSuccess )
@@ -2779,9 +2879,20 @@ export type ResolversTypes = {
   ReportAbsenceInput: ReportAbsenceInput;
   ReportAbsenceResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ReportAbsenceResult']>;
   ReportAbsenceSuccess: ResolverTypeWrapper<ReportAbsenceSuccess>;
+  ReportExport: ResolverTypeWrapper<ReportExport>;
+  ReportExportActingRole: ReportExportActingRole;
+  ReportExportArtifact: ResolverTypeWrapper<ReportExportArtifact>;
+  ReportExportError: ResolverTypeWrapper<ReportExportError>;
+  ReportExportErrorCode: ReportExportErrorCode;
+  ReportExportFailureReason: ReportExportFailureReason;
+  ReportExportKind: ReportExportKind;
+  ReportExportState: ReportExportState;
   RequestAttendanceReviewInput: RequestAttendanceReviewInput;
   RequestAttendanceReviewResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RequestAttendanceReviewResult']>;
   RequestAttendanceReviewSuccess: ResolverTypeWrapper<RequestAttendanceReviewSuccess>;
+  RequestReportExportInput: RequestReportExportInput;
+  RequestReportExportResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RequestReportExportResult']>;
+  RequestReportExportSuccess: ResolverTypeWrapper<RequestReportExportSuccess>;
   RescheduleBookingInput: RescheduleBookingInput;
   RescheduleBookingResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RescheduleBookingResult']>;
   RescheduleBookingSuccess: ResolverTypeWrapper<RescheduleBookingSuccess>;
@@ -3045,9 +3156,15 @@ export type ResolversParentTypes = {
   ReportAbsenceInput: ReportAbsenceInput;
   ReportAbsenceResult: ResolversUnionTypes<ResolversParentTypes>['ReportAbsenceResult'];
   ReportAbsenceSuccess: ReportAbsenceSuccess;
+  ReportExport: ReportExport;
+  ReportExportArtifact: ReportExportArtifact;
+  ReportExportError: ReportExportError;
   RequestAttendanceReviewInput: RequestAttendanceReviewInput;
   RequestAttendanceReviewResult: ResolversUnionTypes<ResolversParentTypes>['RequestAttendanceReviewResult'];
   RequestAttendanceReviewSuccess: RequestAttendanceReviewSuccess;
+  RequestReportExportInput: RequestReportExportInput;
+  RequestReportExportResult: ResolversUnionTypes<ResolversParentTypes>['RequestReportExportResult'];
+  RequestReportExportSuccess: RequestReportExportSuccess;
   RescheduleBookingInput: RescheduleBookingInput;
   RescheduleBookingResult: ResolversUnionTypes<ResolversParentTypes>['RescheduleBookingResult'];
   RescheduleBookingSuccess: RescheduleBookingSuccess;
@@ -3844,6 +3961,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   renameCohort?: Resolver<ResolversTypes['RenameCohortResult'], ParentType, ContextType, RequireFields<MutationRenameCohortArgs, 'input'>>;
   reportAbsence?: Resolver<ResolversTypes['ReportAbsenceResult'], ParentType, ContextType, RequireFields<MutationReportAbsenceArgs, 'input'>>;
   requestAttendanceReview?: Resolver<ResolversTypes['RequestAttendanceReviewResult'], ParentType, ContextType, RequireFields<MutationRequestAttendanceReviewArgs, 'input'>>;
+  requestReportExport?: Resolver<ResolversTypes['RequestReportExportResult'], ParentType, ContextType, RequireFields<MutationRequestReportExportArgs, 'input'>>;
   rescheduleBooking?: Resolver<ResolversTypes['RescheduleBookingResult'], ParentType, ContextType, RequireFields<MutationRescheduleBookingArgs, 'input'>>;
   resolveAdministratorTask?: Resolver<ResolversTypes['ResolveAdministratorTaskResult'], ParentType, ContextType, RequireFields<MutationResolveAdministratorTaskArgs, 'input'>>;
   retireLessonUnit?: Resolver<ResolversTypes['RetireLessonUnitResult'], ParentType, ContextType, RequireFields<MutationRetireLessonUnitArgs, 'input'>>;
@@ -3977,6 +4095,8 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   organizationSponsoredStudents?: Resolver<Array<ResolversTypes['Sponsorship']>, ParentType, ContextType>;
   organizationSponsorshipInvitations?: Resolver<Array<ResolversTypes['SponsorshipInvitation']>, ParentType, ContextType>;
   publicTeacherProfile?: Resolver<Maybe<ResolversTypes['PublicTeacherProfile']>, ParentType, ContextType, RequireFields<QueryPublicTeacherProfileArgs, 'locale' | 'teacherUserId'>>;
+  reportExportArtifact?: Resolver<ResolversTypes['ReportExportArtifact'], ParentType, ContextType, RequireFields<QueryReportExportArtifactArgs, 'id'>>;
+  reportExports?: Resolver<Array<ResolversTypes['ReportExport']>, ParentType, ContextType>;
   roleWorkspace?: Resolver<ResolversTypes['RoleWorkspace'], ParentType, ContextType, RequireFields<QueryRoleWorkspaceArgs, 'actingRole'>>;
   studentAttendanceRecords?: Resolver<Array<ResolversTypes['StudentAttendanceRecord']>, ParentType, ContextType>;
   studentBookings?: Resolver<Array<ResolversTypes['Booking']>, ParentType, ContextType>;
@@ -4059,12 +4179,54 @@ export type ReportAbsenceSuccessResolvers<ContextType = any, ParentType extends 
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
+export type ReportExportResolvers<ContextType = any, ParentType extends ResolversParentTypes['ReportExport'] = ResolversParentTypes['ReportExport']> = {
+  actingRole?: Resolver<ResolversTypes['ReportExportActingRole'], ParentType, ContextType>;
+  completedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  contentDigest?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  dataAsOf?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  downloadable?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  expiresAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  failureReasonCode?: Resolver<Maybe<ResolversTypes['ReportExportFailureReason']>, ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  kind?: Resolver<ResolversTypes['ReportExportKind'], ParentType, ContextType>;
+  periodEndExclusiveLocalDate?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  periodStartLocalDate?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  requestedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  rowCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  schemaVersion?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  startedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  state?: Resolver<ResolversTypes['ReportExportState'], ParentType, ContextType>;
+  timeZone?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
+export type ReportExportArtifactResolvers<ContextType = any, ParentType extends ResolversParentTypes['ReportExportArtifact'] = ResolversParentTypes['ReportExportArtifact']> = {
+  contentType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  csv?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  fileName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  reportExport?: Resolver<ResolversTypes['ReportExport'], ParentType, ContextType>;
+};
+
+export type ReportExportErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['ReportExportError'] = ResolversParentTypes['ReportExportError']> = {
+  code?: Resolver<ResolversTypes['ReportExportErrorCode'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
 export type RequestAttendanceReviewResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['RequestAttendanceReviewResult'] = ResolversParentTypes['RequestAttendanceReviewResult']> = {
   __resolveType: TypeResolveFn<'AttendanceReviewError' | 'RequestAttendanceReviewSuccess', ParentType, ContextType>;
 };
 
 export type RequestAttendanceReviewSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['RequestAttendanceReviewSuccess'] = ResolversParentTypes['RequestAttendanceReviewSuccess']> = {
   attendanceReviewRequest?: Resolver<ResolversTypes['AttendanceReviewRequest'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type RequestReportExportResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['RequestReportExportResult'] = ResolversParentTypes['RequestReportExportResult']> = {
+  __resolveType: TypeResolveFn<'ReportExportError' | 'RequestReportExportSuccess', ParentType, ContextType>;
+};
+
+export type RequestReportExportSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['RequestReportExportSuccess'] = ResolversParentTypes['RequestReportExportSuccess']> = {
+  reportExport?: Resolver<ResolversTypes['ReportExport'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
@@ -4533,8 +4695,13 @@ export type Resolvers<ContextType = any> = {
   ReorderLessonUnitSuccess?: ReorderLessonUnitSuccessResolvers<ContextType>;
   ReportAbsenceResult?: ReportAbsenceResultResolvers<ContextType>;
   ReportAbsenceSuccess?: ReportAbsenceSuccessResolvers<ContextType>;
+  ReportExport?: ReportExportResolvers<ContextType>;
+  ReportExportArtifact?: ReportExportArtifactResolvers<ContextType>;
+  ReportExportError?: ReportExportErrorResolvers<ContextType>;
   RequestAttendanceReviewResult?: RequestAttendanceReviewResultResolvers<ContextType>;
   RequestAttendanceReviewSuccess?: RequestAttendanceReviewSuccessResolvers<ContextType>;
+  RequestReportExportResult?: RequestReportExportResultResolvers<ContextType>;
+  RequestReportExportSuccess?: RequestReportExportSuccessResolvers<ContextType>;
   RescheduleBookingResult?: RescheduleBookingResultResolvers<ContextType>;
   RescheduleBookingSuccess?: RescheduleBookingSuccessResolvers<ContextType>;
   ResolveAdministratorTaskResult?: ResolveAdministratorTaskResultResolvers<ContextType>;

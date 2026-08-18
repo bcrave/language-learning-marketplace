@@ -1,0 +1,50 @@
+fragment ReportExportDetails on ReportExport {
+  id
+  kind
+  schemaVersion
+  actingRole
+  state
+  periodStartLocalDate
+  periodEndExclusiveLocalDate
+  timeZone
+  requestedAt
+  completedAt
+  expiresAt
+  dataAsOf
+  rowCount
+  contentDigest
+  failureReasonCode
+  downloadable
+}
+
+query ReportExports {
+  reportExports {
+    ...ReportExportDetails
+  }
+}
+
+query ReportExportArtifact($id: ID!) {
+  reportExportArtifact(id: $id) {
+    fileName
+    contentType
+    csv
+    reportExport {
+      ...ReportExportDetails
+    }
+  }
+}
+
+mutation RequestReportExport($input: RequestReportExportInput!) {
+  requestReportExport(input: $input) {
+    __typename
+    ... on RequestReportExportSuccess {
+      reportExport {
+        ...ReportExportDetails
+      }
+    }
+    ... on ReportExportError {
+      code
+      message
+    }
+  }
+}
