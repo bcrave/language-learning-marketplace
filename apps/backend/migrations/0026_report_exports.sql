@@ -36,10 +36,10 @@ create table report_exports (
     (acting_role = 'ORGANIZATION_MANAGER' and organization_id is not null)
     or (acting_role = 'PLATFORM_ADMINISTRATOR' and organization_id is null)
   ),
-  -- Separate authorization, enforced at rest as well as at the request: an
-  -- Organization Manager's authority over ordinary reporting never produces a
-  -- correction-history extract, whatever a later caller asks for.
-  check (kind <> 'CORRECTION_HISTORY' or acting_role = 'PLATFORM_ADMINISTRATOR'),
+  -- Separate authorization for the correction-history extract is a scope rather than
+  -- a role: an Organization Manager receives prior values only for revisions inside
+  -- its own Sponsorships, which the acting-role scope check above already pins to an
+  -- Organization. Marketplace-wide authority carries no such narrowing.
   -- A completed export carries its whole provenance or it is not completed.
   check (
     state <> 'COMPLETED'

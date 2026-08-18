@@ -104,6 +104,7 @@ describe("Report Export GraphQL API", () => {
   let courseId: string;
   let danaSponsorshipId: string;
   let noShowSessionId: string;
+  let attended: string;
 
   beforeAll(async () => {
     postgres = await startPostgreSqlTemplate();
@@ -195,9 +196,15 @@ describe("Report Export GraphQL API", () => {
     danaSponsorshipId = await sponsor(danaId, danaSubject, managerSubject);
     await sponsor(rivalStudentId, rivalStudentSubject, rivalManagerSubject);
 
-    const attended = await deliver(lessonUnitIds[1]!, "2026-03-15T15:00:00.000Z", [sofiaId, danaId, rivalStudentId]);
+    attended = await deliver(lessonUnitIds[1]!, "2026-03-15T15:00:00.000Z", [sofiaId, danaId, rivalStudentId]);
     now = new Date("2026-03-15T16:05:00.000Z");
     await administerAttendance(attended, [[sofiaId, "ATTENDED"], [danaId, "ATTENDED"], [rivalStudentId, "ATTENDED"]]);
+
+    // The other Organization's Student keeps a completion of their own, so the
+    // correction seeded below removes a fact without emptying their reporting.
+    const rivalAttended = await deliver(lessonUnitIds[3]!, "2026-03-25T15:00:00.000Z", [rivalStudentId]);
+    now = new Date("2026-03-25T16:05:00.000Z");
+    await administerAttendance(rivalAttended, [[rivalStudentId, "ATTENDED"]]);
 
     noShowSessionId = await deliver(lessonUnitIds[2]!, "2026-03-20T15:00:00.000Z", [sofiaId, danaId]);
     now = new Date("2026-03-20T16:05:00.000Z");
@@ -212,6 +219,13 @@ describe("Report Export GraphQL API", () => {
     await administerAttendance(noShowSessionId, [
       [sofiaId, "NO_SHOW"],
       [danaId, "ATTENDED", "The Student attended after a corrected roster entry."],
+    ]);
+    // A revision in the other Organization. Nothing about it may reach the first
+    // Organization's correction history.
+    await administerAttendance(attended, [
+      [sofiaId, "ATTENDED"],
+      [danaId, "ATTENDED"],
+      [rivalStudentId, "NO_SHOW", "The Student did not join the Class Session."],
     ]);
 
     now = EXPORT_INSTANT;
@@ -238,7 +252,7 @@ describe("Report Export GraphQL API", () => {
     });
 
     expect(await generateDueReportExports(db, now, randomUUID())).toBe(1);
-    const completed = (await listExports(managerSubject))[0]!;
+    const completed = (await listExports(managerSubject)).find((reportExport) => reportExport.id === requested.id)!;
     expect(completed).toMatchObject({
       state: "COMPLETED",
       dataAsOf: EXPORT_INSTANT.toISOString(),
@@ -268,7 +282,7 @@ describe("Report Export GraphQL API", () => {
   });
 
   it("reports the current effective value beside the frozen boundary it is compared with", async () => {
-    const rows = tabulate((await downloadExport((await listExports(managerSubject))[0]!.id, managerSubject)).csv);
+    const rows = tabulate((await downloadExport(await ordinaryExportId(managerSubject), managerSubject)).csv);
     const sofia = rows.filter((row) => row["student_display_name"] === "'=Sofía Rivera");
     expect(sofia.map((row) => row["snapshot_kind"])).toEqual(["start", "current"]);
     expect(sofia[0]).toMatchObject({
@@ -305,29 +319,41 @@ describe("Report Export GraphQL API", () => {
   });
 
   it("neutralizes a display name a spreadsheet would otherwise execute", async () => {
-    const artifact = await downloadExport((await listExports(managerSubject))[0]!.id, managerSubject);
+    const artifact = await downloadExport(await ordinaryExportId(managerSubject), managerSubject);
     expect(artifact.csv).toContain('"\'=Sofía Rivera"');
     expect(artifact.csv).not.toContain(",=Sofía Rivera");
   });
 
   it("keeps the ordinary extract free of prior values, actors, and reasons", async () => {
-    const artifact = await downloadExport((await listExports(managerSubject))[0]!.id, managerSubject);
+    const artifact = await downloadExport(await ordinaryExportId(managerSubject), managerSubject);
     expect(artifact.csv).not.toContain("no_show");
     expect(artifact.csv).not.toContain("corrected roster entry");
     expect(artifact.csv).not.toContain("Ada Administrator");
   });
 
-  it("refuses the correction-history extract to authority that only covers ordinary reporting", async () => {
-    const refused = await requestExportResult("CORRECTION_HISTORY", PERIOD, managerSubject);
-    expect(refused).toEqual({
-      __typename: "ReportExportError",
-      code: "CORRECTION_HISTORY_NOT_AUTHORIZED",
-      message: "The correction-history extract requires its own authorization.",
+  it("narrows an Organization Manager's correction history to its own Sponsorships", async () => {
+    const requested = await requestExport("CORRECTION_HISTORY", PERIOD, managerSubject);
+    expect(requested).toMatchObject({
+      kind: "CORRECTION_HISTORY",
+      schemaVersion: "correction_history.v1",
+      actingRole: "ORGANIZATION_MANAGER",
     });
-    expect(await auditReasons(managerId, "report-export.requested", "DENIED"))
-      .toContain("CORRECTION_HISTORY_NOT_AUTHORIZED");
-    // The refusal creates nothing to generate.
-    expect(await listExports(managerSubject)).toHaveLength(1);
+    await generateDueReportExports(db, now, randomUUID());
+
+    const artifact = await downloadExport(requested.id, managerSubject);
+    const rows = tabulate(artifact.csv);
+    expect(rows.length).toBeGreaterThan(0);
+
+    // Every surviving row belongs to this Organization's own Sponsorships. The other
+    // Organization's revision is absent rather than merely unlabelled.
+    expect([...new Set(rows.map((row) => row["organization_ref"]))]).toEqual([organizationId]);
+    expect(rows.some((row) => row["student_ref"] === danaId)).toBe(true);
+    expect(artifact.csv).not.toContain(rivalStudentId);
+
+    // Prior values arrive, and the investigative half still does not.
+    expect(rows.some((row) => row["prior_value"] === "no_show" && row["current_value"] === "attended")).toBe(true);
+    expect(artifact.csv).not.toContain("corrected roster entry");
+    expect(artifact.csv).not.toContain(administratorId);
   });
 
   it("exposes prior and current values in the separately authorized correction-history extract", async () => {
@@ -344,7 +370,8 @@ describe("Report Export GraphQL API", () => {
     expect(header).toEqual([...CORRECTION_HISTORY_REPORT_EXPORT_COLUMNS]);
 
     const rows = tabulate(artifact.csv);
-    const outcome = rows.find((row) => row["subject_type"] === "attendance")!;
+    const outcome = rows.find((row) =>
+      row["subject_type"] === "attendance" && row["student_ref"] === danaId)!;
     expect(outcome).toMatchObject({
       field_code: "outcome",
       revision_sequence: "1",
@@ -363,13 +390,20 @@ describe("Report Export GraphQL API", () => {
       current_value: "3",
     });
 
+    // Marketplace-wide authority carries no narrowing: the other Organization's
+    // revision is present here and absent from that Organization Manager's copy.
+    expect(rows.some((row) => row["student_ref"] === rivalStudentId)).toBe(true);
+    expect([...new Set(rows.map((row) => row["organization_ref"]))].sort())
+      .toEqual([organizationId, rivalOrganizationId].sort());
+
     // The investigative half stays in the Audit Log.
     expect(artifact.csv).not.toContain("corrected roster entry");
+    expect(artifact.csv).not.toContain("did not join the Class Session");
     expect(artifact.csv).not.toContain(administratorId);
   });
 
   it("explains every correction marker the ordinary extract shows for the same range", async () => {
-    const ordinary = tabulate((await downloadExport((await listExports(managerSubject))[0]!.id, managerSubject)).csv);
+    const ordinary = tabulate((await downloadExport(await ordinaryExportId(managerSubject), managerSubject)).csv);
     const history = tabulate((await downloadExport(
       (await listExports(administratorSubject)).find((reportExport) => reportExport.kind === "CORRECTION_HISTORY")!.id,
       administratorSubject,
@@ -450,11 +484,11 @@ describe("Report Export GraphQL API", () => {
   });
 
   it("notifies the requester in-app only, without reproducing reported data", async () => {
-    const [completed] = await listExports(managerSubject);
+    const ordinaryId = await ordinaryExportId(managerSubject);
     const notifications = await db.selectFrom("in_app_notifications")
       .select(["message_id", "variables"])
       .where("recipient_user_id", "=", managerId)
-      .where("source_reference", "=", `report-export.completed:${completed!.id}`)
+      .where("source_reference", "=", `report-export.completed:${ordinaryId}`)
       .execute();
     expect(notifications).toHaveLength(1);
     expect(notifications[0]!.message_id).toBe("report-export.completed.requester");
@@ -725,6 +759,12 @@ describe("Report Export GraphQL API", () => {
       }
     `, { input: { idempotencyKey: randomUUID(), sponsorshipId } }, managerSubject);
     expect(ended.data!.endSponsorshipAsOrganization).toEqual({ sponsorship: { state: "ENDED" } });
+  }
+
+  /** One requester's export of a given kind, found by kind rather than by position. */
+  async function ordinaryExportId(subject: string) {
+    const ordinary = (await listExports(subject)).find((reportExport) => reportExport.kind === "ORDINARY");
+    return ordinary!.id;
   }
 
   async function requestExportResult(

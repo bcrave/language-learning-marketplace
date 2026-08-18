@@ -1,4 +1,5 @@
 import {
+  correctionHistoryExportIsOrganizationScoped,
   reportExportIsAuthorized,
   reportExportIsDownloadable,
   REPORT_EXPORT_SCHEMA_VERSIONS,
@@ -188,7 +189,7 @@ export async function reportExportAuthorizationStillHolds(
   return current !== null
     && current.actingRole === reportExport.acting_role
     && current.organizationId === reportExport.organization_id
-    && reportExportIsAuthorized(current.actingRole, reportExport.kind);
+    && reportExportIsAuthorized(current.actingRole);
 }
 
 export type RequestReportExportInput = {
@@ -221,10 +222,15 @@ export async function requestReportExport(
     return reportExportError(code, message);
   };
 
-  if (!reportExportIsAuthorized(requester.actingRole, input.kind)) {
+  // An Organization Manager's correction history exists only as its Organization's.
+  // Without one there is no scope to narrow the prior values to, so the extract is
+  // refused rather than widened into everyone else's revisions.
+  if (input.kind === "CORRECTION_HISTORY"
+    && correctionHistoryExportIsOrganizationScoped(requester.actingRole)
+    && requester.organizationId === null) {
     return denied(
       "CORRECTION_HISTORY_NOT_AUTHORIZED",
-      "The correction-history extract requires its own authorization.",
+      "The correction-history extract requires an Organization to scope it to.",
     );
   }
 

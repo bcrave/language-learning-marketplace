@@ -313,25 +313,23 @@ export function reportExportIsDownloadable(
     && now.getTime() < reportExport.expiresAt.getTime();
 }
 
-export function ordinaryReportExportIsAuthorized(actingRole: UserRole) {
+/** Report Exports belong to the two reporting roles and to no other. */
+export function reportExportIsAuthorized(actingRole: UserRole) {
   return actingRole === "ORGANIZATION_MANAGER" || actingRole === "PLATFORM_ADMINISTRATOR";
 }
 
 /**
  * The correction-history extract is authorized on its own terms rather than as a
- * consequence of ordinary reporting authority. An Organization Manager receives
- * reporting limited to its sponsored Students' attendance and curriculum
- * completion; a superseded value is investigative material about how a fact came to
- * be, which that scope does not cover. Marketplace-wide operational authority does.
+ * consequence of ordinary reporting authority, and for an Organization Manager those
+ * terms are a scope: prior values only for revisions of facts inside its own
+ * Sponsorships, never another Organization's and never an unsponsored Student's.
+ * Marketplace-wide operational authority carries no such narrowing.
+ *
+ * This is where the separate authorization bites. Both reporting roles may ask for
+ * the extract; what the extract may contain is decided per requester.
  */
-export function correctionHistoryReportExportIsAuthorized(actingRole: UserRole) {
-  return actingRole === "PLATFORM_ADMINISTRATOR";
-}
-
-export function reportExportIsAuthorized(actingRole: UserRole, kind: ReportExportKind) {
-  return kind === "CORRECTION_HISTORY"
-    ? correctionHistoryReportExportIsAuthorized(actingRole)
-    : ordinaryReportExportIsAuthorized(actingRole);
+export function correctionHistoryExportIsOrganizationScoped(actingRole: UserRole) {
+  return actingRole === "ORGANIZATION_MANAGER";
 }
 
 // A spreadsheet treats a leading formula character as code rather than as a name, so
@@ -691,7 +689,7 @@ export const interfaceMessages = {
     "reportExport.request.kind": "Extract",
     "reportExport.kind.ORDINARY": "Progress and attendance",
     "reportExport.kind.CORRECTION_HISTORY": "Correction history",
-    "reportExport.correctionHistoryHelp": "The correction-history extract carries prior and current values. It is authorized separately from ordinary reporting, and never carries the correcting actor or reason.",
+    "reportExport.correctionHistoryHelp": "The correction-history extract carries prior and current values. It is authorized separately from ordinary reporting and narrowed to your own relationship scope, and it never carries the correcting actor or reason.",
     "reportExport.request.from": "From",
     "reportExport.request.to": "To",
     "reportExport.request.help": "Choose a range of at most 12 months. Dates are read in your Display Time Zone.",
@@ -719,7 +717,7 @@ export const interfaceMessages = {
     "reportExport.failure.GENERATION_FAILED": "Generation did not complete after automatic retries. Try requesting it again.",
     "reportExport.error.INVALID_REPORT_RANGE": "Choose a range of at most 12 months that starts on or before it ends.",
     "reportExport.error.DISPLAY_TIME_ZONE_REQUIRED": "Save a Display Time Zone before requesting an export.",
-    "reportExport.error.CORRECTION_HISTORY_NOT_AUTHORIZED": "The correction-history extract requires its own authorization.",
+    "reportExport.error.CORRECTION_HISTORY_NOT_AUTHORIZED": "The correction-history extract requires an Organization to scope it to.",
     "reportExport.error.EXPORT_ALREADY_IN_PROGRESS": "One Report Export runs at a time. Wait for the current one to finish.",
     "reportExport.error.REPORT_EXPORT_NOT_FOUND": "That Report Export was not found.",
     "reportExport.error.REPORT_EXPORT_NOT_DOWNLOADABLE": "That Report Export is no longer available. Request a fresh export.",
@@ -1445,7 +1443,7 @@ export const interfaceMessages = {
     "reportExport.request.kind": "Extracto",
     "reportExport.kind.ORDINARY": "Progreso y asistencia",
     "reportExport.kind.CORRECTION_HISTORY": "Historial de correcciones",
-    "reportExport.correctionHistoryHelp": "El extracto de historial de correcciones incluye los valores anteriores y actuales. Se autoriza por separado de los informes ordinarios y nunca incluye el actor ni el motivo de la corrección.",
+    "reportExport.correctionHistoryHelp": "El extracto de historial de correcciones incluye los valores anteriores y actuales. Se autoriza por separado de los informes ordinarios y se limita a tu propio ámbito de relación, y nunca incluye el actor ni el motivo de la corrección.",
     "reportExport.request.from": "Desde",
     "reportExport.request.to": "Hasta",
     "reportExport.request.help": "Elige un rango de 12 meses como máximo. Las fechas se leen en tu zona horaria de visualización.",
@@ -1473,7 +1471,7 @@ export const interfaceMessages = {
     "reportExport.failure.GENERATION_FAILED": "La generación no se completó tras los reintentos automáticos. Vuelve a solicitarla.",
     "reportExport.error.INVALID_REPORT_RANGE": "Elige un rango de 12 meses como máximo que empiece antes de terminar o el mismo día.",
     "reportExport.error.DISPLAY_TIME_ZONE_REQUIRED": "Guarda una zona horaria de visualización antes de solicitar una exportación.",
-    "reportExport.error.CORRECTION_HISTORY_NOT_AUTHORIZED": "El extracto de historial de correcciones requiere su propia autorización.",
+    "reportExport.error.CORRECTION_HISTORY_NOT_AUTHORIZED": "El extracto de historial de correcciones requiere una Organización a la que limitarlo.",
     "reportExport.error.EXPORT_ALREADY_IN_PROGRESS": "Solo se ejecuta una exportación de informe a la vez. Espera a que termine la actual.",
     "reportExport.error.REPORT_EXPORT_NOT_FOUND": "No se encontró esa exportación de informe.",
     "reportExport.error.REPORT_EXPORT_NOT_DOWNLOADABLE": "Esa exportación de informe ya no está disponible. Solicita una exportación nueva.",

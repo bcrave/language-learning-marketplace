@@ -6,7 +6,9 @@ import {
   REPORT_EXPORT_SCHEMA_VERSIONS,
   type ReportExportKind,
 } from "@marketplace/core";
-import { sql, type SqlBool } from "kysely";
+import { sql, type ExpressionBuilder, type SqlBool } from "kysely";
+
+import type { DatabaseSchema } from "../database/types.js";
 
 import type { Database } from "../database/database.js";
 import { exportInstant, type ResolvedReportRange } from "./report-range.js";
@@ -285,16 +287,34 @@ type CorrectionRowSource = {
  * than by when the revision was made, so this extract explains exactly the
  * correction markers the ordinary extract shows for the same range.
  *
+ * An Organization Manager's copy is narrowed to revisions of facts its own
+ * Sponsorships covered when the fact occurred: another Organization's Student, and
+ * an unsponsored one, are absent rather than merely unlabelled. That narrowing is
+ * the separate authorization the correction-history extract carries.
+ *
  * No correcting actor and no reason appear here. Both stay in the filtered,
  * append-only Audit Log.
  */
 async function correctionHistoryRows(transaction: Database, scope: ReportExportScope): Promise<CorrectionRowSource[]> {
   const { range } = scope;
+  // The Sponsorship of the requester's Organization that covered this Student when
+  // the Class Session occurred. Used both to narrow the rows and to name the
+  // Organization each surviving row belongs to.
+  const coveringSponsorship = (eb: ExpressionBuilder<DatabaseSchema, "bookings" | "class_sessions">) =>
+    eb.selectFrom("sponsorships")
+      .select("sponsorships.organization_id")
+      .whereRef("sponsorships.student_user_id", "=", "bookings.student_user_id")
+      .whereRef("sponsorships.accepted_at", "<=", "class_sessions.starts_at")
+      .where(sql<SqlBool>`(sponsorships.ended_at is null or sponsorships.ended_at > class_sessions.starts_at)`)
+      .$if(scope.organizationId !== null, (query) =>
+        query.where("sponsorships.organization_id", "=", scope.organizationId!))
+      .limit(1);
+
   const attendance = await transaction.selectFrom("attendance_record_corrections")
     .innerJoin("bookings", "bookings.id", "attendance_record_corrections.booking_id")
     .innerJoin("class_sessions", "class_sessions.id", "bookings.class_session_id")
     .leftJoin("attendance_records", "attendance_records.booking_id", "bookings.id")
-    .select(({ selectFrom }) => [
+    .select((eb) => [
       "attendance_record_corrections.id",
       "attendance_record_corrections.booking_id",
       "attendance_records.id as attendance_record_id",
@@ -305,16 +325,13 @@ async function correctionHistoryRows(transaction: Database, scope: ReportExportS
       // The Organization whose reporting covered the Student when the Class Session
       // occurred, if any. An unsponsored Student's revision carries no Organization
       // rather than being attributed to one it never belonged to.
-      selectFrom("sponsorships")
-        .select("sponsorships.organization_id")
-        .whereRef("sponsorships.student_user_id", "=", "bookings.student_user_id")
-        .whereRef("sponsorships.accepted_at", "<=", "class_sessions.starts_at")
-        .where(sql<SqlBool>`(sponsorships.ended_at is null or sponsorships.ended_at > class_sessions.starts_at)`)
-        .limit(1)
-        .as("organization_id"),
+      coveringSponsorship(eb).as("organization_id"),
     ])
     .where("class_sessions.starts_at", ">=", range.startInstant)
     .where("class_sessions.starts_at", "<", range.endInstantExclusive)
+    // Scoped: only revisions this Organization's own Sponsorship covered survive.
+    .$if(scope.organizationId !== null, (query) =>
+      query.where((eb) => eb.exists(coveringSponsorship(eb))))
     .orderBy("attendance_record_corrections.corrected_at")
     .orderBy("attendance_record_corrections.id")
     .execute();
@@ -356,6 +373,8 @@ async function correctionHistoryRows(transaction: Database, scope: ReportExportS
     // history extract selects the same population, so it never omits the revision
     // behind a marker the ordinary extract shows for the same range.
     .where(overlapsRange(range))
+    .$if(scope.organizationId !== null, (query) =>
+      query.where("sponsorships.organization_id", "=", scope.organizationId!))
     .execute();
 
   return [

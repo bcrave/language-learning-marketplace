@@ -1,10 +1,10 @@
 import {
-  correctionHistoryReportExportIsAuthorized,
+  correctionHistoryExportIsOrganizationScoped,
   csvDocument,
   csvField,
   exportProgressPercentage,
-  ordinaryReportExportIsAuthorized,
   reportExportExpiresAt,
+  reportExportIsAuthorized,
   reportExportIsDownloadable,
   reportExportRowLimitRefusal,
   REPORT_EXPORT_COLUMNS,
@@ -19,23 +19,22 @@ import { describe, expect, it } from "vitest";
 const COMPLETED_AT = new Date("2026-07-29T17:42:10.000Z");
 
 describe("Report Export authorization policy", () => {
-  it("authorizes the ordinary extract for the two reporting roles", () => {
-    expect(ordinaryReportExportIsAuthorized("ORGANIZATION_MANAGER")).toBe(true);
-    expect(ordinaryReportExportIsAuthorized("PLATFORM_ADMINISTRATOR")).toBe(true);
-    expect(ordinaryReportExportIsAuthorized("STUDENT")).toBe(false);
-    expect(ordinaryReportExportIsAuthorized("TEACHER")).toBe(false);
+  it("belongs to the two reporting roles and to no other", () => {
+    expect(reportExportIsAuthorized("ORGANIZATION_MANAGER")).toBe(true);
+    expect(reportExportIsAuthorized("PLATFORM_ADMINISTRATOR")).toBe(true);
+    expect(reportExportIsAuthorized("STUDENT")).toBe(false);
+    expect(reportExportIsAuthorized("TEACHER")).toBe(false);
   });
 
-  it("authorizes the correction-history extract separately, so authority over the ordinary extract never carries into prior values", () => {
-    expect(correctionHistoryReportExportIsAuthorized("PLATFORM_ADMINISTRATOR")).toBe(true);
-    expect(correctionHistoryReportExportIsAuthorized("ORGANIZATION_MANAGER")).toBe(false);
-    expect(correctionHistoryReportExportIsAuthorized("STUDENT")).toBe(false);
-    expect(correctionHistoryReportExportIsAuthorized("TEACHER")).toBe(false);
+  it("narrows the correction-history extract to an Organization Manager's own Organization", () => {
+    expect(correctionHistoryExportIsOrganizationScoped("ORGANIZATION_MANAGER")).toBe(true);
+    // Marketplace-wide authority is the absence of a narrowing, not a wider one.
+    expect(correctionHistoryExportIsOrganizationScoped("PLATFORM_ADMINISTRATOR")).toBe(false);
   });
 
-  it("never authorizes the correction-history extract for a role the ordinary extract refuses", () => {
+  it("never narrows the extract for a role that may not export at all", () => {
     fc.assert(fc.property(fc.constantFrom(...USER_ROLES), (role) =>
-      !correctionHistoryReportExportIsAuthorized(role) || ordinaryReportExportIsAuthorized(role)));
+      !correctionHistoryExportIsOrganizationScoped(role) || reportExportIsAuthorized(role)));
   });
 });
 

@@ -118,7 +118,7 @@ describe("Report Export panel", () => {
     expect(screen.getByText("Queued: waiting for a worker.")).toBeVisible();
   });
 
-  it("reports the separate authorization the correction-history extract requires", async () => {
+  it("reports a correction-history request that has no Organization to scope it to", async () => {
     const user = userEvent.setup();
     renderWithLocale(<ReportExportPanel idempotencyKeyFactory={() => "history-key"} />, "en", [
       listQuery([]),
@@ -132,7 +132,7 @@ describe("Report Export panel", () => {
             requestReportExport: {
               __typename: "ReportExportError",
               code: "CORRECTION_HISTORY_NOT_AUTHORIZED",
-              message: "The correction-history extract requires its own authorization.",
+              message: "The correction-history extract requires an Organization to scope it to.",
             },
           },
         },
@@ -141,7 +141,7 @@ describe("Report Export panel", () => {
 
     await requestExport(user, "Correction history");
 
-    expect(await screen.findByText("The correction-history extract requires its own authorization."))
+    expect(await screen.findByText("The correction-history extract requires an Organization to scope it to."))
       .toHaveAttribute("role", "alert");
   });
 
