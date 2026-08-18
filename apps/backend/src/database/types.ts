@@ -1,4 +1,4 @@
-import type { Generated, JSONColumnType } from "kysely";
+import type { ColumnType, Generated, JSONColumnType } from "kysely";
 
 import type { ReportExportKind, ReportExportState, UserRole } from "@marketplace/core";
 
@@ -122,8 +122,10 @@ export interface ReportExportsTable {
   organization_id: string | null;
   kind: ReportExportKind;
   schema_version: string;
-  period_start: string;
-  period_end_exclusive: string;
+  // PostgreSQL `date`, which pg reads back as a Date at local midnight and accepts
+  // as an ISO calendar date on the way in.
+  period_start: ColumnType<Date, string, string>;
+  period_end_exclusive: ColumnType<Date, string, string>;
   time_zone: string;
   state: ReportExportState;
   attempt_count: Generated<number>;

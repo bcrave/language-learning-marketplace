@@ -30,7 +30,6 @@ function reportExport(overrides: Record<string, unknown>) {
     id: completedId,
     kind: "ORDINARY",
     schemaVersion: "org_progress.v1",
-    actingRole: "ORGANIZATION_MANAGER",
     state: "COMPLETED",
     periodStartLocalDate: "2026-02-01",
     periodEndExclusiveLocalDate: "2026-07-01",
@@ -144,6 +143,52 @@ describe("Report Export panel", () => {
 
     expect(await screen.findByText("The correction-history extract requires its own authorization."))
       .toHaveAttribute("role", "alert");
+  });
+
+  it("keeps one attempt's Idempotency Key while the requester fixes it, and starts a new attempt after a busy queue", async () => {
+    const user = userEvent.setup();
+    const keys = ["first-key", "second-key"];
+    renderWithLocale(<ReportExportPanel idempotencyKeyFactory={() => keys.shift() ?? "exhausted"} />, "en", [
+      listQuery([]),
+      {
+        request: {
+          query: RequestReportExportDocument,
+          variables: { input: { idempotencyKey: "first-key", kind: "ORDINARY", ...PERIOD } },
+        },
+        result: {
+          data: {
+            requestReportExport: {
+              __typename: "ReportExportError",
+              code: "EXPORT_ALREADY_IN_PROGRESS",
+              message: "One Report Export runs at a time.",
+            },
+          },
+        },
+      },
+      {
+        request: {
+          query: RequestReportExportDocument,
+          variables: { input: { idempotencyKey: "second-key", kind: "ORDINARY", ...PERIOD } },
+        },
+        result: {
+          data: {
+            requestReportExport: {
+              __typename: "RequestReportExportSuccess",
+              reportExport: reportExport({ id: queuedId, state: "QUEUED", downloadable: false }),
+            },
+          },
+        },
+      },
+    ]);
+
+    await requestExport(user, "Progress and attendance");
+    expect(await screen.findByText("One Report Export runs at a time. Wait for the current one to finish."))
+      .toHaveAttribute("role", "alert");
+
+    // The same unchanged request, once the queue has drained, is a fresh attempt.
+    await user.click(screen.getByRole("button", { name: "Request export" }));
+    expect(await screen.findByText("Export queued. It appears below when it is ready."))
+      .toHaveAttribute("role", "status");
   });
 
   it("reports a refused range as the requester's own filter to fix", async () => {

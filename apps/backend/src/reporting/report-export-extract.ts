@@ -1,6 +1,7 @@
 import {
   csvDocument,
   exportProgressPercentage,
+  reportExportRowLimitRefusal,
   REPORT_EXPORT_COLUMNS,
   REPORT_EXPORT_SCHEMA_VERSIONS,
   type ReportExportKind,
@@ -350,8 +351,11 @@ async function correctionHistoryRows(transaction: Database, scope: ReportExportS
       "sponsorships.organization_id",
       "sponsorships.student_user_id",
     ])
-    .where("course_progress_snapshots.captured_at", ">=", range.startInstant)
-    .where("course_progress_snapshots.captured_at", "<", range.endInstantExclusive)
+    // The ordinary extract writes a boundary row, and its revision marker, for every
+    // Sponsorship the period overlaps — whatever instant the boundary froze at. The
+    // history extract selects the same population, so it never omits the revision
+    // behind a marker the ordinary extract shows for the same range.
+    .where(overlapsRange(range))
     .execute();
 
   return [
@@ -420,6 +424,11 @@ export async function buildReportExtract(transaction: Database, scope: ReportExp
       instant(row.changedAt),
     ]);
 
+  // The bound is checked before the document is written: an extract past it produces
+  // no file at all, rather than a whole CSV string built only to be thrown away.
+  if (reportExportRowLimitRefusal(rows.length)) {
+    return { schemaVersion, rowCount: rows.length, content: null };
+  }
   return {
     schemaVersion,
     rowCount: rows.length,

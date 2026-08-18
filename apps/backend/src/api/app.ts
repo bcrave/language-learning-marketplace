@@ -896,7 +896,7 @@ export function createApi(options: {
           if (!validatedInput.success) {
             throw createGraphQLError("Provide an extract kind and a valid local date range", { extensions: { code: "BAD_USER_INPUT" } });
           }
-          return graphQLResult(await idempotentReportExportMutation(
+          return graphQLResult(await idempotentActorMutation(
             context,
             requester,
             operation,
@@ -1501,9 +1501,15 @@ export function createApi(options: {
     return requester;
   }
 
-  async function idempotentReportExportMutation<T, C extends { __typename: string; code: string; message: string }>(
+  /**
+   * The role-agnostic idempotent mutation: the acting role travels as data rather
+   * than being baked into a per-role copy. The four per-role helpers above predate
+   * it and differ from it only in that constant, so they can collapse onto this one
+   * when a change is already touching them.
+   */
+  async function idempotentActorMutation<T, C extends { __typename: string; code: string; message: string }>(
     context: ApiContext,
-    requester: ReportExportRequester,
+    requester: { id: string; actingRole: UserRole },
     operation: string,
     idempotencyKey: string,
     input: object,

@@ -87,6 +87,9 @@ begin
     or new.row_count is distinct from old.row_count
     or new.content_digest is distinct from old.content_digest
     or new.completed_at is distinct from old.completed_at
+    -- The lifetime is part of what makes the artifact short-lived. Left mutable, a
+    -- later write could extend an expired export back into reach.
+    or new.expires_at is distinct from old.expires_at
   then
     raise exception 'A terminal Report Export cannot be rewritten';
   end if;

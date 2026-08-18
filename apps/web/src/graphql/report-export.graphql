@@ -2,7 +2,6 @@ fragment ReportExportDetails on ReportExport {
   id
   kind
   schemaVersion
-  actingRole
   state
   periodStartLocalDate
   periodEndExclusiveLocalDate

@@ -368,6 +368,22 @@ describe("Report Export GraphQL API", () => {
     expect(artifact.csv).not.toContain(administratorId);
   });
 
+  it("explains every correction marker the ordinary extract shows for the same range", async () => {
+    const ordinary = tabulate((await downloadExport((await listExports(managerSubject))[0]!.id, managerSubject)).csv);
+    const history = tabulate((await downloadExport(
+      (await listExports(administratorSubject)).find((reportExport) => reportExport.kind === "CORRECTION_HISTORY")!.id,
+      administratorSubject,
+    )).csv);
+
+    const markedStudents = new Set(ordinary
+      .filter((row) => row["is_corrected"] === "true")
+      .map((row) => row["student_ref"]));
+    expect(markedStudents.size).toBeGreaterThan(0);
+    for (const studentRef of markedStudents) {
+      expect(history.some((row) => row["student_ref"] === studentRef)).toBe(true);
+    }
+  });
+
   it("bounds the requested range and audits every refusal", async () => {
     const tooLong = await requestExportResult("ORDINARY", { fromLocalDate: "2025-01-01", toLocalDate: "2026-06-30" }, administratorSubject);
     expect(tooLong).toMatchObject({ code: "INVALID_REPORT_RANGE" });
@@ -550,6 +566,32 @@ describe("Report Export GraphQL API", () => {
       .set({ row_count: 0 })
       .where("id", "=", completed.id)
       .execute()).rejects.toThrow(/cannot be rewritten/);
+    // The lifetime is part of being short-lived: extending it would put an artifact
+    // that should have expired back within reach.
+    await expect(db.updateTable("report_exports")
+      .set({ expires_at: new Date(new Date(completed.expiresAt!).getTime() + 86_400_000) })
+      .where("id", "=", completed.id)
+      .execute()).rejects.toThrow(/cannot be rewritten/);
+  });
+
+  it("reads an artifact past its lifetime as Expired before the sweep reaches it", async () => {
+    const completed = (await listExports(managerSubject)).find((reportExport) => reportExport.state === "COMPLETED")!;
+    const previous = now;
+    now = new Date(new Date(completed.expiresAt!).getTime() + 1);
+    try {
+      const lapsed = (await listExports(managerSubject)).find((reportExport) => reportExport.id === completed.id)!;
+      expect(lapsed).toMatchObject({ state: "EXPIRED", downloadable: false });
+      // The record still holds the content until the sweep drops it, and the
+      // download path refuses it in the meantime.
+      const response = await graphql(
+        `query Artifact($id: ID!) { reportExportArtifact(id: $id) { csv } }`,
+        { id: completed.id },
+        managerSubject,
+      );
+      expect(response.errors?.[0]?.extensions.code).toBe("BAD_USER_INPUT");
+    } finally {
+      now = previous;
+    }
   });
 
   it("expires the artifact after 24 hours without turning the record into a backup", async () => {

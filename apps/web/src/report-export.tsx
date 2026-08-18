@@ -160,9 +160,16 @@ export function ReportExportPanel({
       setPendingAttempt(null);
       return;
     }
-    setFailure(outcome?.__typename === "ReportExportError"
-      ? errorMessageIds[outcome.code]
-      : "reportExport.loadError");
+    if (outcome?.__typename !== "ReportExportError") {
+      setFailure("reportExport.loadError");
+      return;
+    }
+    setFailure(errorMessageIds[outcome.code]);
+    // A range or an authorization the requester must change is the same attempt
+    // again, so it keeps its key. A queue that was simply busy is not: pressing
+    // Request once the queue drains is a new attempt and needs a new key, or the
+    // stored refusal would replay forever.
+    if (outcome.code === "EXPORT_ALREADY_IN_PROGRESS") setPendingAttempt(null);
   }
 
   async function download(id: string) {

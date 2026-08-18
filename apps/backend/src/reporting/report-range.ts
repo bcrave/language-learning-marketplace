@@ -94,6 +94,19 @@ export async function reportingDisplayTimeZone(db: Database, userId: string) {
   return user.display_time_zone;
 }
 
+/**
+ * A `date` column arrives as a Date at local midnight, so its calendar date is read
+ * from the local parts. Deriving it from the UTC instant would move the boundary a
+ * day for any reader west of UTC.
+ */
+export function localDateString(value: Date) {
+  return [
+    String(value.getFullYear()).padStart(4, "0"),
+    String(value.getMonth() + 1).padStart(2, "0"),
+    String(value.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 /** The last date a range includes, from the first date it excludes. */
 export function lastIncludedLocalDate(endExclusiveLocalDate: string) {
   return Temporal.PlainDate.from(endExclusiveLocalDate).subtract({ days: 1 }).toString();

@@ -7,7 +7,12 @@ import {
 } from "@marketplace/core";
 
 import type { Database } from "../database/database.js";
-import { reportingDisplayTimeZone, resolveReportRange } from "./report-range.js";
+import {
+  localDateString,
+  reportingDisplayTimeZone,
+  resolveReportRange,
+  type ResolvedReportRange,
+} from "./report-range.js";
 
 export type ReportExportActingRole = "ORGANIZATION_MANAGER" | "PLATFORM_ADMINISTRATOR";
 
@@ -33,20 +38,6 @@ export function reportExportError(code: ReportExportErrorCode, message: string) 
   return { __typename: "ReportExportError" as const, code, message };
 }
 
-/**
- * A `date` column arrives as a Date at local midnight, so its calendar date is read
- * from the local parts. Deriving it from the UTC instant would move the boundary a
- * day for any reader west of UTC.
- */
-function localDateString(value: string | Date) {
-  if (typeof value === "string") return value.slice(0, 10);
-  return [
-    String(value.getFullYear()).padStart(4, "0"),
-    String(value.getMonth() + 1).padStart(2, "0"),
-    String(value.getDate()).padStart(2, "0"),
-  ].join("-");
-}
-
 type ReportExportRow = {
   id: string;
   requested_by_user_id: string;
@@ -54,8 +45,8 @@ type ReportExportRow = {
   organization_id: string | null;
   kind: ReportExportKind;
   schema_version: string;
-  period_start: string | Date;
-  period_end_exclusive: string | Date;
+  period_start: Date;
+  period_end_exclusive: Date;
   time_zone: string;
   state: ReportExportState;
   requested_at: Date;
@@ -69,12 +60,19 @@ type ReportExportRow = {
 };
 
 export function projectReportExport(reportExport: ReportExportRow, now: Date) {
+  const downloadable = reportExportIsDownloadable(
+    { state: reportExport.state, expiresAt: reportExport.expires_at },
+    now,
+  );
   return {
     id: reportExport.id,
     kind: reportExport.kind,
     schemaVersion: reportExport.schema_version,
     actingRole: reportExport.acting_role,
-    state: reportExport.state,
+    // The sweep that drops the content runs on its own schedule, so a completed
+    // export that has outlived its 24 hours reads as Expired straight away rather
+    // than claiming to be available until the worker catches up.
+    state: reportExport.state === "COMPLETED" && !downloadable ? "EXPIRED" as const : reportExport.state,
     periodStartLocalDate: localDateString(reportExport.period_start),
     periodEndExclusiveLocalDate: localDateString(reportExport.period_end_exclusive),
     timeZone: reportExport.time_zone,
@@ -86,10 +84,7 @@ export function projectReportExport(reportExport: ReportExportRow, now: Date) {
     rowCount: reportExport.row_count,
     contentDigest: reportExport.content_digest,
     failureReasonCode: reportExport.failure_reason_code,
-    downloadable: reportExportIsDownloadable(
-      { state: reportExport.state, expiresAt: reportExport.expires_at },
-      now,
-    ),
+    downloadable,
   };
 }
 
@@ -267,19 +262,13 @@ export async function requestReportExport(
     );
   }
 
-  const created = await db.insertInto("report_exports").values({
-    requested_by_user_id: requester.id,
-    acting_role: requester.actingRole,
-    organization_id: requester.organizationId,
-    kind: input.kind,
-    schema_version: REPORT_EXPORT_SCHEMA_VERSIONS[input.kind],
-    period_start: range.fromLocalDate,
-    period_end_exclusive: range.endExclusiveLocalDate,
-    time_zone: range.timeZone,
-    state: "QUEUED",
-    requested_at: now,
-    correlation_id: correlationId,
-  }).returning([...PROJECTED_COLUMNS]).executeTakeFirstOrThrow();
+  const created = await insertQueuedExport(db, requester, input, range, correlationId, now);
+  if (created === null) {
+    return denied(
+      "EXPORT_ALREADY_IN_PROGRESS",
+      "One Report Export runs at a time. Wait for the current one to finish.",
+    );
+  }
 
   await recordReportExportAudit(db, {
     requester,
@@ -291,6 +280,38 @@ export async function requestReportExport(
   });
 
   return { __typename: "RequestReportExportSuccess" as const, reportExport: projectReportExport(created, now) };
+}
+
+// PostgreSQL raises this when the one-in-flight index catches a request the read a
+// moment earlier could not see. It is the same refusal, decided by the index.
+const UNIQUE_VIOLATION = "23505";
+
+async function insertQueuedExport(
+  db: Database,
+  requester: ReportExportRequester,
+  input: RequestReportExportInput,
+  range: ResolvedReportRange,
+  correlationId: string,
+  now: Date,
+) {
+  try {
+    return await db.insertInto("report_exports").values({
+      requested_by_user_id: requester.id,
+      acting_role: requester.actingRole,
+      organization_id: requester.organizationId,
+      kind: input.kind,
+      schema_version: REPORT_EXPORT_SCHEMA_VERSIONS[input.kind],
+      period_start: range.fromLocalDate,
+      period_end_exclusive: range.endExclusiveLocalDate,
+      time_zone: range.timeZone,
+      state: "QUEUED",
+      requested_at: now,
+      correlation_id: correlationId,
+    }).returning([...PROJECTED_COLUMNS]).executeTakeFirstOrThrow();
+  } catch (error) {
+    if ((error as { code?: string }).code === UNIQUE_VIOLATION) return null;
+    throw error;
+  }
 }
 
 /** One requester's own Report Exports, newest first. Nobody sees another's. */

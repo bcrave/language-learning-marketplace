@@ -255,6 +255,12 @@ export const ORDINARY_REPORT_EXPORT_COLUMNS = [
  * The accepted correction-history extract: prior and current values for one revised
  * field. It carries no correcting actor and no reason — investigative identity and
  * rationale stay in the filtered, append-only Audit Log (ADR 0056).
+ *
+ * The header names and the `subject_type` codes below are the accepted machine
+ * contract rather than a restatement of the glossary, so `attendance` and
+ * `changed_at` stay exactly as the accepted schema names them even where the domain
+ * says Attendance Record and the column behind one is `revised_at`. Renaming either
+ * would break every reader already parsing `correction_history.v1`.
  */
 export const CORRECTION_HISTORY_REPORT_EXPORT_COLUMNS = [
   "schema_version",

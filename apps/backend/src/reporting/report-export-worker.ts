@@ -1,17 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import {
-  reportExportExpiresAt,
-  reportExportRowLimitRefusal,
-  type ReportExportKind,
-} from "@marketplace/core";
+import { reportExportExpiresAt, type ReportExportKind } from "@marketplace/core";
 import type { TaskList } from "graphile-worker";
 
 import type { Database } from "../database/database.js";
 import { buildReportExtract } from "./report-export-extract.js";
 import { notifyReportExportRequester } from "./report-export-notifications.js";
 import { reportExportAuthorizationStillHolds, type ReportExportActingRole } from "./report-export-service.js";
-import { lastIncludedLocalDate, resolveReportRange } from "./report-range.js";
+import { lastIncludedLocalDate, localDateString, resolveReportRange } from "./report-range.js";
 
 /**
  * Generation retries a transient failure automatically. Only once the attempts are
@@ -48,20 +44,11 @@ type ClaimedExport = {
   acting_role: ReportExportActingRole;
   organization_id: string | null;
   kind: ReportExportKind;
-  period_start: string | Date;
-  period_end_exclusive: string | Date;
+  period_start: Date;
+  period_end_exclusive: Date;
   time_zone: string;
   attempt_count: number;
 };
-
-function localDateString(value: string | Date) {
-  if (typeof value === "string") return value.slice(0, 10);
-  return [
-    String(value.getFullYear()).padStart(4, "0"),
-    String(value.getMonth() + 1).padStart(2, "0"),
-    String(value.getDate()).padStart(2, "0"),
-  ].join("-");
-}
 
 async function recordWorkerAudit(db: Database, values: {
   targetId: string;
@@ -145,7 +132,7 @@ async function generateReportExport(db: Database, reportExport: ClaimedExport, n
       range: { ...range, dataAsOf: now },
     }));
 
-  if (reportExportRowLimitRefusal(extract.rowCount)) {
+  if (extract.content === null) {
     // Refused rather than truncated: a shortened file still opens and still looks
     // complete, which is the outcome ADR 0056 rules out.
     await failReportExport(db, reportExport, "ROW_LIMIT_EXCEEDED", now, correlationId);
