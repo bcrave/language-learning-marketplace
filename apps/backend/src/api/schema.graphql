@@ -454,6 +454,64 @@ type MarketplaceOperationalReport {
   actionableExceptions: MarketplaceActionableExceptions!
 }
 
+enum ReportExportKind { ORDINARY CORRECTION_HISTORY }
+
+enum ReportExportState { QUEUED RUNNING COMPLETED FAILED EXPIRED }
+
+enum ReportExportActingRole { ORGANIZATION_MANAGER PLATFORM_ADMINISTRATOR }
+
+enum ReportExportFailureReason { ROW_LIMIT_EXCEEDED AUTHORIZATION_REVOKED GENERATION_FAILED }
+
+type ReportExport {
+  id: ID!
+  kind: ReportExportKind!
+  schemaVersion: String!
+  actingRole: ReportExportActingRole!
+  state: ReportExportState!
+  periodStartLocalDate: String!
+  periodEndExclusiveLocalDate: String!
+  timeZone: String!
+  requestedAt: String!
+  startedAt: String
+  completedAt: String
+  expiresAt: String
+  dataAsOf: String
+  rowCount: Int
+  contentDigest: String
+  failureReasonCode: ReportExportFailureReason
+  downloadable: Boolean!
+}
+
+type ReportExportArtifact {
+  reportExport: ReportExport!
+  fileName: String!
+  contentType: String!
+  csv: String!
+}
+
+input RequestReportExportInput {
+  idempotencyKey: ID!
+  kind: ReportExportKind!
+  fromLocalDate: String!
+  toLocalDate: String!
+}
+
+type RequestReportExportSuccess { reportExport: ReportExport! }
+
+enum ReportExportErrorCode {
+  INVALID_REPORT_RANGE
+  DISPLAY_TIME_ZONE_REQUIRED
+  CORRECTION_HISTORY_NOT_AUTHORIZED
+  EXPORT_ALREADY_IN_PROGRESS
+  REPORT_EXPORT_NOT_FOUND
+  REPORT_EXPORT_NOT_DOWNLOADABLE
+  IDEMPOTENCY_KEY_REUSED
+}
+
+type ReportExportError { code: ReportExportErrorCode!, message: String! }
+
+union RequestReportExportResult = RequestReportExportSuccess | ReportExportError
+
 type User {
   id: ID!
   displayName: String!
@@ -619,6 +677,8 @@ type Query {
   organizationCohorts: [Cohort!]!
   organizationAttendanceAndProgressReport(cohortId: ID): OrganizationAttendanceAndProgressReport!
   marketplaceOperationalReport(input: MarketplaceOperationalReportInput): MarketplaceOperationalReport!
+  reportExports: [ReportExport!]!
+  reportExportArtifact(id: ID!): ReportExportArtifact!
 }
 
 type Mutation {
@@ -676,4 +736,5 @@ type Mutation {
   renameCohort(input: RenameCohortInput!): RenameCohortResult!
   addCohortMembership(input: AddCohortMembershipInput!): AddCohortMembershipResult!
   endCohortMembership(input: EndCohortMembershipInput!): EndCohortMembershipResult!
+  requestReportExport(input: RequestReportExportInput!): RequestReportExportResult!
 }

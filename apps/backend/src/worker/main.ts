@@ -5,6 +5,7 @@ import { parseAppConfig } from "../config.js";
 import { createDatabase } from "../database/database.js";
 import { migrateDatabase } from "../database/migrate.js";
 import { notificationDeliveryTasks } from "../notification/notification-delivery-worker.js";
+import { reportExportTasks } from "../reporting/report-export-worker.js";
 import { sponsorshipTasks } from "../sponsorship/sponsorship-worker.js";
 import { waitlistTasks } from "../waitlist/waitlist-worker.js";
 
@@ -17,12 +18,13 @@ const runner = await run({
   concurrency: 1,
   noHandleSignals: true,
   pollInterval: 10_000,
-  crontab: "* * * * * deliver_class_session_reminders\n* * * * * process_waitlist_entries\n* * * * * deliver_notification_intents\n0 3 * * * compact_terminal_notifications\n* * * * * expire_sponsorship_invitations\n* * * * * grant_sponsorship_credits",
+  crontab: "* * * * * deliver_class_session_reminders\n* * * * * process_waitlist_entries\n* * * * * deliver_notification_intents\n0 3 * * * compact_terminal_notifications\n* * * * * expire_sponsorship_invitations\n* * * * * grant_sponsorship_credits\n* * * * * generate_report_exports\n*/5 * * * * expire_report_exports",
   taskList: {
     ...classSessionReminderTasks(db),
     ...waitlistTasks(db),
     ...notificationDeliveryTasks(db),
     ...sponsorshipTasks(db),
+    ...reportExportTasks(db),
   },
 });
 

@@ -202,6 +202,171 @@ export function courseProgressGain(baseline: CourseProgressValue, ending: Course
   };
 }
 
+export const REPORT_EXPORT_KINDS = ["ORDINARY", "CORRECTION_HISTORY"] as const;
+export type ReportExportKind = (typeof REPORT_EXPORT_KINDS)[number];
+export type ReportExportState = "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "EXPIRED";
+
+/**
+ * The schema version is written into every row rather than only into the file name,
+ * so an extract separated from its request still declares the contract it was
+ * written against (ADR 0056).
+ */
+export const REPORT_EXPORT_SCHEMA_VERSIONS: Record<ReportExportKind, string> = {
+  ORDINARY: "org_progress.v1",
+  CORRECTION_HISTORY: "correction_history.v1",
+};
+
+/**
+ * The accepted ordinary extract: current effective reporting facts plus the
+ * correction markers that say a fact was revised. Prior values are deliberately
+ * absent — they belong to the separately authorized correction-history extract —
+ * and so are contact details, free text, Session Ratings, Class Credit balances,
+ * and per-Booking credit provenance.
+ *
+ * Header names are English `snake_case` and every coded value is a canonical
+ * unlocalized code, so the contract does not move with the reader's Interface
+ * Locale.
+ */
+export const ORDINARY_REPORT_EXPORT_COLUMNS = [
+  "schema_version",
+  "data_as_of",
+  "requester_time_zone",
+  "period_start",
+  "period_end_exclusive",
+  "organization_ref",
+  "organization_name",
+  "student_ref",
+  "student_display_name",
+  "course_ref",
+  "target_language_code",
+  "curriculum_level_code",
+  "snapshot_kind",
+  "snapshot_at",
+  "completed_unit_count",
+  "active_unit_count",
+  "progress_percentage",
+  "completed_during_sponsorship",
+  "is_corrected",
+  "correction_count",
+  "latest_correction_at",
+] as const;
+
+/**
+ * The accepted correction-history extract: prior and current values for one revised
+ * field. It carries no correcting actor and no reason — investigative identity and
+ * rationale stay in the filtered, append-only Audit Log (ADR 0056).
+ *
+ * The header names and the `subject_type` codes below are the accepted machine
+ * contract rather than a restatement of the glossary, so `attendance` and
+ * `changed_at` stay exactly as the accepted schema names them even where the domain
+ * says Attendance Record and the column behind one is `revised_at`. Renaming either
+ * would break every reader already parsing `correction_history.v1`.
+ */
+export const CORRECTION_HISTORY_REPORT_EXPORT_COLUMNS = [
+  "schema_version",
+  "data_as_of",
+  "requester_time_zone",
+  "organization_ref",
+  "subject_ref",
+  "subject_type",
+  "student_ref",
+  "field_code",
+  "revision_sequence",
+  "prior_value",
+  "current_value",
+  "changed_at",
+] as const;
+
+export const REPORT_EXPORT_COLUMNS: Record<ReportExportKind, readonly string[]> = {
+  ORDINARY: ORDINARY_REPORT_EXPORT_COLUMNS,
+  CORRECTION_HISTORY: CORRECTION_HISTORY_REPORT_EXPORT_COLUMNS,
+};
+
+export const REPORT_EXPORT_MAXIMUM_RANGE_MONTHS = 12;
+export const REPORT_EXPORT_MAXIMUM_ROW_COUNT = 25_000;
+export const REPORT_EXPORT_LIFETIME_MILLISECONDS = 24 * 60 * 60_000;
+
+/**
+ * An extract that would exceed the accepted row count is refused outright. A
+ * truncated file is the dangerous outcome: it still opens, still looks complete, and
+ * silently drops the rows a reader most needs.
+ */
+export function reportExportRowLimitRefusal(rowCount: number) {
+  return rowCount > REPORT_EXPORT_MAXIMUM_ROW_COUNT ? "ROW_LIMIT_EXCEEDED" as const : null;
+}
+
+export function reportExportExpiresAt(completedAt: Date) {
+  return new Date(completedAt.getTime() + REPORT_EXPORT_LIFETIME_MILLISECONDS);
+}
+
+/**
+ * A Report Export is a short-lived extract, never a backup. Only a completed
+ * artifact inside its own lifetime may be downloaded, and expiry is one-way: no
+ * later clock, retry, or re-authorization reopens it.
+ */
+export function reportExportIsDownloadable(
+  reportExport: { state: ReportExportState; expiresAt: Date | null },
+  now: Date,
+) {
+  return reportExport.state === "COMPLETED"
+    && reportExport.expiresAt !== null
+    && now.getTime() < reportExport.expiresAt.getTime();
+}
+
+/** Report Exports belong to the two reporting roles and to no other. */
+export function reportExportIsAuthorized(actingRole: UserRole) {
+  return actingRole === "ORGANIZATION_MANAGER" || actingRole === "PLATFORM_ADMINISTRATOR";
+}
+
+/**
+ * The correction-history extract is authorized on its own terms rather than as a
+ * consequence of ordinary reporting authority, and for an Organization Manager those
+ * terms are a scope: prior values only for revisions of facts inside its own
+ * Sponsorships, never another Organization's and never an unsponsored Student's.
+ * Marketplace-wide operational authority carries no such narrowing.
+ *
+ * This is where the separate authorization bites. Both reporting roles may ask for
+ * the extract; what the extract may contain is decided per requester.
+ */
+export function correctionHistoryExportIsOrganizationScoped(actingRole: UserRole) {
+  return actingRole === "ORGANIZATION_MANAGER";
+}
+
+// A spreadsheet treats a leading formula character as code rather than as a name, so
+// a value that starts with one is prefixed and quoted. Numbers are written as
+// numbers, which keeps a negative count readable instead of disguising it.
+const CSV_FORMULA_PREFIXES = new Set(["=", "+", "-", "@", "\t", "\r"]);
+
+export function csvField(value: string | number | boolean | null | undefined) {
+  if (value === null || value === undefined) return "";
+  if (typeof value !== "string") return String(value);
+  const neutralized = CSV_FORMULA_PREFIXES.has(value.slice(0, 1)) ? `'${value}` : value;
+  return /[",\n\r]/.test(neutralized) || neutralized !== value
+    ? `"${neutralized.replaceAll('"', '""')}"`
+    : neutralized;
+}
+
+export function csvDocument(
+  columns: readonly string[],
+  rows: readonly (readonly (string | number | boolean | null)[])[],
+) {
+  return [columns, ...rows]
+    .map((row) => row.map((value) => csvField(value)).join(","))
+    .join("\n") + "\n";
+}
+
+/**
+ * The exported share of a Course's active Lesson Units, as a fixed one-decimal
+ * value with no grouping separator: the same bytes whatever locale reads the file.
+ * The interface percentage stays a rounded whole number, so this is a separate
+ * function rather than a formatting of that one.
+ */
+export function exportProgressPercentage(completedActiveLessonUnitCount: number, activeLessonUnitCount: number) {
+  return activeLessonUnitCount === 0
+    ? "0.0"
+    : (100 * completedActiveLessonUnitCount / activeLessonUnitCount).toFixed(1);
+}
+
 export const INTERFACE_LOCALES = ["en", "es"] as const;
 export type InterfaceLocale = (typeof INTERFACE_LOCALES)[number];
 
@@ -358,6 +523,8 @@ export const interfaceMessages = {
     "organization-credit.granted.student": "Organization Credit Benefit granted {amount, number} Class Credits. Available balance: {availableBalance, number}. Next grant: {nextAnniversaryAt, date, long} at {nextAnniversaryAt, time, short}.",
     "sponsorship.terminated.student": "Your Sponsorship with {organizationName} ended {endedAt, date, long} at {endedAt, time, short}, {endedByParty, select, STUDENT {ended by you} other {ended by the Organization}}. Future Organization credit grants stop and Organization reporting freezes to the Sponsorship period. Your account and the Class Credits you already own remain yours.",
     "sponsorship.terminated.manager": "{studentDisplayName}'s Sponsorship ended {endedAt, date, long} at {endedAt, time, short}, {endedByParty, select, STUDENT {ended by the Student} other {ended by your Organization}}. Future Organization credit grants stop and reporting freezes to the Sponsorship period.",
+    "report-export.completed.requester": "Your {kind, select, CORRECTION_HISTORY {correction history} other {progress and attendance}} Report Export for {periodStart} through {periodEndExclusive} is ready: {rowCount, number} rows. Open Reports to download it before {expiresAt, date, long} at {expiresAt, time, short}.",
+    "report-export.failed.requester": "Your {kind, select, CORRECTION_HISTORY {correction history} other {progress and attendance}} Report Export for {periodStart} through {periodEndExclusive} did not complete. {guidance, select, ROW_LIMIT_EXCEEDED {The range produced more than 25,000 rows; choose a shorter range.} AUTHORIZATION_REVOKED {Your authorization for this extract changed before it was generated.} other {Request it again.}} Reference: {correlationReference}.",
     "sponsorship.studentTitle": "My Sponsorship",
     "sponsorship.loading": "Loading Sponsorship…",
     "sponsorship.loadError": "We couldn't load your Sponsorship. Try again.",
@@ -515,6 +682,46 @@ export const interfaceMessages = {
     "marketplaceReport.credits.source.ORGANIZATION_CREDIT_GRANT": "Organization Credit Benefit",
     "marketplaceReport.credits.source.BOOKING_DEDUCTION": "Booking deduction",
     "marketplaceReport.credits.source.BOOKING_REFUND": "Booking refund",
+    "reportExport.title": "Report Exports",
+    "reportExport.help": "An export captures the reporting facts in force when generation starts. It is not a historical rebuild: a later export of the same range reflects every correction accepted in between.",
+    "reportExport.excludes": "Every schema excludes email and authentication identifiers, free text, Session Ratings, correction actors and reasons, administrator notes, total Class Credit balances, and per-Booking credit provenance.",
+    "reportExport.request.legend": "Request an export",
+    "reportExport.request.kind": "Extract",
+    "reportExport.kind.ORDINARY": "Progress and attendance",
+    "reportExport.kind.CORRECTION_HISTORY": "Correction history",
+    "reportExport.correctionHistoryHelp": "The correction-history extract carries prior and current values. It is authorized separately from ordinary reporting and narrowed to your own relationship scope, and it never carries the correcting actor or reason.",
+    "reportExport.request.from": "From",
+    "reportExport.request.to": "To",
+    "reportExport.request.help": "Choose a range of at most 12 months. Dates are read in your Display Time Zone.",
+    "reportExport.request.submit": "Request export",
+    "reportExport.request.submitting": "Requesting export…",
+    "reportExport.request.queued": "Export queued. It appears below when it is ready.",
+    "reportExport.list.title": "Your exports",
+    "reportExport.list.empty": "You have no Report Exports.",
+    "reportExport.loading": "Loading your Report Exports…",
+    "reportExport.loadError": "We couldn\u2019t load your Report Exports. Try again.",
+    "reportExport.summary": "{kind} for {periodStart} through {periodEndExclusive} (exclusive), read in {timeZone}",
+    "reportExport.schemaVersion": "Schema {schemaVersion}",
+    "reportExport.state.QUEUED": "Queued: waiting for a worker.",
+    "reportExport.state.RUNNING": "Running: capturing one consistent snapshot.",
+    "reportExport.state.COMPLETED": "Completed {completedAt}: {rows, number} rows as of {dataAsOf}.",
+    "reportExport.state.FAILED": "Failed. No file was created.",
+    "reportExport.state.EXPIRED": "Expired. The file is gone; request a fresh export.",
+    "reportExport.expiresAt": "Available to download until {expiresAt}",
+    "reportExport.digest": "Content digest {digest}",
+    "reportExport.download": "Download {kind} export",
+    "reportExport.downloading": "Preparing the download…",
+    "reportExport.downloadReady": "{fileName} is ready: {rows, number} rows.",
+    "reportExport.failure.ROW_LIMIT_EXCEEDED": "The range produced more than 25,000 rows. The export was refused rather than shortened; choose a shorter range.",
+    "reportExport.failure.AUTHORIZATION_REVOKED": "Your authorization for this extract changed before it was generated.",
+    "reportExport.failure.GENERATION_FAILED": "Generation did not complete after automatic retries. Try requesting it again.",
+    "reportExport.error.INVALID_REPORT_RANGE": "Choose a range of at most 12 months that starts on or before it ends.",
+    "reportExport.error.DISPLAY_TIME_ZONE_REQUIRED": "Save a Display Time Zone before requesting an export.",
+    "reportExport.error.CORRECTION_HISTORY_NOT_AUTHORIZED": "The correction-history extract requires an Organization to scope it to.",
+    "reportExport.error.EXPORT_ALREADY_IN_PROGRESS": "One Report Export runs at a time. Wait for the current one to finish.",
+    "reportExport.error.REPORT_EXPORT_NOT_FOUND": "That Report Export was not found.",
+    "reportExport.error.REPORT_EXPORT_NOT_DOWNLOADABLE": "That Report Export is no longer available. Request a fresh export.",
+    "reportExport.error.IDEMPOTENCY_KEY_REUSED": "That request identifier was already used for a different export.",
     "marketplaceReport.progress.title": "Course Progress",
     "marketplaceReport.progress.empty": "No Course carries reportable progress yet.",
     "marketplaceReport.progress.current": "Course Progress is current effective now rather than confined to the reported range.",
@@ -1070,6 +1277,8 @@ export const interfaceMessages = {
     "organization-credit.granted.student": "El beneficio de créditos de la Organización otorgó {amount, number} créditos de clase. Saldo disponible: {availableBalance, number}. Próxima concesión: {nextAnniversaryAt, date, long} a las {nextAnniversaryAt, time, short}.",
     "sponsorship.terminated.student": "Tu Patrocinio con {organizationName} terminó el {endedAt, date, long} a las {endedAt, time, short}, {endedByParty, select, STUDENT {terminado por ti} other {terminado por la Organización}}. Las futuras concesiones de créditos de la Organización se detienen y los informes de la Organización se congelan al periodo del Patrocinio. Tu cuenta y los créditos de clase que ya posees siguen siendo tuyos.",
     "sponsorship.terminated.manager": "El Patrocinio de {studentDisplayName} terminó el {endedAt, date, long} a las {endedAt, time, short}, {endedByParty, select, STUDENT {terminado por el Estudiante} other {terminado por tu Organización}}. Las futuras concesiones de créditos de la Organización se detienen y los informes se congelan al periodo del Patrocinio.",
+    "report-export.completed.requester": "Tu exportación de informe de {kind, select, CORRECTION_HISTORY {historial de correcciones} other {progreso y asistencia}} del {periodStart} al {periodEndExclusive} está lista: {rowCount, number} filas. Abre Informes para descargarla antes del {expiresAt, date, long} a las {expiresAt, time, short}.",
+    "report-export.failed.requester": "Tu exportación de informe de {kind, select, CORRECTION_HISTORY {historial de correcciones} other {progreso y asistencia}} del {periodStart} al {periodEndExclusive} no se completó. {guidance, select, ROW_LIMIT_EXCEEDED {El rango produjo más de 25.000 filas; elige un rango más corto.} AUTHORIZATION_REVOKED {Tu autorización para este extracto cambió antes de generarlo.} other {Vuelve a solicitarla.}} Referencia: {correlationReference}.",
     "sponsorship.studentTitle": "Mi Patrocinio",
     "sponsorship.loading": "Cargando el Patrocinio…",
     "sponsorship.loadError": "No pudimos cargar tu Patrocinio. Inténtalo de nuevo.",
@@ -1227,6 +1436,46 @@ export const interfaceMessages = {
     "marketplaceReport.credits.source.ORGANIZATION_CREDIT_GRANT": "Beneficio de Créditos de la Organización",
     "marketplaceReport.credits.source.BOOKING_DEDUCTION": "Descuento por Reserva",
     "marketplaceReport.credits.source.BOOKING_REFUND": "Devolución por Reserva",
+    "reportExport.title": "Exportaciones de informes",
+    "reportExport.help": "Una exportación captura los hechos de informe vigentes al iniciar la generación. No es una reconstrucción histórica: una exportación posterior del mismo rango refleja todas las correcciones aceptadas mientras tanto.",
+    "reportExport.excludes": "Todos los esquemas excluyen identificadores de correo y autenticación, texto libre, valoraciones de sesión, actores y motivos de corrección, notas administrativas, saldos totales de créditos de clase y la procedencia de créditos por reserva.",
+    "reportExport.request.legend": "Solicitar una exportación",
+    "reportExport.request.kind": "Extracto",
+    "reportExport.kind.ORDINARY": "Progreso y asistencia",
+    "reportExport.kind.CORRECTION_HISTORY": "Historial de correcciones",
+    "reportExport.correctionHistoryHelp": "El extracto de historial de correcciones incluye los valores anteriores y actuales. Se autoriza por separado de los informes ordinarios y se limita a tu propio ámbito de relación, y nunca incluye el actor ni el motivo de la corrección.",
+    "reportExport.request.from": "Desde",
+    "reportExport.request.to": "Hasta",
+    "reportExport.request.help": "Elige un rango de 12 meses como máximo. Las fechas se leen en tu zona horaria de visualización.",
+    "reportExport.request.submit": "Solicitar exportación",
+    "reportExport.request.submitting": "Solicitando exportación…",
+    "reportExport.request.queued": "Exportación en cola. Aparecerá abajo cuando esté lista.",
+    "reportExport.list.title": "Tus exportaciones",
+    "reportExport.list.empty": "No tienes exportaciones de informes.",
+    "reportExport.loading": "Cargando tus exportaciones de informes…",
+    "reportExport.loadError": "No pudimos cargar tus exportaciones de informes. Inténtalo de nuevo.",
+    "reportExport.summary": "{kind} del {periodStart} al {periodEndExclusive} (exclusivo), leído en {timeZone}",
+    "reportExport.schemaVersion": "Esquema {schemaVersion}",
+    "reportExport.state.QUEUED": "En cola: esperando a un procesador.",
+    "reportExport.state.RUNNING": "En curso: capturando una instantánea consistente.",
+    "reportExport.state.COMPLETED": "Completada el {completedAt}: {rows, number} filas a fecha de {dataAsOf}.",
+    "reportExport.state.FAILED": "Falló. No se creó ningún archivo.",
+    "reportExport.state.EXPIRED": "Caducada. El archivo ya no existe; solicita una exportación nueva.",
+    "reportExport.expiresAt": "Disponible para descargar hasta el {expiresAt}",
+    "reportExport.digest": "Huella del contenido {digest}",
+    "reportExport.download": "Descargar la exportación de {kind}",
+    "reportExport.downloading": "Preparando la descarga…",
+    "reportExport.downloadReady": "{fileName} está listo: {rows, number} filas.",
+    "reportExport.failure.ROW_LIMIT_EXCEEDED": "El rango produjo más de 25.000 filas. La exportación se rechazó en lugar de recortarse; elige un rango más corto.",
+    "reportExport.failure.AUTHORIZATION_REVOKED": "Tu autorización para este extracto cambió antes de generarlo.",
+    "reportExport.failure.GENERATION_FAILED": "La generación no se completó tras los reintentos automáticos. Vuelve a solicitarla.",
+    "reportExport.error.INVALID_REPORT_RANGE": "Elige un rango de 12 meses como máximo que empiece antes de terminar o el mismo día.",
+    "reportExport.error.DISPLAY_TIME_ZONE_REQUIRED": "Guarda una zona horaria de visualización antes de solicitar una exportación.",
+    "reportExport.error.CORRECTION_HISTORY_NOT_AUTHORIZED": "El extracto de historial de correcciones requiere una Organización a la que limitarlo.",
+    "reportExport.error.EXPORT_ALREADY_IN_PROGRESS": "Solo se ejecuta una exportación de informe a la vez. Espera a que termine la actual.",
+    "reportExport.error.REPORT_EXPORT_NOT_FOUND": "No se encontró esa exportación de informe.",
+    "reportExport.error.REPORT_EXPORT_NOT_DOWNLOADABLE": "Esa exportación de informe ya no está disponible. Solicita una exportación nueva.",
+    "reportExport.error.IDEMPOTENCY_KEY_REUSED": "Ese identificador de solicitud ya se usó para otra exportación.",
     "marketplaceReport.progress.title": "Progreso del Curso",
     "marketplaceReport.progress.empty": "Todavía no hay ningún Curso con progreso que informar.",
     "marketplaceReport.progress.current": "El Progreso del Curso es el valor efectivo actual y no se limita al intervalo informado.",

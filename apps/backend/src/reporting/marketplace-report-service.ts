@@ -1,87 +1,24 @@
-import { Temporal } from "@js-temporal/polyfill";
 import {
   latestCompletedClassSessionStart,
   studentCancellationRatePercentage,
   STUDENT_CANCELLATION_TIMELY_WINDOW_MILLISECONDS,
 } from "@marketplace/core";
 import { sql } from "kysely";
-import { z } from "zod";
 
 import type { Database } from "../database/database.js";
 import { emptyAttendanceCounts, projectAttendanceSummary, type AttendanceCounts } from "./attendance-summary.js";
+import {
+  reportingDisplayTimeZone,
+  resolveReportRange,
+  type ReportRangeInput,
+  type ResolvedReportRange,
+} from "./report-range.js";
 
 type AdministratorActor = { id: string };
 
-/**
- * The report reads a bounded range of activity, and it reads it in the Platform
- * Administrator's own Display Time Zone: a Class Session's scheduled date is the
- * date the reader saw it on, not a UTC accident. The 12-month bound is the same one
- * the Report Export carries (ADR 0056), so the ordinary report and its export cannot
- * disagree about how much activity one request may ask for.
- */
-const MAXIMUM_RANGE_MONTHS = 12;
-const DEFAULT_RANGE_DAYS = 30;
+export type MarketplaceReportInput = ReportRangeInput;
+
 const EXCEPTION_LIST_LIMIT = 50;
-
-const rangeInputSchema = z.object({
-  fromLocalDate: z.iso.date().nullish(),
-  toLocalDate: z.iso.date().nullish(),
-}).strict();
-
-export type MarketplaceReportInput = z.input<typeof rangeInputSchema>;
-
-export class InvalidReportRange extends Error {}
-
-/**
- * A Display Time Zone the reader never saved is not a bad range: there is no date to
- * interpret at all. It is separated so the refusal a reader sees, and the Audit Entry
- * behind it, name the thing that is actually missing.
- */
-export class MissingDisplayTimeZone extends Error {}
-
-type ResolvedRange = {
-  fromLocalDate: string;
-  toLocalDate: string;
-  timeZone: string;
-  startInstant: Date;
-  endInstantExclusive: Date;
-};
-
-function resolveRange(input: MarketplaceReportInput, timeZone: string, now: Date): ResolvedRange {
-  const parsed = rangeInputSchema.safeParse(input);
-  if (!parsed.success) throw new InvalidReportRange("Choose a valid local date range.");
-
-  let toDate: Temporal.PlainDate;
-  let fromDate: Temporal.PlainDate;
-  try {
-    const today = Temporal.Instant.from(now.toISOString()).toZonedDateTimeISO(timeZone).toPlainDate();
-    toDate = parsed.data.toLocalDate ? Temporal.PlainDate.from(parsed.data.toLocalDate) : today;
-    fromDate = parsed.data.fromLocalDate
-      ? Temporal.PlainDate.from(parsed.data.fromLocalDate)
-      : toDate.subtract({ days: DEFAULT_RANGE_DAYS - 1 });
-  } catch {
-    throw new InvalidReportRange("Choose a valid local date range.");
-  }
-  if (Temporal.PlainDate.compare(fromDate, toDate) > 0) {
-    throw new InvalidReportRange("Choose a range that starts on or before it ends.");
-  }
-  const lastAllowedDate = fromDate.add({ months: MAXIMUM_RANGE_MONTHS }).subtract({ days: 1 });
-  if (Temporal.PlainDate.compare(toDate, lastAllowedDate) > 0) {
-    throw new InvalidReportRange(`Choose a range of at most ${MAXIMUM_RANGE_MONTHS} months.`);
-  }
-
-  try {
-    return {
-      fromLocalDate: fromDate.toString(),
-      toLocalDate: toDate.toString(),
-      timeZone,
-      startInstant: new Date(fromDate.toPlainDateTime("00:00").toZonedDateTime(timeZone, { disambiguation: "compatible" }).epochMilliseconds),
-      endInstantExclusive: new Date(toDate.add({ days: 1 }).toPlainDateTime("00:00").toZonedDateTime(timeZone, { disambiguation: "compatible" }).epochMilliseconds),
-    };
-  } catch {
-    throw new InvalidReportRange("Choose a local date range with valid boundaries in the saved Display Time Zone.");
-  }
-}
 
 type CancellationCounts = { studentCancellationCount: number; timelyCount: number; lateCount: number };
 
@@ -143,7 +80,7 @@ function reportedClassification(now: Date) {
  * Zone, which PostgreSQL derives from the named zone directly: both rates group by
  * the date their reader saw the session on.
  */
-async function reportedActivity(db: Database, range: ResolvedRange, now: Date) {
+async function reportedActivity(db: Database, range: ResolvedReportRange, now: Date) {
   return db.selectFrom("bookings")
     .innerJoin("class_sessions", "class_sessions.id", "bookings.class_session_id")
     .leftJoin("attendance_records", "attendance_records.booking_id", "bookings.id")
@@ -214,7 +151,7 @@ const CREDIT_SOURCES = ["CREDIT_ADJUSTMENT", "SUBSCRIPTION_GRANT", "ORGANIZATION
  * while one Student's balance stays behind the administration surface that already
  * requires naming them.
  */
-async function creditReport(db: Database, range: ResolvedRange) {
+async function creditReport(db: Database, range: ResolvedReportRange) {
   const rows = await db.selectFrom("class_credit_ledger_entries")
     .select([
       "source",
@@ -254,7 +191,7 @@ async function creditReport(db: Database, range: ResolvedRange) {
  * extract and the correcting actor and reason in the filtered Audit Log, so a report
  * that showed them here would quietly widen both.
  */
-async function correctionReport(db: Database, range: ResolvedRange) {
+async function correctionReport(db: Database, range: ResolvedReportRange) {
   const corrections = await db.selectFrom("attendance_record_corrections")
     .innerJoin("bookings", "bookings.id", "attendance_record_corrections.booking_id")
     .innerJoin("class_sessions", "class_sessions.id", "bookings.class_session_id")
@@ -299,7 +236,7 @@ type ExceptionItem = {
  * provider failure code — so finding the work never means reading the operational
  * telemetry that reporting deliberately does not expose.
  */
-async function exceptionItems(db: Database, range: ResolvedRange, now: Date): Promise<ExceptionItem[]> {
+async function exceptionItems(db: Database, range: ResolvedReportRange, now: Date): Promise<ExceptionItem[]> {
   const unrecorded = await db.selectFrom("class_sessions")
     .innerJoin("lesson_units", "lesson_units.id", "class_sessions.lesson_unit_id")
     .innerJoin("courses", "courses.id", "lesson_units.course_id")
@@ -380,14 +317,7 @@ export async function marketplaceOperationalReport(
   input: MarketplaceReportInput,
   now: Date,
 ) {
-  const user = await db.selectFrom("users")
-    .select("display_time_zone")
-    .where("id", "=", administrator.id)
-    .executeTakeFirstOrThrow();
-  if (!user.display_time_zone) {
-    throw new MissingDisplayTimeZone("A saved Display Time Zone is required to read the marketplace report.");
-  }
-  const range = resolveRange(input, user.display_time_zone, now);
+  const range = resolveReportRange(input, await reportingDisplayTimeZone(db, administrator.id), now);
 
   const activity = await reportedActivity(db, range, now);
   const attendance = emptyAttendanceCounts();

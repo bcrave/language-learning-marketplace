@@ -40,6 +40,7 @@ import { AdministratorQualityPanel, StudentFeedbackRatingsPanel, TeacherFeedback
 import { OrganizationCohortsPanel } from "./cohorts.js";
 import { MarketplaceReportPanel } from "./marketplace-report.js";
 import { OrganizationReportPanel } from "./organization-report.js";
+import { ReportExportPanel } from "./report-export.js";
 import { OrganizationSponsorshipPanel, StudentSponsorshipPanel } from "./sponsorship.js";
 import { AdministratorAttendanceReviewPanel, StudentAttendanceReviewPanel } from "./attendance-review.js";
 
@@ -442,6 +443,7 @@ function WorkspaceContent({
         )}
         {currentPlace === "ORGANIZATION_REPORTS" && <OrganizationReportPanel />}
         {currentPlace === "ADMINISTRATION_REPORTS" && <MarketplaceReportPanel />}
+        {(currentPlace === "ORGANIZATION_REPORTS" || currentPlace === "ADMINISTRATION_REPORTS") && <ReportExportPanel />}
         {currentPlace === "STUDENT_DISCOVERY" && hasSavedPreferences && (
           <StudentDiscoveryPanel displayTimeZone={displayTimeZone} />
         )}
