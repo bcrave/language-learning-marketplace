@@ -42,7 +42,12 @@ describe("private feedback and ratings", () => {
 
   it("shows submitted feedback and submits a private Session Rating", async () => {
     vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000040");
-    const item = { bookingId: "booking-40", classSessionId: "session-40", classSessionEndsAt: "2026-08-10T11:00:00Z", feedbackDeadline: "2026-08-12T11:00:00Z", ratingDeadline: "2026-08-17T11:00:00Z", teacherDisplayName: "Taylor Teacher", learningFeedback: { bookingId: "booking-40", observedStrengths: ["SPOKEN_PRODUCTION"], suggestedFocuses: [], observations: "Clear sequence", nextPractice: "Practice target sounds", state: "SUBMITTED", submittedAt: "2026-08-10T12:00:00Z", redactedAt: null, redactionReason: null, updatedAt: "2026-08-10T12:00:00Z" }, sessionRating: null };
+    // The rating form renders only while the seven-day window is open, which the
+    // panel decides against the wall clock. A fixed deadline would therefore make
+    // this test pass until that date and fail every day afterwards, so the open
+    // window is expressed relative to now.
+    const openRatingDeadline = new Date(Date.now() + 2 * 24 * 60 * 60_000).toISOString();
+    const item = { bookingId: "booking-40", classSessionId: "session-40", classSessionEndsAt: "2026-08-10T11:00:00Z", feedbackDeadline: "2026-08-12T11:00:00Z", ratingDeadline: openRatingDeadline, teacherDisplayName: "Taylor Teacher", learningFeedback: { bookingId: "booking-40", observedStrengths: ["SPOKEN_PRODUCTION"], suggestedFocuses: [], observations: "Clear sequence", nextPractice: "Practice target sounds", state: "SUBMITTED", submittedAt: "2026-08-10T12:00:00Z", redactedAt: null, redactionReason: null, updatedAt: "2026-08-10T12:00:00Z" }, sessionRating: null };
     const mocks: MockedResponse[] = [
       { request: { query: StudentFeedbackAndRatingsDocument }, result: { data: { studentFeedbackAndRatings: [item] } } },
       { request: { query: SaveSessionRatingDocument, variables: { input: { idempotencyKey: "00000000-0000-4000-8000-000000000040", bookingId: "booking-40", overallRating: 5, positiveTags: ["SUPPORTIVE"], improvementTags: [], comment: "A useful session" } } }, result: { data: { saveSessionRating: { __typename: "SaveSessionRatingSuccess", rating: { bookingId: "booking-40", overallRating: 5, positiveTags: ["SUPPORTIVE"], improvementTags: [], comment: "A useful session", redactedAt: null, redactionReason: null, createdAt: "2026-08-10T12:00:00Z", updatedAt: "2026-08-10T12:00:00Z" } } } } },
