@@ -100,7 +100,7 @@ export async function saveTeacherAvailabilityRange(
     return validation;
   }
 
-  return db.transaction().execute(async (transaction) => {
+  return inTransaction(db, async (transaction) => {
     await sql`select pg_advisory_xact_lock(hashtextextended(${teacher.id}, 27))`.execute(transaction);
     const replay = await replayedOutcome(transaction as Database, teacher.id, "teacher-availability.changed", input, correlationId);
     if (replay) return replay;
@@ -189,7 +189,7 @@ export async function addAvailabilityException(
     return deniedValidation(db, teacher.id, correlationId, "INVALID_TIME_RANGE", "The end must be after the start.");
   }
 
-  return db.transaction().execute(async (transaction) => {
+  return inTransaction(db, async (transaction) => {
     await sql`select pg_advisory_xact_lock(hashtextextended(${teacher.id}, 28))`.execute(transaction);
     const replay = await replayedOutcome(transaction as Database, teacher.id, "availability-exception.changed", input, correlationId);
     if (replay) return replay;
@@ -238,7 +238,7 @@ export async function endTeacherAvailabilityRange(
   try { effectiveUntil = Temporal.PlainDate.from(input.effectiveUntil); } catch {
     return deniedRangeValidation(db, teacher.id, correlationId, "INVALID_EFFECTIVE_DATE", "Enter a valid effective-until date.");
   }
-  return db.transaction().execute(async (transaction) => {
+  return inTransaction(db, async (transaction) => {
     await sql`select pg_advisory_xact_lock(hashtextextended(${teacher.id}, 27))`.execute(transaction);
     const replay = await replayedOutcome(transaction as Database, teacher.id, "teacher-availability.ended", input, correlationId);
     if (replay) return replay;
@@ -276,7 +276,7 @@ export async function removeAvailabilityException(
   input: { idempotencyKey: string; exceptionId: string },
   correlationId: string,
 ) {
-  return db.transaction().execute(async (transaction) => {
+  return inTransaction(db, async (transaction) => {
     await sql`select pg_advisory_xact_lock(hashtextextended(${teacher.id}, 28))`.execute(transaction);
     const replay = await replayedOutcome(transaction as Database, teacher.id, "availability-exception.removed", input, correlationId);
     if (replay) return replay;
@@ -292,6 +292,11 @@ export async function removeAvailabilityException(
     await rememberOutcome(transaction as Database, teacher.id, "availability-exception.removed", input, outcome);
     return outcome;
   });
+}
+
+async function inTransaction<T>(db: Database, perform: (transaction: Database) => Promise<T>): Promise<T> {
+  if (db.isTransaction) return perform(db);
+  return db.transaction().execute((transaction) => perform(transaction as Database));
 }
 
 function validateRange(input: { startLocalTime: string; endLocalTime: string; effectiveFrom: string; timeZone: string }): ValidationError | null {

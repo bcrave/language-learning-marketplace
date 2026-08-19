@@ -18,6 +18,7 @@ import {
 } from "../authorization/role-workspace-service.js";
 import { administratorFor } from "../authorization/administrator-policy.js";
 import { grantRoleAssignment, removeRoleAssignment, roleAssignmentAdministration } from "../authorization/role-assignment-service.js";
+import { reactivateUser, suspendUser } from "../authorization/user-suspension-service.js";
 import { organizationManagerFor } from "../authorization/organization-manager-policy.js";
 import { studentFor } from "../authorization/student-policy.js";
 import { recordAdministrationAudit } from "../audit/administration-audit.js";
@@ -296,6 +297,8 @@ export function createApi(options: {
       RequestReportExportResult: { __resolveType: (value) => value.__typename! },
       GrantRoleAssignmentResult: { __resolveType: (value) => value.__typename! },
       RemoveRoleAssignmentResult: { __resolveType: (value) => value.__typename! },
+      SuspendUserResult: { __resolveType: (value) => value.__typename! },
+      ReactivateUserResult: { __resolveType: (value) => value.__typename! },
       Sponsorship: {
         progressSnapshots: async (parent, _arguments, context) =>
           graphQLResult(await courseProgressSnapshotsForSponsorship(context.db, parent.id)),
@@ -697,28 +700,34 @@ export function createApi(options: {
         enterClassroom: async (_parent, { input }, context) => {
           const identity = await context.authenticator.authenticate(context.request);
           if (!identity) throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
-          const access = await enterClassroom(
-            context.db,
-            classroomProvider,
-            identity,
-            userRolesByGraphQL[input.actingRole],
-            input.classSessionId,
-            context.correlationId,
-            options.now?.() ?? new Date(),
-          );
+          const user = await userForNotificationAccess(context.db, identity);
+          if (!user) throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+          const actingRole = userRolesByGraphQL[input.actingRole];
+          const access = await activeActorMutation(context, user.id, actingRole, "classroom.entered", "ClassSession", (transaction) =>
+            enterClassroom(
+              transaction,
+              classroomProvider,
+              identity,
+              actingRole,
+              input.classSessionId,
+              context.correlationId,
+              options.now?.() ?? new Date(),
+            ));
           if (access.status === "UNKNOWN_USER") throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
           if (access.status === "ROLE_REQUIRED") throw createGraphQLError("The selected Role Assignment is required", { extensions: { code: "FORBIDDEN" } });
           return graphQLResult(access.result);
         },
         markNotificationRead: async (_parent, { id }, context) => {
           const user = await authenticateNotificationUser(context);
-          const updated = await updateNotificationState(context.db, { notificationId: id, userId: user.id, action: "READ", correlationId: context.correlationId, now: options.now?.() ?? new Date() });
+          const updated = await activeActorMutation(context, user.id, null, "notification.mark-read", "Notification", (transaction) =>
+            updateNotificationState(transaction, { notificationId: id, userId: user.id, action: "READ", correlationId: context.correlationId, now: options.now?.() ?? new Date() }));
           if (!updated) throw createGraphQLError("The notification is unavailable", { extensions: { code: "FORBIDDEN" } });
           return graphQLResult((await notificationsForUser(context.db, user)).find((notification) => notification.id === id)!);
         },
         archiveNotification: async (_parent, { id }, context) => {
           const user = await authenticateNotificationUser(context);
-          const updated = await updateNotificationState(context.db, { notificationId: id, userId: user.id, action: "ARCHIVE", correlationId: context.correlationId, now: options.now?.() ?? new Date() });
+          const updated = await activeActorMutation(context, user.id, null, "notification.archive", "Notification", (transaction) =>
+            updateNotificationState(transaction, { notificationId: id, userId: user.id, action: "ARCHIVE", correlationId: context.correlationId, now: options.now?.() ?? new Date() }));
           if (!updated) throw createGraphQLError("The notification is unavailable", { extensions: { code: "FORBIDDEN" } });
           return graphQLResult({ id: updated.id, messageId: updated.message_id, renderedContent: "", readAt: updated.read_at?.toISOString() ?? null, archivedAt: updated.archived_at?.toISOString() ?? null, createdAt: updated.created_at.toISOString() });
         },
@@ -772,6 +781,40 @@ export function createApi(options: {
               organizationId: input.organizationId ?? null,
             }, context.correlationId, options.now?.() ?? new Date()),
             { __typename: "RoleAssignmentError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input.", classSessionIds: [] },
+            "User",
+          ));
+        },
+        suspendUser: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "user.suspended", "User");
+          if (options.nodeEnv === "production") {
+            await recordAdministrationAudit(context.db, { administratorId: administrator.id, correlationId: context.correlationId, operation: "user.suspended", targetType: "User", targetId: input.userId, outcome: "DENIED", reasonCode: "PUBLIC_DEMONSTRATION_PROTECTED" });
+            return graphQLResult({ __typename: "UserAccessError", code: "PUBLIC_DEMONSTRATION_PROTECTED", message: "User Suspension is unavailable in the public demonstration." });
+          }
+          return graphQLResult(await idempotentAdministrationMutation(
+            context,
+            administrator,
+            "user.suspended",
+            input.idempotencyKey,
+            input,
+            (transaction) => suspendUser(transaction, administrator, { userId: input.userId, reason: input.reason }, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "UserAccessError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "User",
+          ));
+        },
+        reactivateUser: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "user.reactivated", "User");
+          if (options.nodeEnv === "production") {
+            await recordAdministrationAudit(context.db, { administratorId: administrator.id, correlationId: context.correlationId, operation: "user.reactivated", targetType: "User", targetId: input.userId, outcome: "DENIED", reasonCode: "PUBLIC_DEMONSTRATION_PROTECTED" });
+            return graphQLResult({ __typename: "UserAccessError", code: "PUBLIC_DEMONSTRATION_PROTECTED", message: "User reactivation is unavailable in the public demonstration." });
+          }
+          return graphQLResult(await idempotentAdministrationMutation(
+            context,
+            administrator,
+            "user.reactivated",
+            input.idempotencyKey,
+            input,
+            (transaction) => reactivateUser(transaction, administrator, { userId: input.userId }, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "UserAccessError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
             "User",
           ));
         },
@@ -1231,23 +1274,23 @@ export function createApi(options: {
         },
         saveTeacherAvailabilityRange: async (_parent, { input }, context) => {
           const teacher = await authenticateTeacher(context, "teacher-availability.changed");
-          return graphQLResult(await auditedTeacherMutation(context, teacher, "teacher-availability.changed", () =>
-            saveTeacherAvailabilityRange(context.db, teacher, { ...input, weekday: input.weekday as Weekday }, context.correlationId)));
+          return graphQLResult(await auditedTeacherMutation(context, teacher, "teacher-availability.changed", (transaction) =>
+            saveTeacherAvailabilityRange(transaction, teacher, { ...input, weekday: input.weekday as Weekday }, context.correlationId)));
         },
         addAvailabilityException: async (_parent, { input }, context) => {
           const teacher = await authenticateTeacher(context, "availability-exception.changed");
-          return graphQLResult(await auditedTeacherMutation(context, teacher, "availability-exception.changed", () =>
-            addAvailabilityException(context.db, teacher, input, context.correlationId)));
+          return graphQLResult(await auditedTeacherMutation(context, teacher, "availability-exception.changed", (transaction) =>
+            addAvailabilityException(transaction, teacher, input, context.correlationId)));
         },
         endTeacherAvailabilityRange: async (_parent, { input }, context) => {
           const teacher = await authenticateTeacher(context, "teacher-availability.ended");
-          return graphQLResult(await auditedTeacherMutation(context, teacher, "teacher-availability.ended", () =>
-            endTeacherAvailabilityRange(context.db, teacher, input, context.correlationId)));
+          return graphQLResult(await auditedTeacherMutation(context, teacher, "teacher-availability.ended", (transaction) =>
+            endTeacherAvailabilityRange(transaction, teacher, input, context.correlationId)));
         },
         removeAvailabilityException: async (_parent, { input }, context) => {
           const teacher = await authenticateTeacher(context, "availability-exception.removed");
-          return graphQLResult(await auditedTeacherMutation(context, teacher, "availability-exception.removed", () =>
-            removeAvailabilityException(context.db, teacher, input, context.correlationId)));
+          return graphQLResult(await auditedTeacherMutation(context, teacher, "availability-exception.removed", (transaction) =>
+            removeAvailabilityException(transaction, teacher, input, context.correlationId)));
         },
         createCourse: async (_parent, { input }, context) => {
           const administrator = await authenticateAdministrator(context, "course.created");
@@ -1255,7 +1298,7 @@ export function createApi(options: {
         },
         reviseCourseDetails: async (_parent, { input }, context) => {
           const administrator = await authenticateAdministrator(context, "course.updated");
-          return graphQLResult(await auditedAdministrationMutation(context, administrator, "course.updated", () => reviseCourseDetails(context.db, administrator, input, context.correlationId)));
+          return graphQLResult(await auditedAdministrationMutation(context, administrator, "course.updated", (transaction) => reviseCourseDetails(transaction, administrator, input, context.correlationId)));
         },
         createLessonUnit: async (_parent, { input }, context) => {
           const administrator = await authenticateAdministrator(context, "lesson-unit.created");
@@ -1263,11 +1306,11 @@ export function createApi(options: {
         },
         reviseLessonUnitIdentity: async (_parent, { input }, context) => {
           const administrator = await authenticateAdministrator(context, "lesson-unit.updated");
-          return graphQLResult(await auditedAdministrationMutation(context, administrator, "lesson-unit.updated", () => reviseLessonUnitIdentity(context.db, administrator, input as unknown as Parameters<typeof reviseLessonUnitIdentity>[2], context.correlationId)));
+          return graphQLResult(await auditedAdministrationMutation(context, administrator, "lesson-unit.updated", (transaction) => reviseLessonUnitIdentity(transaction, administrator, input as unknown as Parameters<typeof reviseLessonUnitIdentity>[2], context.correlationId)));
         },
         placeLessonUnitInCourse: async (_parent, { input }, context) => {
           const administrator = await authenticateAdministrator(context, "lesson-unit.reordered");
-          return graphQLResult(await auditedAdministrationMutation(context, administrator, "lesson-unit.reordered", () => placeLessonUnitInCourse(context.db, administrator, input, context.correlationId)));
+          return graphQLResult(await auditedAdministrationMutation(context, administrator, "lesson-unit.reordered", (transaction) => placeLessonUnitInCourse(transaction, administrator, input, context.correlationId)));
         },
         retireLessonUnit: async (_parent, { input }, context) => {
           const administrator = await authenticateAdministrator(context, "lesson-unit.retired");
@@ -1321,6 +1364,11 @@ export function createApi(options: {
           if (result === "UNKNOWN_USER") {
             throw createGraphQLError("Authentication is required", {
               extensions: { code: "UNAUTHENTICATED" },
+            });
+          }
+          if (result === "USER_SUSPENDED") {
+            throw createGraphQLError("Your User is suspended", {
+              extensions: { code: "USER_SUSPENDED" },
             });
           }
           if (result !== "SUCCEEDED") {
@@ -1410,6 +1458,7 @@ export function createApi(options: {
 
           try {
             await context.db.transaction().execute(async (transaction) => {
+              await lockActiveActor(transaction as Database, user.id);
               await transaction
                 .updateTable("users")
                 .set({
@@ -1433,19 +1482,23 @@ export function createApi(options: {
                 .execute();
             });
           } catch (error) {
-            await context.db
-              .insertInto("audit_entries")
-              .values({
-                actor_user_id: user.id,
-                acting_role: actingRole,
-                operation: "user-preferences.saved",
-                target_type: "User",
-                target_id: user.id,
-                outcome: "FAILED",
-                reason_code: "USER_PREFERENCES_SAVE_FAILED",
-                correlation_id: context.correlationId,
-              })
-              .execute();
+            if (isUserSuspendedError(error)) {
+              await recordSuspendedActorDenial(context.db, user.id, actingRole, "user-preferences.saved", "User", context.correlationId);
+            } else {
+              await context.db
+                .insertInto("audit_entries")
+                .values({
+                  actor_user_id: user.id,
+                  acting_role: actingRole,
+                  operation: "user-preferences.saved",
+                  target_type: "User",
+                  target_id: user.id,
+                  outcome: "FAILED",
+                  reason_code: "USER_PREFERENCES_SAVE_FAILED",
+                  correlation_id: context.correlationId,
+                })
+                .execute();
+            }
             throw error;
           }
 
@@ -1573,6 +1626,7 @@ export function createApi(options: {
       }).execute();
     try {
       return await context.db.transaction().execute(async (transaction) => {
+        await lockActiveActor(transaction as Database, requester.id);
         await sql`select pg_advisory_xact_lock(hashtextextended(${`${requester.id}:${operation}:${idempotencyKey}`}, 0))`.execute(transaction);
         await transaction.deleteFrom("mutation_idempotency_records").where("actor_user_id", "=", requester.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).where("created_at", "<=", sql<Date>`now() - interval '7 days'`).execute();
         const existing = await transaction.selectFrom("mutation_idempotency_records").select(["input_fingerprint", "outcome"]).where("actor_user_id", "=", requester.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).executeTakeFirst();
@@ -1590,7 +1644,8 @@ export function createApi(options: {
         return outcome;
       });
     } catch (error) {
-      await audit(context.db, "FAILED", "UNEXPECTED_MUTATION_FAILURE", "ReportExport");
+      if (isUserSuspendedError(error)) await recordSuspendedActorDenial(context.db, requester.id, requester.actingRole, operation, "User", context.correlationId);
+      else await audit(context.db, "FAILED", "UNEXPECTED_MUTATION_FAILURE", "ReportExport");
       throw error;
     }
   }
@@ -1629,11 +1684,18 @@ export function createApi(options: {
     context: ApiContext,
     teacher: { id: string },
     operation: string,
-    perform: () => Promise<T>,
+    perform: (transaction: Database) => Promise<T>,
   ) {
     try {
-      return await perform();
+      return await context.db.transaction().execute(async (transaction) => {
+        await lockActiveActor(transaction as Database, teacher.id);
+        return perform(transaction as Database);
+      });
     } catch (error) {
+      if (isUserSuspendedError(error)) {
+        await recordSuspendedActorDenial(context.db, teacher.id, "TEACHER", operation, "TeacherAvailability", context.correlationId);
+        throw error;
+      }
       await context.db.insertInto("audit_entries").values({
         actor_user_id: teacher.id,
         acting_role: "TEACHER",
@@ -1661,6 +1723,7 @@ export function createApi(options: {
     const inputFingerprint = JSON.stringify(input);
     try {
       return await context.db.transaction().execute(async (transaction) => {
+        await lockActiveActor(transaction as Database, teacher.id);
         await sql`select pg_advisory_xact_lock(hashtextextended(${`${teacher.id}:${operation}:${idempotencyKey}`}, 0))`.execute(transaction);
         await transaction.deleteFrom("mutation_idempotency_records").where("actor_user_id", "=", teacher.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).where("created_at", "<=", sql<Date>`now() - interval '7 days'`).execute();
         const existing = await transaction.selectFrom("mutation_idempotency_records").select(["input_fingerprint", "outcome"]).where("actor_user_id", "=", teacher.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).executeTakeFirst();
@@ -1678,7 +1741,8 @@ export function createApi(options: {
         return outcome;
       });
     } catch (error) {
-      await context.db.insertInto("audit_entries").values({ actor_user_id: teacher.id, acting_role: "TEACHER", operation, target_type: targetType, target_id: teacher.id, outcome: "FAILED", reason_code: "UNEXPECTED_MUTATION_FAILURE", correlation_id: context.correlationId }).execute();
+      if (isUserSuspendedError(error)) await recordSuspendedActorDenial(context.db, teacher.id, "TEACHER", operation, targetType, context.correlationId);
+      else await context.db.insertInto("audit_entries").values({ actor_user_id: teacher.id, acting_role: "TEACHER", operation, target_type: targetType, target_id: teacher.id, outcome: "FAILED", reason_code: "UNEXPECTED_MUTATION_FAILURE", correlation_id: context.correlationId }).execute();
       throw error;
     }
   }
@@ -1696,6 +1760,7 @@ export function createApi(options: {
     const inputFingerprint = JSON.stringify(input);
     try {
       return await context.db.transaction().execute(async (transaction) => {
+        await lockActiveActor(transaction as Database, organizationManager.id);
         await sql`select pg_advisory_xact_lock(hashtextextended(${`${organizationManager.id}:${operation}:${idempotencyKey}`}, 0))`.execute(transaction);
         await transaction.deleteFrom("mutation_idempotency_records").where("actor_user_id", "=", organizationManager.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).where("created_at", "<=", sql<Date>`now() - interval '7 days'`).execute();
         const existing = await transaction.selectFrom("mutation_idempotency_records").select(["input_fingerprint", "outcome"]).where("actor_user_id", "=", organizationManager.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).executeTakeFirst();
@@ -1713,7 +1778,8 @@ export function createApi(options: {
         return outcome;
       });
     } catch (error) {
-      await context.db.insertInto("audit_entries").values({ actor_user_id: organizationManager.id, acting_role: "ORGANIZATION_MANAGER", operation, target_type: targetType, target_id: organizationManager.id, outcome: "FAILED", reason_code: "UNEXPECTED_MUTATION_FAILURE", correlation_id: context.correlationId }).execute();
+      if (isUserSuspendedError(error)) await recordSuspendedActorDenial(context.db, organizationManager.id, "ORGANIZATION_MANAGER", operation, targetType, context.correlationId);
+      else await context.db.insertInto("audit_entries").values({ actor_user_id: organizationManager.id, acting_role: "ORGANIZATION_MANAGER", operation, target_type: targetType, target_id: organizationManager.id, outcome: "FAILED", reason_code: "UNEXPECTED_MUTATION_FAILURE", correlation_id: context.correlationId }).execute();
       throw error;
     }
   }
@@ -1725,6 +1791,7 @@ export function createApi(options: {
     const inputFingerprint = JSON.stringify(input);
     try {
       return await context.db.transaction().execute(async (transaction) => {
+        await lockActiveActor(transaction as Database, administrator.id);
         await sql`select pg_advisory_xact_lock(hashtextextended(${`${administrator.id}:${operation}:${idempotencyKey}`}, 0))`.execute(transaction);
         await transaction.deleteFrom("mutation_idempotency_records").where("actor_user_id", "=", administrator.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).where("created_at", "<=", sql<Date>`now() - interval '7 days'`).execute();
         const existing = await transaction.selectFrom("mutation_idempotency_records").select(["input_fingerprint", "outcome"]).where("actor_user_id", "=", administrator.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).executeTakeFirst();
@@ -1746,7 +1813,8 @@ export function createApi(options: {
         return outcome;
       });
     } catch (error) {
-      await recordAdministrationAudit(context.db, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType, targetId: administrator.id, outcome: "FAILED", reasonCode: "UNEXPECTED_MUTATION_FAILURE" });
+      if (isUserSuspendedError(error)) await recordSuspendedActorDenial(context.db, administrator.id, "PLATFORM_ADMINISTRATOR", operation, targetType, context.correlationId);
+      else await recordAdministrationAudit(context.db, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType, targetId: administrator.id, outcome: "FAILED", reasonCode: "UNEXPECTED_MUTATION_FAILURE" });
       throw error;
     }
   }
@@ -1764,6 +1832,7 @@ export function createApi(options: {
     const inputFingerprint = JSON.stringify(input);
     try {
       return await context.db.transaction().execute(async (transaction) => {
+        await lockActiveActor(transaction as Database, student.id);
         await sql`select pg_advisory_xact_lock(hashtextextended(${`${student.id}:${operation}:${idempotencyKey}`}, 0))`.execute(transaction);
         await transaction.deleteFrom("mutation_idempotency_records").where("actor_user_id", "=", student.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).where("created_at", "<=", sql<Date>`now() - interval '7 days'`).execute();
         const existing = await transaction.selectFrom("mutation_idempotency_records").select(["input_fingerprint", "outcome"]).where("actor_user_id", "=", student.id).where("operation", "=", operation).where("idempotency_key", "=", idempotencyKey).executeTakeFirst();
@@ -1785,7 +1854,8 @@ export function createApi(options: {
         return outcome;
       });
     } catch (error) {
-      await recordStudentMutationAudit(context.db, student.id, operation, targetType, context.correlationId, "FAILED", "UNEXPECTED_MUTATION_FAILURE");
+      if (isUserSuspendedError(error)) await recordSuspendedActorDenial(context.db, student.id, "STUDENT", operation, targetType, context.correlationId);
+      else await recordStudentMutationAudit(context.db, student.id, operation, targetType, context.correlationId, "FAILED", "UNEXPECTED_MUTATION_FAILURE");
       throw error;
     }
   }
@@ -1794,10 +1864,46 @@ export function createApi(options: {
     await db.insertInto("audit_entries").values({ actor_user_id: studentId, acting_role: "STUDENT", operation, target_type: targetType, target_id: studentId, outcome, reason_code: reasonCode, correlation_id: correlationId }).execute();
   }
 
-  async function auditedAdministrationMutation<T>(context: ApiContext, administrator: { id: string }, operation: string, perform: () => Promise<T>): Promise<T> {
+  async function lockActiveActor(transaction: Database, actorId: string) {
+    await sql`select pg_advisory_xact_lock(hashtextextended(${actorId}, 28))`.execute(transaction);
+    const user = await transaction.selectFrom("users").select(["access_status", "suspension_reason"]).where("id", "=", actorId).executeTakeFirstOrThrow();
+    if (user.access_status === "ACTIVE") return;
+    throw createGraphQLError(`Your User is suspended: ${user.suspension_reason}`, { extensions: { code: "USER_SUSPENDED" } });
+  }
+
+  async function activeActorMutation<T>(context: ApiContext, actorId: string, actingRole: UserRole | null, operation: string, targetType: string, perform: (transaction: Database) => Promise<T>) {
     try {
-      return await perform();
+      return await context.db.transaction().execute(async (transaction) => {
+        await lockActiveActor(transaction as Database, actorId);
+        return perform(transaction as Database);
+      });
     } catch (error) {
+      if (isUserSuspendedError(error)) {
+        await recordSuspendedActorDenial(context.db, actorId, actingRole, operation, targetType, context.correlationId);
+      }
+      throw error;
+    }
+  }
+
+  async function recordSuspendedActorDenial(db: Database, actorId: string, actingRole: UserRole | null, operation: string, targetType: string, correlationId: string) {
+    await db.insertInto("audit_entries").values({ actor_user_id: actorId, acting_role: actingRole, operation, target_type: targetType, target_id: actorId, outcome: "DENIED", reason_code: "USER_SUSPENDED", correlation_id: correlationId }).execute();
+  }
+
+  function isUserSuspendedError(error: unknown) {
+    return typeof error === "object" && error !== null && "extensions" in error && (error as { extensions?: { code?: unknown } }).extensions?.code === "USER_SUSPENDED";
+  }
+
+  async function auditedAdministrationMutation<T>(context: ApiContext, administrator: { id: string }, operation: string, perform: (transaction: Database) => Promise<T>): Promise<T> {
+    try {
+      return await context.db.transaction().execute(async (transaction) => {
+        await lockActiveActor(transaction as Database, administrator.id);
+        return perform(transaction as Database);
+      });
+    } catch (error) {
+      if (isUserSuspendedError(error)) {
+        await recordSuspendedActorDenial(context.db, administrator.id, "PLATFORM_ADMINISTRATOR", operation, "CurriculumAdministration", context.correlationId);
+        throw error;
+      }
       await recordAdministrationAudit(context.db, { administratorId: administrator.id, correlationId: context.correlationId, operation, targetType: "CurriculumAdministration", targetId: administrator.id, outcome: "FAILED", reasonCode: "UNEXPECTED_MUTATION_FAILURE" });
       throw error;
     }
@@ -1812,11 +1918,35 @@ export function createApi(options: {
     schema,
     graphqlEndpoint: "/graphql",
     logging: false,
-    context: async ({ request }) => ({
-      authenticator: await authenticatorPromise,
-      correlationId: correlationIdForRequest(request.headers),
-      db: options.db,
-      request,
-    }),
+    context: async ({ request }) => {
+      const baseAuthenticator = await authenticatorPromise;
+      const correlationId = correlationIdForRequest(request.headers);
+      const authenticator: Authenticator = {
+        authenticate: async (authenticatedRequest) => {
+          const identity = await baseAuthenticator.authenticate(authenticatedRequest);
+          if (!identity) return null;
+          const user = await options.db.selectFrom("users")
+            .select(["id", "access_status", "suspension_reason"])
+            .where("identity_issuer", "=", identity.issuer)
+            .where("identity_subject", "=", identity.subject)
+            .executeTakeFirst();
+          if (user?.access_status === "SUSPENDED") {
+            await options.db.insertInto("audit_entries").values({
+              actor_user_id: user.id,
+              acting_role: null,
+              operation: "authenticated-operation.blocked",
+              target_type: "User",
+              target_id: user.id,
+              outcome: "DENIED",
+              reason_code: "USER_SUSPENDED",
+              correlation_id: correlationId,
+            }).execute();
+            throw createGraphQLError(`Your User is suspended: ${user.suspension_reason}`, { extensions: { code: "USER_SUSPENDED" } });
+          }
+          return identity;
+        },
+      };
+      return { authenticator, correlationId, db: options.db, request };
+    },
   });
 }

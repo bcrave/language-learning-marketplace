@@ -5,7 +5,7 @@ query AdministratorTasks {
     kind
     state
     correlationReference
-    safeContext { channel messageId recipientReference }
+    safeContext { channel messageId recipientReference classSessionId suspendedUserId }
     createdAt
     resolvedAt
   }
@@ -21,7 +21,7 @@ mutation ResolveAdministratorTask($input: ResolveAdministratorTaskInput!) {
         kind
         state
         correlationReference
-        safeContext { channel messageId recipientReference }
+        safeContext { channel messageId recipientReference classSessionId suspendedUserId }
         createdAt
         resolvedAt
       }

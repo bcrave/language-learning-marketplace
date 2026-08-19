@@ -114,14 +114,17 @@ export type AdministratorTaskItem = {
 };
 
 export enum AdministratorTaskKind {
-  NotificationDeliveryReconciliation = 'NOTIFICATION_DELIVERY_RECONCILIATION'
+  NotificationDeliveryReconciliation = 'NOTIFICATION_DELIVERY_RECONCILIATION',
+  UserSuspensionTeacherAssignment = 'USER_SUSPENSION_TEACHER_ASSIGNMENT'
 }
 
 export type AdministratorTaskSafeContext = {
   __typename?: 'AdministratorTaskSafeContext';
-  channel: NotificationChannel;
-  messageId: Scalars['String']['output'];
-  recipientReference: Scalars['ID']['output'];
+  channel?: Maybe<NotificationChannel>;
+  classSessionId?: Maybe<Scalars['ID']['output']>;
+  messageId?: Maybe<Scalars['String']['output']>;
+  recipientReference?: Maybe<Scalars['ID']['output']>;
+  suspendedUserId?: Maybe<Scalars['ID']['output']>;
 };
 
 export enum AdministratorTaskState {
@@ -343,6 +346,12 @@ export type ChangeTeacherQualificationInput = {
 export type ChangeTeacherQualificationSuccess = {
   __typename?: 'ChangeTeacherQualificationSuccess';
   teacherProfile: PublicTeacherProfile;
+};
+
+export type ChangeUserAccessInput = {
+  idempotencyKey: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+  userId: Scalars['ID']['input'];
 };
 
 export type ClassCreditAccount = {
@@ -1104,6 +1113,7 @@ export type Mutation = {
   placeLessonUnitInCourse: ReorderLessonUnitResult;
   processSubscriptionProviderEvent: ProcessSubscriptionProviderEventResult;
   publishClassSession: PublishClassSessionResult;
+  reactivateUser: ReactivateUserResult;
   recordAttendance: RecordAttendanceResult;
   redactLearningFeedback: RedactLearningFeedbackResult;
   redactSessionRatingComment: RedactSessionRatingCommentResult;
@@ -1130,6 +1140,7 @@ export type Mutation = {
   scheduleSubscriptionCancellation: ScheduleSubscriptionCancellationResult;
   setStudentPlacement: StudentPlacement;
   substituteTeacher: SubstituteTeacherResult;
+  suspendUser: SuspendUserResult;
   undoSubscriptionCancellation: UndoSubscriptionCancellationResult;
   withdrawWaitlist: WithdrawWaitlistResult;
 };
@@ -1280,6 +1291,11 @@ export type MutationPublishClassSessionArgs = {
 };
 
 
+export type MutationReactivateUserArgs = {
+  input: ReactivateUserInput;
+};
+
+
 export type MutationRecordAttendanceArgs = {
   input: RecordAttendanceInput;
 };
@@ -1407,6 +1423,11 @@ export type MutationSetStudentPlacementArgs = {
 
 export type MutationSubstituteTeacherArgs = {
   input: SubstituteTeacherInput;
+};
+
+
+export type MutationSuspendUserArgs = {
+  input: ChangeUserAccessInput;
 };
 
 
@@ -1652,6 +1673,13 @@ export type QueryRoleWorkspaceArgs = {
 export type QueryTeacherAvailabilityPreviewArgs = {
   localDates: Array<Scalars['String']['input']>;
 };
+
+export type ReactivateUserInput = {
+  idempotencyKey: Scalars['ID']['input'];
+  userId: Scalars['ID']['input'];
+};
+
+export type ReactivateUserResult = UserAccessChangeSuccess | UserAccessError;
 
 export type RecordAttendanceInput = {
   classSessionId: Scalars['ID']['input'];
@@ -1907,10 +1935,12 @@ export type RoleAssignmentAdministration = {
 
 export type RoleAssignmentAdministrationUser = {
   __typename?: 'RoleAssignmentAdministrationUser';
+  accessStatus: UserAccessStatus;
   displayName: Scalars['String']['output'];
   id: Scalars['ID']['output'];
   roleAssignmentHistory: Array<RoleAssignmentChange>;
   roles: Array<UserRole>;
+  suspensionReason?: Maybe<Scalars['String']['output']>;
 };
 
 export type RoleAssignmentChange = {
@@ -2268,6 +2298,8 @@ export type SubstituteTeacherSuccess = {
   classSession: ClassSession;
 };
 
+export type SuspendUserResult = UserAccessChangeSuccess | UserAccessError;
+
 export type TeacherAvailability = {
   __typename?: 'TeacherAvailability';
   exceptions: Array<AvailabilityException>;
@@ -2376,6 +2408,26 @@ export type User = {
   id: Scalars['ID']['output'];
   interfaceLocale?: Maybe<InterfaceLocale>;
 };
+
+export type UserAccessChangeSuccess = {
+  __typename?: 'UserAccessChangeSuccess';
+  endedBookingCount: Scalars['Int']['output'];
+  refundedClassCreditCount: Scalars['Int']['output'];
+  removedWaitlistEntryCount: Scalars['Int']['output'];
+  teacherClassSessionIds: Array<Scalars['ID']['output']>;
+  user: RoleAssignmentAdministrationUser;
+};
+
+export type UserAccessError = {
+  __typename?: 'UserAccessError';
+  code: Scalars['String']['output'];
+  message: Scalars['String']['output'];
+};
+
+export enum UserAccessStatus {
+  Active = 'ACTIVE',
+  Suspended = 'SUSPENDED'
+}
 
 export enum UserRole {
   OrganizationManager = 'ORGANIZATION_MANAGER',
@@ -2656,6 +2708,10 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( CurriculumConflict )
     | ( PublishClassSessionSuccess )
   ;
+  ReactivateUserResult:
+    | ( UserAccessChangeSuccess )
+    | ( UserAccessError )
+  ;
   RecordAttendanceResult:
     | ( AttendanceError )
     | ( RecordAttendanceSuccess )
@@ -2738,6 +2794,10 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( ClassSessionDisruptionError )
     | ( SubstituteTeacherSuccess )
   ;
+  SuspendUserResult:
+    | ( UserAccessChangeSuccess )
+    | ( UserAccessError )
+  ;
   UndoSubscriptionCancellationResult:
     | ( SubscriptionConflict )
     | ( UndoSubscriptionCancellationSuccess )
@@ -2815,6 +2875,7 @@ export type ResolversTypes = {
   ChangeRoleAssignmentInput: ChangeRoleAssignmentInput;
   ChangeTeacherQualificationInput: ChangeTeacherQualificationInput;
   ChangeTeacherQualificationSuccess: ResolverTypeWrapper<ChangeTeacherQualificationSuccess>;
+  ChangeUserAccessInput: ChangeUserAccessInput;
   ClassCreditAccount: ResolverTypeWrapper<ClassCreditAccount>;
   ClassCreditAdjustmentError: ResolverTypeWrapper<ClassCreditAdjustmentError>;
   ClassCreditAdjustmentErrorCode: ClassCreditAdjustmentErrorCode;
@@ -2939,6 +3000,8 @@ export type ResolversTypes = {
   PublishClassSessionResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['PublishClassSessionResult']>;
   PublishClassSessionSuccess: ResolverTypeWrapper<PublishClassSessionSuccess>;
   Query: ResolverTypeWrapper<Record<PropertyKey, never>>;
+  ReactivateUserInput: ReactivateUserInput;
+  ReactivateUserResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ReactivateUserResult']>;
   RecordAttendanceInput: RecordAttendanceInput;
   RecordAttendanceResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RecordAttendanceResult']>;
   RecordAttendanceSuccess: ResolverTypeWrapper<RecordAttendanceSuccess>;
@@ -3043,6 +3106,7 @@ export type ResolversTypes = {
   SubstituteTeacherInput: SubstituteTeacherInput;
   SubstituteTeacherResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['SubstituteTeacherResult']>;
   SubstituteTeacherSuccess: ResolverTypeWrapper<SubstituteTeacherSuccess>;
+  SuspendUserResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['SuspendUserResult']>;
   TeacherAvailability: ResolverTypeWrapper<TeacherAvailability>;
   TeacherAvailabilityOccurrence: ResolverTypeWrapper<TeacherAvailabilityOccurrence>;
   TeacherAvailabilityRange: ResolverTypeWrapper<TeacherAvailabilityRange>;
@@ -3061,6 +3125,9 @@ export type ResolversTypes = {
   UpsertTopicInput: UpsertTopicInput;
   UpsertTopicSuccess: ResolverTypeWrapper<UpsertTopicSuccess>;
   User: ResolverTypeWrapper<User>;
+  UserAccessChangeSuccess: ResolverTypeWrapper<UserAccessChangeSuccess>;
+  UserAccessError: ResolverTypeWrapper<UserAccessError>;
+  UserAccessStatus: UserAccessStatus;
   UserRole: UserRole;
   WaitlistEntry: ResolverTypeWrapper<WaitlistEntry>;
   WaitlistEntryState: WaitlistEntryState;
@@ -3121,6 +3188,7 @@ export type ResolversParentTypes = {
   ChangeRoleAssignmentInput: ChangeRoleAssignmentInput;
   ChangeTeacherQualificationInput: ChangeTeacherQualificationInput;
   ChangeTeacherQualificationSuccess: ChangeTeacherQualificationSuccess;
+  ChangeUserAccessInput: ChangeUserAccessInput;
   ClassCreditAccount: ClassCreditAccount;
   ClassCreditAdjustmentError: ClassCreditAdjustmentError;
   ClassCreditLedgerEntry: ClassCreditLedgerEntry;
@@ -3225,6 +3293,8 @@ export type ResolversParentTypes = {
   PublishClassSessionResult: ResolversUnionTypes<ResolversParentTypes>['PublishClassSessionResult'];
   PublishClassSessionSuccess: PublishClassSessionSuccess;
   Query: Record<PropertyKey, never>;
+  ReactivateUserInput: ReactivateUserInput;
+  ReactivateUserResult: ResolversUnionTypes<ResolversParentTypes>['ReactivateUserResult'];
   RecordAttendanceInput: RecordAttendanceInput;
   RecordAttendanceResult: ResolversUnionTypes<ResolversParentTypes>['RecordAttendanceResult'];
   RecordAttendanceSuccess: RecordAttendanceSuccess;
@@ -3312,6 +3382,7 @@ export type ResolversParentTypes = {
   SubstituteTeacherInput: SubstituteTeacherInput;
   SubstituteTeacherResult: ResolversUnionTypes<ResolversParentTypes>['SubstituteTeacherResult'];
   SubstituteTeacherSuccess: SubstituteTeacherSuccess;
+  SuspendUserResult: ResolversUnionTypes<ResolversParentTypes>['SuspendUserResult'];
   TeacherAvailability: TeacherAvailability;
   TeacherAvailabilityOccurrence: TeacherAvailabilityOccurrence;
   TeacherAvailabilityRange: TeacherAvailabilityRange;
@@ -3330,6 +3401,8 @@ export type ResolversParentTypes = {
   UpsertTopicInput: UpsertTopicInput;
   UpsertTopicSuccess: UpsertTopicSuccess;
   User: User;
+  UserAccessChangeSuccess: UserAccessChangeSuccess;
+  UserAccessError: UserAccessError;
   WaitlistEntry: WaitlistEntry;
   WaitlistError: WaitlistError;
   WaitlistPromotionWon: WaitlistPromotionWon;
@@ -3410,9 +3483,11 @@ export type AdministratorTaskItemResolvers<ContextType = any, ParentType extends
 };
 
 export type AdministratorTaskSafeContextResolvers<ContextType = any, ParentType extends ResolversParentTypes['AdministratorTaskSafeContext'] = ResolversParentTypes['AdministratorTaskSafeContext']> = {
-  channel?: Resolver<ResolversTypes['NotificationChannel'], ParentType, ContextType>;
-  messageId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
-  recipientReference?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  channel?: Resolver<Maybe<ResolversTypes['NotificationChannel']>, ParentType, ContextType>;
+  classSessionId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  messageId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  recipientReference?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  suspendedUserId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
 };
 
 export type AttendanceErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['AttendanceError'] = ResolversParentTypes['AttendanceError']> = {
@@ -4054,6 +4129,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   placeLessonUnitInCourse?: Resolver<ResolversTypes['ReorderLessonUnitResult'], ParentType, ContextType, RequireFields<MutationPlaceLessonUnitInCourseArgs, 'input'>>;
   processSubscriptionProviderEvent?: Resolver<ResolversTypes['ProcessSubscriptionProviderEventResult'], ParentType, ContextType, RequireFields<MutationProcessSubscriptionProviderEventArgs, 'input'>>;
   publishClassSession?: Resolver<ResolversTypes['PublishClassSessionResult'], ParentType, ContextType, RequireFields<MutationPublishClassSessionArgs, 'input'>>;
+  reactivateUser?: Resolver<ResolversTypes['ReactivateUserResult'], ParentType, ContextType, RequireFields<MutationReactivateUserArgs, 'input'>>;
   recordAttendance?: Resolver<ResolversTypes['RecordAttendanceResult'], ParentType, ContextType, RequireFields<MutationRecordAttendanceArgs, 'input'>>;
   redactLearningFeedback?: Resolver<ResolversTypes['RedactLearningFeedbackResult'], ParentType, ContextType, RequireFields<MutationRedactLearningFeedbackArgs, 'input'>>;
   redactSessionRatingComment?: Resolver<ResolversTypes['RedactSessionRatingCommentResult'], ParentType, ContextType, RequireFields<MutationRedactSessionRatingCommentArgs, 'input'>>;
@@ -4080,6 +4156,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   scheduleSubscriptionCancellation?: Resolver<ResolversTypes['ScheduleSubscriptionCancellationResult'], ParentType, ContextType, RequireFields<MutationScheduleSubscriptionCancellationArgs, 'input'>>;
   setStudentPlacement?: Resolver<ResolversTypes['StudentPlacement'], ParentType, ContextType, RequireFields<MutationSetStudentPlacementArgs, 'input'>>;
   substituteTeacher?: Resolver<ResolversTypes['SubstituteTeacherResult'], ParentType, ContextType, RequireFields<MutationSubstituteTeacherArgs, 'input'>>;
+  suspendUser?: Resolver<ResolversTypes['SuspendUserResult'], ParentType, ContextType, RequireFields<MutationSuspendUserArgs, 'input'>>;
   undoSubscriptionCancellation?: Resolver<ResolversTypes['UndoSubscriptionCancellationResult'], ParentType, ContextType, RequireFields<MutationUndoSubscriptionCancellationArgs, 'input'>>;
   withdrawWaitlist?: Resolver<ResolversTypes['WithdrawWaitlistResult'], ParentType, ContextType, RequireFields<MutationWithdrawWaitlistArgs, 'input'>>;
 };
@@ -4219,6 +4296,10 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   teacherAvailabilityPreview?: Resolver<Array<ResolversTypes['TeacherAvailabilityOccurrence']>, ParentType, ContextType, RequireFields<QueryTeacherAvailabilityPreviewArgs, 'localDates'>>;
   teacherClassSessions?: Resolver<Array<ResolversTypes['ClassSession']>, ParentType, ContextType>;
   teacherFeedbackWork?: Resolver<Array<ResolversTypes['FeedbackAndRatingItem']>, ParentType, ContextType>;
+};
+
+export type ReactivateUserResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['ReactivateUserResult'] = ResolversParentTypes['ReactivateUserResult']> = {
+  __resolveType: TypeResolveFn<'UserAccessChangeSuccess' | 'UserAccessError', ParentType, ContextType>;
 };
 
 export type RecordAttendanceResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['RecordAttendanceResult'] = ResolversParentTypes['RecordAttendanceResult']> = {
@@ -4382,10 +4463,12 @@ export type RoleAssignmentAdministrationResolvers<ContextType = any, ParentType 
 };
 
 export type RoleAssignmentAdministrationUserResolvers<ContextType = any, ParentType extends ResolversParentTypes['RoleAssignmentAdministrationUser'] = ResolversParentTypes['RoleAssignmentAdministrationUser']> = {
+  accessStatus?: Resolver<ResolversTypes['UserAccessStatus'], ParentType, ContextType>;
   displayName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   roleAssignmentHistory?: Resolver<Array<ResolversTypes['RoleAssignmentChange']>, ParentType, ContextType>;
   roles?: Resolver<Array<ResolversTypes['UserRole']>, ParentType, ContextType>;
+  suspensionReason?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
 };
 
 export type RoleAssignmentChangeResolvers<ContextType = any, ParentType extends ResolversParentTypes['RoleAssignmentChange'] = ResolversParentTypes['RoleAssignmentChange']> = {
@@ -4590,6 +4673,10 @@ export type SubstituteTeacherSuccessResolvers<ContextType = any, ParentType exte
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
+export type SuspendUserResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['SuspendUserResult'] = ResolversParentTypes['SuspendUserResult']> = {
+  __resolveType: TypeResolveFn<'UserAccessChangeSuccess' | 'UserAccessError', ParentType, ContextType>;
+};
+
 export type TeacherAvailabilityResolvers<ContextType = any, ParentType extends ResolversParentTypes['TeacherAvailability'] = ResolversParentTypes['TeacherAvailability']> = {
   exceptions?: Resolver<Array<ResolversTypes['AvailabilityException']>, ParentType, ContextType>;
   timeZone?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -4675,6 +4762,21 @@ export type UserResolvers<ContextType = any, ParentType extends ResolversParentT
   displayTimeZone?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   interfaceLocale?: Resolver<Maybe<ResolversTypes['InterfaceLocale']>, ParentType, ContextType>;
+};
+
+export type UserAccessChangeSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['UserAccessChangeSuccess'] = ResolversParentTypes['UserAccessChangeSuccess']> = {
+  endedBookingCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  refundedClassCreditCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  removedWaitlistEntryCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  teacherClassSessionIds?: Resolver<Array<ResolversTypes['ID']>, ParentType, ContextType>;
+  user?: Resolver<ResolversTypes['RoleAssignmentAdministrationUser'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type UserAccessErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['UserAccessError'] = ResolversParentTypes['UserAccessError']> = {
+  code?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
 export type WaitlistEntryResolvers<ContextType = any, ParentType extends ResolversParentTypes['WaitlistEntry'] = ResolversParentTypes['WaitlistEntry']> = {
@@ -4827,6 +4929,7 @@ export type Resolvers<ContextType = any> = {
   PublishClassSessionResult?: PublishClassSessionResultResolvers<ContextType>;
   PublishClassSessionSuccess?: PublishClassSessionSuccessResolvers<ContextType>;
   Query?: QueryResolvers<ContextType>;
+  ReactivateUserResult?: ReactivateUserResultResolvers<ContextType>;
   RecordAttendanceResult?: RecordAttendanceResultResolvers<ContextType>;
   RecordAttendanceSuccess?: RecordAttendanceSuccessResolvers<ContextType>;
   RedactLearningFeedbackResult?: RedactLearningFeedbackResultResolvers<ContextType>;
@@ -4889,6 +4992,7 @@ export type Resolvers<ContextType = any> = {
   SubscriptionConflict?: SubscriptionConflictResolvers<ContextType>;
   SubstituteTeacherResult?: SubstituteTeacherResultResolvers<ContextType>;
   SubstituteTeacherSuccess?: SubstituteTeacherSuccessResolvers<ContextType>;
+  SuspendUserResult?: SuspendUserResultResolvers<ContextType>;
   TeacherAvailability?: TeacherAvailabilityResolvers<ContextType>;
   TeacherAvailabilityOccurrence?: TeacherAvailabilityOccurrenceResolvers<ContextType>;
   TeacherAvailabilityRange?: TeacherAvailabilityRangeResolvers<ContextType>;
@@ -4904,6 +5008,8 @@ export type Resolvers<ContextType = any> = {
   UpdateLessonUnitSuccess?: UpdateLessonUnitSuccessResolvers<ContextType>;
   UpsertTopicSuccess?: UpsertTopicSuccessResolvers<ContextType>;
   User?: UserResolvers<ContextType>;
+  UserAccessChangeSuccess?: UserAccessChangeSuccessResolvers<ContextType>;
+  UserAccessError?: UserAccessErrorResolvers<ContextType>;
   WaitlistEntry?: WaitlistEntryResolvers<ContextType>;
   WaitlistError?: WaitlistErrorResolvers<ContextType>;
   WaitlistPromotionWon?: WaitlistPromotionWonResolvers<ContextType>;

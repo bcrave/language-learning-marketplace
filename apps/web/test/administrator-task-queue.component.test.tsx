@@ -11,9 +11,24 @@ import { AdministratorTaskQueue } from "../src/administrator-task-queue.js";
 afterEach(cleanup);
 
 describe("Administrator task queue", () => {
+  it("shows the Class Session requiring urgent resolution after a Teacher suspension", async () => {
+    const task = { id: "00000000-0000-4000-8000-000000000047", requiredRole: "PLATFORM_ADMINISTRATOR" as const, kind: "USER_SUSPENSION_TEACHER_ASSIGNMENT", state: "OPEN", correlationReference: "safe-correlation-47", safeContext: { channel: null, messageId: null, recipientReference: null, classSessionId: "00000000-0000-4000-8000-000000000147", suspendedUserId: "00000000-0000-4000-8000-000000000247" }, createdAt: "2026-08-19T18:00:00.000Z", resolvedAt: null };
+    render(
+      <MockedProvider mocks={[{ request: { query: AdministratorTasksDocument }, result: { data: { administratorTasks: [task] } } }]}>
+        <IntlProvider locale="en" messages={interfaceMessages.en}>
+          <AdministratorTaskQueue />
+        </IntlProvider>
+      </MockedProvider>,
+    );
+
+    expect(await screen.findByText("Resolve a suspended Teacher's future Class Session assignment.")).toBeVisible();
+    expect(screen.getByText(task.safeContext.classSessionId)).toBeVisible();
+    expect(screen.queryByText(task.safeContext.suspendedUserId)).not.toBeInTheDocument();
+  });
+
   it("shows safe reconciliation context and resolves actionable work", async () => {
     const user = userEvent.setup();
-    const task = { id: "00000000-0000-4000-8000-000000000036", requiredRole: "PLATFORM_ADMINISTRATOR" as const, kind: "NOTIFICATION_DELIVERY_RECONCILIATION", state: "OPEN", correlationReference: "safe-correlation-36", safeContext: { channel: "EMAIL", messageId: "booking.created.student" }, createdAt: "2026-08-09T12:00:00.000Z", resolvedAt: null };
+    const task = { id: "00000000-0000-4000-8000-000000000036", requiredRole: "PLATFORM_ADMINISTRATOR" as const, kind: "NOTIFICATION_DELIVERY_RECONCILIATION", state: "OPEN", correlationReference: "safe-correlation-36", safeContext: { channel: "EMAIL", messageId: "booking.created.student", recipientReference: null, classSessionId: null, suspendedUserId: null }, createdAt: "2026-08-09T12:00:00.000Z", resolvedAt: null };
     render(
       <MockedProvider mocks={[
         { request: { query: AdministratorTasksDocument }, result: { data: { administratorTasks: [task] } } },

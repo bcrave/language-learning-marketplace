@@ -108,6 +108,40 @@ describe("Subscription management GraphQL API", () => {
     ]);
   });
 
+  it("skips a suspended Student's Subscription renewal grant without backfill", async () => {
+    const suspendedStudentId = randomUUID();
+    await db.insertInto("users").values({ id: suspendedStudentId, identity_issuer: "https://fake.local/", identity_subject: randomUUID(), display_name: "Suspended Subscriber", interface_locale: "en", display_time_zone: "UTC" }).execute();
+    await db.insertInto("role_assignments").values({ user_id: suspendedStudentId, role: "STUDENT" }).execute();
+    await providerEvent({ effectiveAt: "2027-01-15T12:00:00.000Z", eventType: "ACTIVATED", providerEventId: "suspended-subscription-activation", studentUserId: suspendedStudentId });
+    await db.updateTable("users").set({ access_status: "SUSPENDED", suspension_reason: "Security review", suspended_at: new Date("2027-02-14T12:00:00.000Z"), suspended_by_user_id: administratorId }).where("id", "=", suspendedStudentId).execute();
+
+    const skippedCorrelationId = randomUUID();
+    const skipped = await providerEvent({ effectiveAt: "2027-02-15T12:00:00.000Z", eventType: "RENEWED", providerEventId: "suspended-subscription-renewal", studentUserId: suspendedStudentId }, administratorSubject, skippedCorrelationId);
+    expect(skipped).toMatchObject({ data: { processSubscriptionProviderEvent: {
+      subscription: { nextAnniversaryAt: "2027-03-15T12:00:00.000Z" },
+      account: { availableBalance: 8 },
+    } } });
+    expect(await db.selectFrom("class_credit_ledger_entries").select("id").where("student_user_id", "=", suspendedStudentId).execute()).toHaveLength(1);
+    expect(await db.selectFrom("audit_entries").select(["outcome", "reason_code"]).where("correlation_id", "=", skippedCorrelationId).execute()).toContainEqual({ outcome: "SUCCEEDED", reason_code: "SUBSCRIPTION_GRANT_SKIPPED_USER_SUSPENDED" });
+
+    await db.updateTable("users").set({ access_status: "ACTIVE", suspension_reason: null, suspended_at: null, suspended_by_user_id: null }).where("id", "=", suspendedStudentId).execute();
+    await providerEvent({ effectiveAt: "2027-03-15T12:00:00.000Z", eventType: "RENEWED", providerEventId: "reactivated-subscription-renewal", studentUserId: suspendedStudentId });
+    expect(await db.selectFrom("class_credit_accounts").select("available_balance").where("student_user_id", "=", suspendedStudentId).executeTakeFirstOrThrow()).toEqual({ available_balance: 16 });
+  });
+
+  it("activates a suspended Student's Subscription without issuing the skipped initial grant", async () => {
+    const suspendedStudentId = randomUUID();
+    await db.insertInto("users").values({ id: suspendedStudentId, identity_issuer: "https://fake.local/", identity_subject: randomUUID(), display_name: "Suspended New Subscriber", interface_locale: "en", display_time_zone: "UTC", access_status: "SUSPENDED", suspension_reason: "Security review", suspended_at: new Date("2027-01-14T12:00:00.000Z"), suspended_by_user_id: administratorId }).execute();
+    await db.insertInto("role_assignments").values({ user_id: suspendedStudentId, role: "STUDENT" }).execute();
+
+    const activation = await providerEvent({ effectiveAt: "2027-01-15T12:00:00.000Z", eventType: "ACTIVATED", providerEventId: "suspended-initial-activation", studentUserId: suspendedStudentId });
+    expect(activation).toMatchObject({ data: { processSubscriptionProviderEvent: {
+      subscription: { state: "ACTIVE", nextAnniversaryAt: "2027-02-15T12:00:00.000Z" },
+      account: { availableBalance: 0 },
+    } } });
+    expect(await db.selectFrom("class_credit_ledger_entries").select("id").where("student_user_id", "=", suspendedStudentId).execute()).toHaveLength(0);
+  });
+
   it("schedules and undoes cancellation without a grant, then cancels with owned credits intact", async () => {
     const scheduleKey = randomUUID();
     const scheduled = await studentMutation("scheduleSubscriptionCancellation", "ScheduleSubscriptionCancellationSuccess", studentSubject, randomUUID(), scheduleKey);
@@ -199,7 +233,7 @@ describe("Subscription management GraphQL API", () => {
   });
 
   async function providerEvent(
-    input: { effectiveAt: string; eventType: string; providerEventId: string },
+    input: { effectiveAt: string; eventType: string; providerEventId: string; studentUserId?: string },
     subject = administratorSubject,
     correlationId = randomUUID(),
   ) {
@@ -213,7 +247,7 @@ describe("Subscription management GraphQL API", () => {
           ... on SubscriptionConflict { conflictCode: code }
         }
       }
-    `, { input: { ...input, idempotencyKey: randomUUID(), studentUserId: studentId, reason: "Simulated provider event" } }, subject, correlationId);
+    `, { input: { ...input, idempotencyKey: randomUUID(), studentUserId: input.studentUserId ?? studentId, reason: "Simulated provider event" } }, subject, correlationId);
   }
 
   async function studentMutation(

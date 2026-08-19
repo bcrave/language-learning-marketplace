@@ -600,7 +600,8 @@ type RoleWorkspace {
 
 enum RoleAssignmentChangeAction { GRANTED REMOVED }
 type RoleAssignmentChange { id: ID!, role: UserRole!, action: RoleAssignmentChangeAction!, reason: String!, changedAt: String! }
-type RoleAssignmentAdministrationUser { id: ID!, displayName: String!, roles: [UserRole!]!, roleAssignmentHistory: [RoleAssignmentChange!]! }
+enum UserAccessStatus { ACTIVE SUSPENDED }
+type RoleAssignmentAdministrationUser { id: ID!, displayName: String!, accessStatus: UserAccessStatus!, suspensionReason: String, roles: [UserRole!]!, roleAssignmentHistory: [RoleAssignmentChange!]! }
 type RoleAssignmentAdministration { users: [RoleAssignmentAdministrationUser!]!, organizations: [Organization!]! }
 input ChangeRoleAssignmentInput { idempotencyKey: ID!, userId: ID!, role: UserRole!, reason: String!, organizationId: ID }
 type RoleAssignmentChangeSuccess {
@@ -614,6 +615,18 @@ type RoleAssignmentChangeSuccess {
 type RoleAssignmentError { code: String!, message: String!, classSessionIds: [ID!]! }
 union GrantRoleAssignmentResult = RoleAssignmentChangeSuccess | RoleAssignmentError
 union RemoveRoleAssignmentResult = RoleAssignmentChangeSuccess | RoleAssignmentError
+input ChangeUserAccessInput { idempotencyKey: ID!, userId: ID!, reason: String! }
+input ReactivateUserInput { idempotencyKey: ID!, userId: ID! }
+type UserAccessChangeSuccess {
+  user: RoleAssignmentAdministrationUser!
+  endedBookingCount: Int!
+  removedWaitlistEntryCount: Int!
+  refundedClassCreditCount: Int!
+  teacherClassSessionIds: [ID!]!
+}
+type UserAccessError { code: String!, message: String! }
+union SuspendUserResult = UserAccessChangeSuccess | UserAccessError
+union ReactivateUserResult = UserAccessChangeSuccess | UserAccessError
 
 type InAppNotification {
   id: ID!
@@ -625,13 +638,15 @@ type InAppNotification {
 }
 
 enum NotificationChannel { IN_APP EMAIL }
-enum AdministratorTaskKind { NOTIFICATION_DELIVERY_RECONCILIATION }
+enum AdministratorTaskKind { NOTIFICATION_DELIVERY_RECONCILIATION USER_SUSPENSION_TEACHER_ASSIGNMENT }
 enum AdministratorTaskState { OPEN RESOLVED }
 
 type AdministratorTaskSafeContext {
-  channel: NotificationChannel!
-  messageId: String!
-  recipientReference: ID!
+  channel: NotificationChannel
+  messageId: String
+  recipientReference: ID
+  classSessionId: ID
+  suspendedUserId: ID
 }
 
 type AdministratorTaskItem {
@@ -705,6 +720,8 @@ type Mutation {
   resolveAdministratorTask(input: ResolveAdministratorTaskInput!): ResolveAdministratorTaskResult!
   grantRoleAssignment(input: ChangeRoleAssignmentInput!): GrantRoleAssignmentResult!
   removeRoleAssignment(input: ChangeRoleAssignmentInput!): RemoveRoleAssignmentResult!
+  suspendUser(input: ChangeUserAccessInput!): SuspendUserResult!
+  reactivateUser(input: ReactivateUserInput!): ReactivateUserResult!
   processSubscriptionProviderEvent(input: ProcessSubscriptionProviderEventInput!): ProcessSubscriptionProviderEventResult!
   scheduleSubscriptionCancellation(input: SubscriptionLifecycleInput!): ScheduleSubscriptionCancellationResult!
   undoSubscriptionCancellation(input: SubscriptionLifecycleInput!): UndoSubscriptionCancellationResult!

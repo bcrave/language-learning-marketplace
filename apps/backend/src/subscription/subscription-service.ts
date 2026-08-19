@@ -124,7 +124,7 @@ export async function processSubscriptionProviderEvent(
   const effectiveAt = new Date(validated.data.effectiveAt);
   const student = await transaction.selectFrom("users")
     .innerJoin("role_assignments", "role_assignments.user_id", "users.id")
-    .select(["users.id", "users.interface_locale"])
+    .select(["users.id", "users.interface_locale", "users.access_status"])
     .where("users.id", "=", input.studentUserId)
     .where("role_assignments.role", "=", "STUDENT")
     .executeTakeFirst();
@@ -142,17 +142,63 @@ export async function processSubscriptionProviderEvent(
   if (input.eventType === "ACTIVATED") {
     outcome = subscription
       ? conflict("SUBSCRIPTION_ALREADY_EXISTS", "The Student already has a Subscription.")
-      : await activateSubscription(transaction, student, input, effectiveAt);
+      : student.access_status === "SUSPENDED"
+        ? await activateSuspendedSubscription(transaction, student.id, effectiveAt)
+        : await activateSubscription(transaction, student, input, effectiveAt);
+    if (!subscription && student.access_status === "SUSPENDED" && outcome.__typename === "ProcessSubscriptionProviderEventSuccess") {
+      await recordProviderAudit(transaction, administrator.id, input.studentUserId, correlationId, "SUCCEEDED", "SUBSCRIPTION_GRANT_SKIPPED_USER_SUSPENDED");
+    }
   } else if (!subscription) {
     outcome = conflict("SUBSCRIPTION_NOT_FOUND", "The Student does not have a Subscription.");
   } else if (input.eventType === "RENEWED") {
-    outcome = await renewSubscription(transaction, student, subscription, effectiveAt, input.providerEventId);
+    if (student.access_status === "SUSPENDED") {
+      outcome = await skipSuspendedRenewal(transaction, student.id, subscription, effectiveAt);
+      if (outcome.__typename === "ProcessSubscriptionProviderEventSuccess") {
+        await recordProviderAudit(transaction, administrator.id, input.studentUserId, correlationId, "SUCCEEDED", "SUBSCRIPTION_GRANT_SKIPPED_USER_SUSPENDED");
+      }
+    } else {
+      outcome = await renewSubscription(transaction, student, subscription, effectiveAt, input.providerEventId);
+    }
   } else if (input.eventType === "REACTIVATED") {
     outcome = await reactivateSubscription(transaction, student, subscription, effectiveAt, input.providerEventId);
   } else {
     outcome = await cancelSubscription(transaction, input.studentUserId, subscription, effectiveAt);
   }
   return rememberProviderOutcome(transaction, input, fingerprint, effectiveAt, administrator.id, correlationId, outcome);
+}
+
+async function activateSuspendedSubscription(transaction: Database, studentUserId: string, effectiveAt: Date) {
+  await transaction.insertInto("class_credit_accounts").values({ student_user_id: studentUserId })
+    .onConflict((builder) => builder.column("student_user_id").doNothing()).execute();
+  await transaction.insertInto("subscriptions").values({
+    student_user_id: studentUserId,
+    state: "ACTIVE",
+    activated_at: effectiveAt,
+    anchor_day: effectiveAt.getUTCDate(),
+    accounting_time_utc: utcAccountingTime(effectiveAt),
+    next_anniversary_at: monthlySubscriptionAnniversary(effectiveAt, 1),
+    cancellation_effective_at: null,
+  }).executeTakeFirstOrThrow();
+  return providerSuccess(transaction, studentUserId);
+}
+
+async function skipSuspendedRenewal(
+  transaction: Database,
+  studentUserId: string,
+  subscription: LockedSubscription,
+  effectiveAt: Date,
+) {
+  if (subscription.state !== "ACTIVE") return conflict("SUBSCRIPTION_NOT_ACTIVE", "The Subscription is not active for renewal.");
+  if (!subscription.next_anniversary_at || subscription.next_anniversary_at.getTime() !== effectiveAt.getTime()) {
+    return conflict("UNEXPECTED_SUBSCRIPTION_ANNIVERSARY", "The renewal does not match the original Subscription anniversary.");
+  }
+  const renewalCount = subscription.renewal_count + 1;
+  const nextAnniversaryAt = monthlySubscriptionAnniversary(subscription.activated_at, renewalCount + 1);
+  await transaction.updateTable("subscriptions")
+    .set({ renewal_count: renewalCount, next_anniversary_at: nextAnniversaryAt, updated_at: new Date() })
+    .where("id", "=", subscription.id)
+    .executeTakeFirstOrThrow();
+  return providerSuccess(transaction, studentUserId);
 }
 
 async function activateSubscription(
