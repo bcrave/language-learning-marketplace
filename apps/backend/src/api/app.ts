@@ -17,6 +17,7 @@ import {
   rememberRoleWorkspacePlace,
 } from "../authorization/role-workspace-service.js";
 import { administratorFor } from "../authorization/administrator-policy.js";
+import { grantRoleAssignment, removeRoleAssignment, roleAssignmentAdministration } from "../authorization/role-assignment-service.js";
 import { organizationManagerFor } from "../authorization/organization-manager-policy.js";
 import { studentFor } from "../authorization/student-policy.js";
 import { recordAdministrationAudit } from "../audit/administration-audit.js";
@@ -293,6 +294,8 @@ export function createApi(options: {
       AddCohortMembershipResult: { __resolveType: (value) => value.__typename! },
       EndCohortMembershipResult: { __resolveType: (value) => value.__typename! },
       RequestReportExportResult: { __resolveType: (value) => value.__typename! },
+      GrantRoleAssignmentResult: { __resolveType: (value) => value.__typename! },
+      RemoveRoleAssignmentResult: { __resolveType: (value) => value.__typename! },
       Sponsorship: {
         progressSnapshots: async (parent, _arguments, context) =>
           graphQLResult(await courseProgressSnapshotsForSponsorship(context.db, parent.id)),
@@ -315,6 +318,10 @@ export function createApi(options: {
             createdAt: task.created_at.toISOString(),
             resolvedAt: task.resolved_at?.toISOString() ?? null,
           })));
+        },
+        roleAssignmentAdministration: async (_parent, _arguments, context) => {
+          await authenticateAdministrator(context, "role-assignment-administration.read", "User");
+          return graphQLResult(await roleAssignmentAdministration(context.db));
         },
         studentWaitlistEntries: async (_parent, _arguments, context) => {
           const student = await authenticateStudent(context, "waitlist-entry.read", "WaitlistEntry");
@@ -730,6 +737,42 @@ export function createApi(options: {
               return { __typename: "ResolveAdministratorTaskSuccess", task: { id: task.id, requiredRole: GraphQLUserRole.PlatformAdministrator, kind: task.kind, state: task.state, correlationReference: task.correlation_reference, safeContext: task.safe_context, createdAt: task.created_at.toISOString(), resolvedAt: task.resolved_at?.toISOString() ?? null } };
             },
             { __typename: "AdministratorTaskError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+          ));
+        },
+        grantRoleAssignment: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "role-assignment.granted", "User");
+          return graphQLResult(await idempotentAdministrationMutation(
+            context,
+            administrator,
+            "role-assignment.granted",
+            input.idempotencyKey,
+            input,
+            (transaction) => grantRoleAssignment(transaction, administrator, {
+              userId: input.userId,
+              role: userRolesByGraphQL[input.role],
+              reason: input.reason,
+              organizationId: input.organizationId ?? null,
+            }, context.correlationId),
+            { __typename: "RoleAssignmentError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input.", classSessionIds: [] },
+            "User",
+          ));
+        },
+        removeRoleAssignment: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "role-assignment.removed", "User");
+          return graphQLResult(await idempotentAdministrationMutation(
+            context,
+            administrator,
+            "role-assignment.removed",
+            input.idempotencyKey,
+            input,
+            (transaction) => removeRoleAssignment(transaction, administrator, {
+              userId: input.userId,
+              role: userRolesByGraphQL[input.role],
+              reason: input.reason,
+              organizationId: input.organizationId ?? null,
+            }, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "RoleAssignmentError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input.", classSessionIds: [] },
+            "User",
           ));
         },
         processSubscriptionProviderEvent: async (_parent, { input }, context) => {

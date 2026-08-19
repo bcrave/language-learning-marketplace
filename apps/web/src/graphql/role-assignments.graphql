@@ -1,0 +1,39 @@
+query RoleAssignmentAdministration {
+  roleAssignmentAdministration {
+    organizations { id name }
+    users {
+      id
+      displayName
+      roles
+      roleAssignmentHistory { id role action reason changedAt }
+    }
+  }
+}
+
+mutation GrantRoleAssignment($input: ChangeRoleAssignmentInput!) {
+  grantRoleAssignment(input: $input) {
+    ... on RoleAssignmentChangeSuccess {
+      user { id displayName roles roleAssignmentHistory { id role action reason changedAt } }
+      endedBookingCount
+      removedWaitlistEntryCount
+      refundedClassCreditCount
+      subscriptionEnded
+      sponsorshipEnded
+    }
+    ... on RoleAssignmentError { code message classSessionIds }
+  }
+}
+
+mutation RemoveRoleAssignment($input: ChangeRoleAssignmentInput!) {
+  removeRoleAssignment(input: $input) {
+    ... on RoleAssignmentChangeSuccess {
+      user { id displayName roles roleAssignmentHistory { id role action reason changedAt } }
+      endedBookingCount
+      removedWaitlistEntryCount
+      refundedClassCreditCount
+      subscriptionEnded
+      sponsorshipEnded
+    }
+    ... on RoleAssignmentError { code message classSessionIds }
+  }
+}

@@ -18,6 +18,16 @@ export interface RoleAssignmentsTable {
   created_at: Generated<Date>;
 }
 
+export interface RoleAssignmentChangesTable {
+  id: Generated<string>;
+  user_id: string;
+  role: UserRole;
+  action: "GRANTED" | "REMOVED";
+  reason: string;
+  changed_by_user_id: string;
+  changed_at: Generated<Date>;
+}
+
 export type WorkspacePlace =
   | "STUDENT_DISCOVERY"
   | "STUDENT_LEARNING"
@@ -70,8 +80,8 @@ export interface TeacherProfileTopicsTable { teacher_user_id: string; topic_key:
 export interface TeacherQualificationsTable { id: Generated<string>; teacher_user_id: string; target_language: string; curriculum_level: CurriculumLevel; granted_by_user_id: string; granted_at: Generated<Date> }
 export interface ClassSessionsTable { id: Generated<string>; lesson_unit_id: string; teacher_user_id: string; starts_at: Date; scheduling_time_zone: string; seat_capacity: Generated<number>; occupied_seats: Generated<number>; state: "PUBLISHED" | "CANCELLED"; cancellation_reason: Generated<string | null>; cancelled_at: Generated<Date | null> }
 export interface ScheduleCommitmentsTable { id: Generated<string>; user_id: string; class_session_id: string; commitment_role: "STUDENT" | "TEACHER"; starts_at: Date; ends_at: Date; active: Generated<boolean> }
-export interface BookingsTable { id: Generated<string>; student_user_id: string; class_session_id: string; teacher_user_id_at_booking: string; state: Generated<"ACTIVE" | "ENDED">; terminal_reason: "STUDENT_CANCELLATION" | "RESCHEDULED" | "CLASS_SESSION_CANCELLATION" | null; class_credit_refunded: Generated<boolean>; late_cancellation_refund_until: Date | null; rescheduled_from_booking_id: Generated<string | null>; booked_at: Generated<Date>; ended_at: Date | null }
-export type WaitlistTerminalReason = "WITHDRAWN" | "PROMOTED" | "EXPIRED" | "CLASS_SESSION_UNAVAILABLE" | "INSUFFICIENT_CLASS_CREDITS" | "SCHEDULE_CONFLICT" | "ALREADY_BOOKED";
+export interface BookingsTable { id: Generated<string>; student_user_id: string; class_session_id: string; teacher_user_id_at_booking: string; state: Generated<"ACTIVE" | "ENDED">; terminal_reason: "STUDENT_CANCELLATION" | "RESCHEDULED" | "CLASS_SESSION_CANCELLATION" | "ROLE_ASSIGNMENT_REMOVAL" | null; class_credit_refunded: Generated<boolean>; late_cancellation_refund_until: Date | null; rescheduled_from_booking_id: Generated<string | null>; booked_at: Generated<Date>; ended_at: Date | null }
+export type WaitlistTerminalReason = "WITHDRAWN" | "PROMOTED" | "EXPIRED" | "CLASS_SESSION_UNAVAILABLE" | "INSUFFICIENT_CLASS_CREDITS" | "SCHEDULE_CONFLICT" | "ALREADY_BOOKED" | "ROLE_ASSIGNMENT_REMOVAL";
 export interface WaitlistEntriesTable { id: Generated<string>; student_user_id: string; class_session_id: string; state: "ACTIVE" | "WITHDRAWN" | "PROMOTED" | "EXPIRED" | "INELIGIBLE"; terminal_reason: WaitlistTerminalReason | null; joined_at: Date; expires_at: Date; completed_at: Date | null; promoted_booking_id: string | null }
 export interface WaitlistPromotionRequestsTable { class_session_id: string; requested_at: Generated<Date>; request_version: Generated<number>; processed_at: Date | null }
 export interface ClassSessionRemindersTable { id: Generated<string>; class_session_id: string; recipient_user_id: string; commitment_role: "STUDENT" | "TEACHER"; due_at: Date; terminal_outcome: "DELIVERED" | "SUPPRESSED" | null; completed_at: Date | null }
@@ -144,6 +154,7 @@ export interface ReportExportsTable {
 export interface DatabaseSchema {
   users: UsersTable;
   role_assignments: RoleAssignmentsTable;
+  role_assignment_changes: RoleAssignmentChangesTable;
   role_workspace_places: RoleWorkspacePlacesTable;
   audit_entries: AuditEntriesTable;
   schema_migrations: SchemaMigrationsTable;

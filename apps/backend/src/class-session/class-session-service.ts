@@ -134,7 +134,11 @@ export async function publishClassSession(
     }
 
     await sql`select pg_advisory_xact_lock(hashtextextended(${`qualification:${input.teacherUserId}:${lessonUnit.target_language}:${lessonUnit.curriculum_level}`}, 0))`.execute(transaction);
-    const qualification = await transaction.selectFrom("teacher_qualifications").select("id")
+    const qualification = await transaction.selectFrom("teacher_qualifications")
+      .innerJoin("role_assignments", (join) => join
+        .onRef("role_assignments.user_id", "=", "teacher_qualifications.teacher_user_id")
+        .on("role_assignments.role", "=", "TEACHER"))
+      .select("teacher_qualifications.id")
       .where("teacher_user_id", "=", input.teacherUserId)
       .where("target_language", "=", lessonUnit.target_language)
       .where("curriculum_level", "=", lessonUnit.curriculum_level)

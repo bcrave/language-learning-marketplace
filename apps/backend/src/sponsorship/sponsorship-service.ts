@@ -1,4 +1,5 @@
 import { interfaceMessages } from "@marketplace/core";
+import { sql } from "kysely";
 
 import type { Database } from "../database/database.js";
 import { projectClassCreditAccount } from "../class-credit/class-credit-service.js";
@@ -360,6 +361,7 @@ export async function acceptSponsorshipInvitation(
   correlationId: string,
   now: Date,
 ) {
+  await sql`select pg_advisory_xact_lock(hashtextextended(${student.id}, 28))`.execute(transaction);
   const located = await lockedPendingInvitation(transaction, student, "sponsorship-invitation.accepted", input.invitationId, correlationId, now);
   if (located.status === "CONFLICT") return located.conflict;
   const invitation = located.invitation;

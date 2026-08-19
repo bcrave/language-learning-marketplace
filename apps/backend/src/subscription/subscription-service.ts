@@ -98,6 +98,7 @@ export async function processSubscriptionProviderEvent(
     studentUserId: input.studentUserId,
   });
   await sql`select pg_advisory_xact_lock(hashtextextended(${`subscription-provider:${input.providerEventId}`}, 0))`.execute(transaction);
+  await sql`select pg_advisory_xact_lock(hashtextextended(${input.studentUserId}, 28))`.execute(transaction);
   const existingEvent = await transaction.selectFrom("subscription_provider_events")
     .select(["input_fingerprint", "outcome"])
     .where("provider_event_id", "=", input.providerEventId)

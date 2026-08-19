@@ -218,7 +218,11 @@ export async function substituteTeacher(
     await recordResolutionAudit(transaction, administrator.id, input.classSessionId, correlationId, "DENIED", "REPLACEMENT_TEACHER_REQUIRED");
     return disruptionError("REPLACEMENT_TEACHER_REQUIRED", "Choose a different Teacher as the replacement.");
   }
-  const qualification = await transaction.selectFrom("teacher_qualifications").select("id")
+  const qualification = await transaction.selectFrom("teacher_qualifications")
+    .innerJoin("role_assignments", (join) => join
+      .onRef("role_assignments.user_id", "=", "teacher_qualifications.teacher_user_id")
+      .on("role_assignments.role", "=", "TEACHER"))
+    .select("teacher_qualifications.id")
     .where("teacher_user_id", "=", input.replacementTeacherUserId)
     .where("target_language", "=", disruption.target_language)
     .where("curriculum_level", "=", disruption.curriculum_level)

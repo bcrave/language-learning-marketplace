@@ -278,6 +278,7 @@ export enum BookingState {
 export enum BookingTerminalReason {
   ClassSessionCancellation = 'CLASS_SESSION_CANCELLATION',
   Rescheduled = 'RESCHEDULED',
+  RoleAssignmentRemoval = 'ROLE_ASSIGNMENT_REMOVAL',
   StudentCancellation = 'STUDENT_CANCELLATION'
 }
 
@@ -322,6 +323,14 @@ export type ChangeClassSessionSeatCapacityResult = ChangeClassSessionSeatCapacit
 export type ChangeClassSessionSeatCapacitySuccess = {
   __typename?: 'ChangeClassSessionSeatCapacitySuccess';
   classSession: ClassSession;
+};
+
+export type ChangeRoleAssignmentInput = {
+  idempotencyKey: Scalars['ID']['input'];
+  organizationId?: InputMaybe<Scalars['ID']['input']>;
+  reason: Scalars['String']['input'];
+  role: UserRole;
+  userId: Scalars['ID']['input'];
 };
 
 export type ChangeTeacherQualificationInput = {
@@ -815,6 +824,8 @@ export enum FeedbackSkill {
   Writing = 'WRITING'
 }
 
+export type GrantRoleAssignmentResult = RoleAssignmentChangeSuccess | RoleAssignmentError;
+
 export type GrantTeacherQualificationResult = ChangeTeacherQualificationSuccess | CurriculumConflict;
 
 export type InAppNotification = {
@@ -1085,6 +1096,7 @@ export type Mutation = {
   endSponsorshipAsStudent: EndSponsorshipAsStudentResult;
   endTeacherAvailabilityRange: EndTeacherAvailabilityRangeResult;
   enterClassroom: EnterClassroomResult;
+  grantRoleAssignment: GrantRoleAssignmentResult;
   grantTeacherQualification: GrantTeacherQualificationResult;
   inviteToSponsorship: InviteToSponsorshipResult;
   joinWaitlist: JoinWaitlistResult;
@@ -1097,6 +1109,7 @@ export type Mutation = {
   redactSessionRatingComment: RedactSessionRatingCommentResult;
   rememberRoleWorkspacePlace: RolePlace;
   removeAvailabilityException: RemoveAvailabilityExceptionResult;
+  removeRoleAssignment: RemoveRoleAssignmentResult;
   removeTeacherQualification: RemoveTeacherQualificationResult;
   renameCohort: RenameCohortResult;
   reportAbsence: ReportAbsenceResult;
@@ -1227,6 +1240,11 @@ export type MutationEnterClassroomArgs = {
 };
 
 
+export type MutationGrantRoleAssignmentArgs = {
+  input: ChangeRoleAssignmentInput;
+};
+
+
 export type MutationGrantTeacherQualificationArgs = {
   input: ChangeTeacherQualificationInput;
 };
@@ -1284,6 +1302,11 @@ export type MutationRememberRoleWorkspacePlaceArgs = {
 
 export type MutationRemoveAvailabilityExceptionArgs = {
   input: RemoveAvailabilityExceptionInput;
+};
+
+
+export type MutationRemoveRoleAssignmentArgs = {
+  input: ChangeRoleAssignmentInput;
 };
 
 
@@ -1541,6 +1564,7 @@ export type Query = {
   publicTeacherProfile?: Maybe<PublicTeacherProfile>;
   reportExportArtifact: ReportExportArtifact;
   reportExports: Array<ReportExport>;
+  roleAssignmentAdministration: RoleAssignmentAdministration;
   roleWorkspace: RoleWorkspace;
   studentAttendanceRecords: Array<StudentAttendanceRecord>;
   studentBookings: Array<Booking>;
@@ -1684,6 +1708,8 @@ export type RemoveAvailabilityExceptionSuccess = {
   __typename?: 'RemoveAvailabilityExceptionSuccess';
   exceptionId: Scalars['ID']['output'];
 };
+
+export type RemoveRoleAssignmentResult = RoleAssignmentChangeSuccess | RoleAssignmentError;
 
 export type RemoveTeacherQualificationResult = ChangeTeacherQualificationSuccess | CurriculumConflict | TeacherQualificationRemovalBlocked;
 
@@ -1871,6 +1897,51 @@ export type ReviseLessonMaterialResult = CurriculumConflict | InvalidLessonMater
 export type ReviseLessonMaterialSuccess = {
   __typename?: 'ReviseLessonMaterialSuccess';
   material: LessonMaterial;
+};
+
+export type RoleAssignmentAdministration = {
+  __typename?: 'RoleAssignmentAdministration';
+  organizations: Array<Organization>;
+  users: Array<RoleAssignmentAdministrationUser>;
+};
+
+export type RoleAssignmentAdministrationUser = {
+  __typename?: 'RoleAssignmentAdministrationUser';
+  displayName: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  roleAssignmentHistory: Array<RoleAssignmentChange>;
+  roles: Array<UserRole>;
+};
+
+export type RoleAssignmentChange = {
+  __typename?: 'RoleAssignmentChange';
+  action: RoleAssignmentChangeAction;
+  changedAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  reason: Scalars['String']['output'];
+  role: UserRole;
+};
+
+export enum RoleAssignmentChangeAction {
+  Granted = 'GRANTED',
+  Removed = 'REMOVED'
+}
+
+export type RoleAssignmentChangeSuccess = {
+  __typename?: 'RoleAssignmentChangeSuccess';
+  endedBookingCount: Scalars['Int']['output'];
+  refundedClassCreditCount: Scalars['Int']['output'];
+  removedWaitlistEntryCount: Scalars['Int']['output'];
+  sponsorshipEnded: Scalars['Boolean']['output'];
+  subscriptionEnded: Scalars['Boolean']['output'];
+  user: RoleAssignmentAdministrationUser;
+};
+
+export type RoleAssignmentError = {
+  __typename?: 'RoleAssignmentError';
+  classSessionIds: Array<Scalars['ID']['output']>;
+  code: Scalars['String']['output'];
+  message: Scalars['String']['output'];
 };
 
 export type RolePlace = {
@@ -2363,6 +2434,7 @@ export enum WaitlistTerminalReason {
   Expired = 'EXPIRED',
   InsufficientClassCredits = 'INSUFFICIENT_CLASS_CREDITS',
   Promoted = 'PROMOTED',
+  RoleAssignmentRemoval = 'ROLE_ASSIGNMENT_REMOVAL',
   ScheduleConflict = 'SCHEDULE_CONFLICT',
   Withdrawn = 'WITHDRAWN'
 }
@@ -2559,6 +2631,10 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( ClassroomAccessError )
     | ( EnterClassroomSuccess )
   ;
+  GrantRoleAssignmentResult:
+    | ( RoleAssignmentChangeSuccess )
+    | ( RoleAssignmentError )
+  ;
   GrantTeacherQualificationResult:
     | ( ChangeTeacherQualificationSuccess )
     | ( CurriculumConflict )
@@ -2595,6 +2671,10 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
   RemoveAvailabilityExceptionResult:
     | ( RemoveAvailabilityExceptionSuccess )
     | ( TeacherAvailabilityValidationError )
+  ;
+  RemoveRoleAssignmentResult:
+    | ( RoleAssignmentChangeSuccess )
+    | ( RoleAssignmentError )
   ;
   RemoveTeacherQualificationResult:
     | ( ChangeTeacherQualificationSuccess )
@@ -2732,6 +2812,7 @@ export type ResolversTypes = {
   ChangeClassSessionSeatCapacityInput: ChangeClassSessionSeatCapacityInput;
   ChangeClassSessionSeatCapacityResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ChangeClassSessionSeatCapacityResult']>;
   ChangeClassSessionSeatCapacitySuccess: ResolverTypeWrapper<ChangeClassSessionSeatCapacitySuccess>;
+  ChangeRoleAssignmentInput: ChangeRoleAssignmentInput;
   ChangeTeacherQualificationInput: ChangeTeacherQualificationInput;
   ChangeTeacherQualificationSuccess: ResolverTypeWrapper<ChangeTeacherQualificationSuccess>;
   ClassCreditAccount: ResolverTypeWrapper<ClassCreditAccount>;
@@ -2804,6 +2885,7 @@ export type ResolversTypes = {
   EnterClassroomSuccess: ResolverTypeWrapper<EnterClassroomSuccess>;
   FeedbackAndRatingItem: ResolverTypeWrapper<FeedbackAndRatingItem>;
   FeedbackSkill: FeedbackSkill;
+  GrantRoleAssignmentResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['GrantRoleAssignmentResult']>;
   GrantTeacherQualificationResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['GrantTeacherQualificationResult']>;
   ID: ResolverTypeWrapper<Scalars['ID']['output']>;
   InAppNotification: ResolverTypeWrapper<InAppNotification>;
@@ -2870,6 +2952,7 @@ export type ResolversTypes = {
   RemoveAvailabilityExceptionInput: RemoveAvailabilityExceptionInput;
   RemoveAvailabilityExceptionResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RemoveAvailabilityExceptionResult']>;
   RemoveAvailabilityExceptionSuccess: ResolverTypeWrapper<RemoveAvailabilityExceptionSuccess>;
+  RemoveRoleAssignmentResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RemoveRoleAssignmentResult']>;
   RemoveTeacherQualificationResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RemoveTeacherQualificationResult']>;
   RenameCohortInput: RenameCohortInput;
   RenameCohortResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['RenameCohortResult']>;
@@ -2905,6 +2988,12 @@ export type ResolversTypes = {
   ReviseLessonMaterialInput: ReviseLessonMaterialInput;
   ReviseLessonMaterialResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['ReviseLessonMaterialResult']>;
   ReviseLessonMaterialSuccess: ResolverTypeWrapper<ReviseLessonMaterialSuccess>;
+  RoleAssignmentAdministration: ResolverTypeWrapper<RoleAssignmentAdministration>;
+  RoleAssignmentAdministrationUser: ResolverTypeWrapper<RoleAssignmentAdministrationUser>;
+  RoleAssignmentChange: ResolverTypeWrapper<RoleAssignmentChange>;
+  RoleAssignmentChangeAction: RoleAssignmentChangeAction;
+  RoleAssignmentChangeSuccess: ResolverTypeWrapper<RoleAssignmentChangeSuccess>;
+  RoleAssignmentError: ResolverTypeWrapper<RoleAssignmentError>;
   RolePlace: ResolverTypeWrapper<RolePlace>;
   RoleWorkspace: ResolverTypeWrapper<RoleWorkspace>;
   SaveLearningFeedbackInput: SaveLearningFeedbackInput;
@@ -3029,6 +3118,7 @@ export type ResolversParentTypes = {
   ChangeClassSessionSeatCapacityInput: ChangeClassSessionSeatCapacityInput;
   ChangeClassSessionSeatCapacityResult: ResolversUnionTypes<ResolversParentTypes>['ChangeClassSessionSeatCapacityResult'];
   ChangeClassSessionSeatCapacitySuccess: ChangeClassSessionSeatCapacitySuccess;
+  ChangeRoleAssignmentInput: ChangeRoleAssignmentInput;
   ChangeTeacherQualificationInput: ChangeTeacherQualificationInput;
   ChangeTeacherQualificationSuccess: ChangeTeacherQualificationSuccess;
   ClassCreditAccount: ClassCreditAccount;
@@ -3089,6 +3179,7 @@ export type ResolversParentTypes = {
   EnterClassroomResult: ResolversUnionTypes<ResolversParentTypes>['EnterClassroomResult'];
   EnterClassroomSuccess: EnterClassroomSuccess;
   FeedbackAndRatingItem: FeedbackAndRatingItem;
+  GrantRoleAssignmentResult: ResolversUnionTypes<ResolversParentTypes>['GrantRoleAssignmentResult'];
   GrantTeacherQualificationResult: ResolversUnionTypes<ResolversParentTypes>['GrantTeacherQualificationResult'];
   ID: Scalars['ID']['output'];
   InAppNotification: InAppNotification;
@@ -3147,6 +3238,7 @@ export type ResolversParentTypes = {
   RemoveAvailabilityExceptionInput: RemoveAvailabilityExceptionInput;
   RemoveAvailabilityExceptionResult: ResolversUnionTypes<ResolversParentTypes>['RemoveAvailabilityExceptionResult'];
   RemoveAvailabilityExceptionSuccess: RemoveAvailabilityExceptionSuccess;
+  RemoveRoleAssignmentResult: ResolversUnionTypes<ResolversParentTypes>['RemoveRoleAssignmentResult'];
   RemoveTeacherQualificationResult: ResolversUnionTypes<ResolversParentTypes>['RemoveTeacherQualificationResult'];
   RenameCohortInput: RenameCohortInput;
   RenameCohortResult: ResolversUnionTypes<ResolversParentTypes>['RenameCohortResult'];
@@ -3177,6 +3269,11 @@ export type ResolversParentTypes = {
   ReviseLessonMaterialInput: ReviseLessonMaterialInput;
   ReviseLessonMaterialResult: ResolversUnionTypes<ResolversParentTypes>['ReviseLessonMaterialResult'];
   ReviseLessonMaterialSuccess: ReviseLessonMaterialSuccess;
+  RoleAssignmentAdministration: RoleAssignmentAdministration;
+  RoleAssignmentAdministrationUser: RoleAssignmentAdministrationUser;
+  RoleAssignmentChange: RoleAssignmentChange;
+  RoleAssignmentChangeSuccess: RoleAssignmentChangeSuccess;
+  RoleAssignmentError: RoleAssignmentError;
   RolePlace: RolePlace;
   RoleWorkspace: RoleWorkspace;
   SaveLearningFeedbackInput: SaveLearningFeedbackInput;
@@ -3741,6 +3838,10 @@ export type FeedbackAndRatingItemResolvers<ContextType = any, ParentType extends
   teacherDisplayName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
 };
 
+export type GrantRoleAssignmentResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['GrantRoleAssignmentResult'] = ResolversParentTypes['GrantRoleAssignmentResult']> = {
+  __resolveType: TypeResolveFn<'RoleAssignmentChangeSuccess' | 'RoleAssignmentError', ParentType, ContextType>;
+};
+
 export type GrantTeacherQualificationResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['GrantTeacherQualificationResult'] = ResolversParentTypes['GrantTeacherQualificationResult']> = {
   __resolveType: TypeResolveFn<'ChangeTeacherQualificationSuccess' | 'CurriculumConflict', ParentType, ContextType>;
 };
@@ -3945,6 +4046,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   endSponsorshipAsStudent?: Resolver<ResolversTypes['EndSponsorshipAsStudentResult'], ParentType, ContextType, RequireFields<MutationEndSponsorshipAsStudentArgs, 'input'>>;
   endTeacherAvailabilityRange?: Resolver<ResolversTypes['EndTeacherAvailabilityRangeResult'], ParentType, ContextType, RequireFields<MutationEndTeacherAvailabilityRangeArgs, 'input'>>;
   enterClassroom?: Resolver<ResolversTypes['EnterClassroomResult'], ParentType, ContextType, RequireFields<MutationEnterClassroomArgs, 'input'>>;
+  grantRoleAssignment?: Resolver<ResolversTypes['GrantRoleAssignmentResult'], ParentType, ContextType, RequireFields<MutationGrantRoleAssignmentArgs, 'input'>>;
   grantTeacherQualification?: Resolver<ResolversTypes['GrantTeacherQualificationResult'], ParentType, ContextType, RequireFields<MutationGrantTeacherQualificationArgs, 'input'>>;
   inviteToSponsorship?: Resolver<ResolversTypes['InviteToSponsorshipResult'], ParentType, ContextType, RequireFields<MutationInviteToSponsorshipArgs, 'input'>>;
   joinWaitlist?: Resolver<ResolversTypes['JoinWaitlistResult'], ParentType, ContextType, RequireFields<MutationJoinWaitlistArgs, 'input'>>;
@@ -3957,6 +4059,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   redactSessionRatingComment?: Resolver<ResolversTypes['RedactSessionRatingCommentResult'], ParentType, ContextType, RequireFields<MutationRedactSessionRatingCommentArgs, 'input'>>;
   rememberRoleWorkspacePlace?: Resolver<ResolversTypes['RolePlace'], ParentType, ContextType, RequireFields<MutationRememberRoleWorkspacePlaceArgs, 'input'>>;
   removeAvailabilityException?: Resolver<ResolversTypes['RemoveAvailabilityExceptionResult'], ParentType, ContextType, RequireFields<MutationRemoveAvailabilityExceptionArgs, 'input'>>;
+  removeRoleAssignment?: Resolver<ResolversTypes['RemoveRoleAssignmentResult'], ParentType, ContextType, RequireFields<MutationRemoveRoleAssignmentArgs, 'input'>>;
   removeTeacherQualification?: Resolver<ResolversTypes['RemoveTeacherQualificationResult'], ParentType, ContextType, RequireFields<MutationRemoveTeacherQualificationArgs, 'input'>>;
   renameCohort?: Resolver<ResolversTypes['RenameCohortResult'], ParentType, ContextType, RequireFields<MutationRenameCohortArgs, 'input'>>;
   reportAbsence?: Resolver<ResolversTypes['ReportAbsenceResult'], ParentType, ContextType, RequireFields<MutationReportAbsenceArgs, 'input'>>;
@@ -4097,6 +4200,7 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   publicTeacherProfile?: Resolver<Maybe<ResolversTypes['PublicTeacherProfile']>, ParentType, ContextType, RequireFields<QueryPublicTeacherProfileArgs, 'locale' | 'teacherUserId'>>;
   reportExportArtifact?: Resolver<ResolversTypes['ReportExportArtifact'], ParentType, ContextType, RequireFields<QueryReportExportArtifactArgs, 'id'>>;
   reportExports?: Resolver<Array<ResolversTypes['ReportExport']>, ParentType, ContextType>;
+  roleAssignmentAdministration?: Resolver<ResolversTypes['RoleAssignmentAdministration'], ParentType, ContextType>;
   roleWorkspace?: Resolver<ResolversTypes['RoleWorkspace'], ParentType, ContextType, RequireFields<QueryRoleWorkspaceArgs, 'actingRole'>>;
   studentAttendanceRecords?: Resolver<Array<ResolversTypes['StudentAttendanceRecord']>, ParentType, ContextType>;
   studentBookings?: Resolver<Array<ResolversTypes['Booking']>, ParentType, ContextType>;
@@ -4151,6 +4255,10 @@ export type RemoveAvailabilityExceptionResultResolvers<ContextType = any, Parent
 export type RemoveAvailabilityExceptionSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['RemoveAvailabilityExceptionSuccess'] = ResolversParentTypes['RemoveAvailabilityExceptionSuccess']> = {
   exceptionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type RemoveRoleAssignmentResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['RemoveRoleAssignmentResult'] = ResolversParentTypes['RemoveRoleAssignmentResult']> = {
+  __resolveType: TypeResolveFn<'RoleAssignmentChangeSuccess' | 'RoleAssignmentError', ParentType, ContextType>;
 };
 
 export type RemoveTeacherQualificationResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['RemoveTeacherQualificationResult'] = ResolversParentTypes['RemoveTeacherQualificationResult']> = {
@@ -4265,6 +4373,43 @@ export type ReviseLessonMaterialResultResolvers<ContextType = any, ParentType ex
 
 export type ReviseLessonMaterialSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['ReviseLessonMaterialSuccess'] = ResolversParentTypes['ReviseLessonMaterialSuccess']> = {
   material?: Resolver<ResolversTypes['LessonMaterial'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type RoleAssignmentAdministrationResolvers<ContextType = any, ParentType extends ResolversParentTypes['RoleAssignmentAdministration'] = ResolversParentTypes['RoleAssignmentAdministration']> = {
+  organizations?: Resolver<Array<ResolversTypes['Organization']>, ParentType, ContextType>;
+  users?: Resolver<Array<ResolversTypes['RoleAssignmentAdministrationUser']>, ParentType, ContextType>;
+};
+
+export type RoleAssignmentAdministrationUserResolvers<ContextType = any, ParentType extends ResolversParentTypes['RoleAssignmentAdministrationUser'] = ResolversParentTypes['RoleAssignmentAdministrationUser']> = {
+  displayName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  roleAssignmentHistory?: Resolver<Array<ResolversTypes['RoleAssignmentChange']>, ParentType, ContextType>;
+  roles?: Resolver<Array<ResolversTypes['UserRole']>, ParentType, ContextType>;
+};
+
+export type RoleAssignmentChangeResolvers<ContextType = any, ParentType extends ResolversParentTypes['RoleAssignmentChange'] = ResolversParentTypes['RoleAssignmentChange']> = {
+  action?: Resolver<ResolversTypes['RoleAssignmentChangeAction'], ParentType, ContextType>;
+  changedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  reason?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  role?: Resolver<ResolversTypes['UserRole'], ParentType, ContextType>;
+};
+
+export type RoleAssignmentChangeSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['RoleAssignmentChangeSuccess'] = ResolversParentTypes['RoleAssignmentChangeSuccess']> = {
+  endedBookingCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  refundedClassCreditCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  removedWaitlistEntryCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  sponsorshipEnded?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  subscriptionEnded?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  user?: Resolver<ResolversTypes['RoleAssignmentAdministrationUser'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type RoleAssignmentErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['RoleAssignmentError'] = ResolversParentTypes['RoleAssignmentError']> = {
+  classSessionIds?: Resolver<Array<ResolversTypes['ID']>, ParentType, ContextType>;
+  code?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
@@ -4643,6 +4788,7 @@ export type Resolvers<ContextType = any> = {
   EnterClassroomResult?: EnterClassroomResultResolvers<ContextType>;
   EnterClassroomSuccess?: EnterClassroomSuccessResolvers<ContextType>;
   FeedbackAndRatingItem?: FeedbackAndRatingItemResolvers<ContextType>;
+  GrantRoleAssignmentResult?: GrantRoleAssignmentResultResolvers<ContextType>;
   GrantTeacherQualificationResult?: GrantTeacherQualificationResultResolvers<ContextType>;
   InAppNotification?: InAppNotificationResolvers<ContextType>;
   InstructionalIdentityLocked?: InstructionalIdentityLockedResolvers<ContextType>;
@@ -4689,6 +4835,7 @@ export type Resolvers<ContextType = any> = {
   RedactSessionRatingCommentSuccess?: RedactSessionRatingCommentSuccessResolvers<ContextType>;
   RemoveAvailabilityExceptionResult?: RemoveAvailabilityExceptionResultResolvers<ContextType>;
   RemoveAvailabilityExceptionSuccess?: RemoveAvailabilityExceptionSuccessResolvers<ContextType>;
+  RemoveRoleAssignmentResult?: RemoveRoleAssignmentResultResolvers<ContextType>;
   RemoveTeacherQualificationResult?: RemoveTeacherQualificationResultResolvers<ContextType>;
   RenameCohortResult?: RenameCohortResultResolvers<ContextType>;
   ReorderLessonUnitResult?: ReorderLessonUnitResultResolvers<ContextType>;
@@ -4710,6 +4857,11 @@ export type Resolvers<ContextType = any> = {
   RetireLessonUnitSuccess?: RetireLessonUnitSuccessResolvers<ContextType>;
   ReviseLessonMaterialResult?: ReviseLessonMaterialResultResolvers<ContextType>;
   ReviseLessonMaterialSuccess?: ReviseLessonMaterialSuccessResolvers<ContextType>;
+  RoleAssignmentAdministration?: RoleAssignmentAdministrationResolvers<ContextType>;
+  RoleAssignmentAdministrationUser?: RoleAssignmentAdministrationUserResolvers<ContextType>;
+  RoleAssignmentChange?: RoleAssignmentChangeResolvers<ContextType>;
+  RoleAssignmentChangeSuccess?: RoleAssignmentChangeSuccessResolvers<ContextType>;
+  RoleAssignmentError?: RoleAssignmentErrorResolvers<ContextType>;
   RolePlace?: RolePlaceResolvers<ContextType>;
   RoleWorkspace?: RoleWorkspaceResolvers<ContextType>;
   SaveLearningFeedbackResult?: SaveLearningFeedbackResultResolvers<ContextType>;

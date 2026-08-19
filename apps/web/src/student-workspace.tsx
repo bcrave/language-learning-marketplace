@@ -33,6 +33,7 @@ import { TeacherSchedulePanel } from "./teacher-schedule.js";
 import { StudentDiscoveryPanel } from "./student-discovery.js";
 import { NotificationInbox } from "./notification-inbox.js";
 import { AdministratorTaskQueue } from "./administrator-task-queue.js";
+import { RoleAssignmentAdministrationPanel } from "./role-assignments.js";
 import { CourseProgressPanel } from "./course-progress.js";
 import { TeacherAttendancePanel } from "./teacher-attendance.js";
 import { LearningAccessPanel } from "./learning-access.js";
@@ -429,6 +430,7 @@ function WorkspaceContent({
             <AdminCurriculum locale={locale} />
           </>
         )}
+        {currentPlace === "ADMINISTRATION_PEOPLE" && <RoleAssignmentAdministrationPanel />}
         {currentPlace === "STUDENT_LEARNING" && <>
           <LearningAccessPanel actingRole="STUDENT" />
           <CourseProgressPanel />

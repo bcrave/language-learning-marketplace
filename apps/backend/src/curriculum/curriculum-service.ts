@@ -63,7 +63,11 @@ export async function lessonUnitProjection(db: Database, lessonUnitId: string, l
 }
 
 export async function publicTeacherProfile(db: Database, teacherUserId: string, locale: "en" | "es") {
-  const profile = await db.selectFrom("teacher_profiles").innerJoin("users", "users.id", "teacher_profiles.teacher_user_id")
+  const profile = await db.selectFrom("teacher_profiles")
+    .innerJoin("users", "users.id", "teacher_profiles.teacher_user_id")
+    .innerJoin("role_assignments", (join) => join
+      .onRef("role_assignments.user_id", "=", "teacher_profiles.teacher_user_id")
+      .on("role_assignments.role", "=", "TEACHER"))
     .select(["users.id", "users.display_name", "teacher_profiles.pronouns", "teacher_profiles.profile_image_url", "teacher_profiles.professional_bio"])
     .where("teacher_profiles.teacher_user_id", "=", teacherUserId).executeTakeFirst();
   if (!profile) return null;
@@ -89,7 +93,13 @@ export async function publicTeacherProfile(db: Database, teacherUserId: string, 
 export async function administrationCurriculum(db: Database, locale: "en" | "es") {
   const courses = await db.selectFrom("courses").innerJoin("curriculum_levels", "curriculum_levels.code", "courses.curriculum_level")
     .selectAll("courses").orderBy("target_language").orderBy("curriculum_levels.sort_order").execute();
-  const teachers = await db.selectFrom("teacher_profiles").select("teacher_user_id").orderBy("teacher_user_id").execute();
+  const teachers = await db.selectFrom("teacher_profiles")
+    .innerJoin("role_assignments", (join) => join
+      .onRef("role_assignments.user_id", "=", "teacher_profiles.teacher_user_id")
+      .on("role_assignments.role", "=", "TEACHER"))
+    .select("teacher_profiles.teacher_user_id")
+    .orderBy("teacher_profiles.teacher_user_id")
+    .execute();
   return {
     courses: await Promise.all(courses.map(async (course) => ({
       id: course.id,

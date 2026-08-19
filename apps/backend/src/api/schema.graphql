@@ -134,7 +134,7 @@ union RedactSessionRatingCommentResult = RedactSessionRatingCommentSuccess | Ses
 type CourseProgressLearningHistory { lessonUnitId: ID!, title: String!, state: LessonUnitState!, earnedAt: String!, countsTowardProgress: Boolean! }
 type CourseProgress { courseId: ID!, title: String!, targetLanguage: String!, curriculumLevel: CurriculumLevel!, activeLessonUnitCount: Int!, completedActiveLessonUnitCount: Int!, percentage: Int!, learningHistory: [CourseProgressLearningHistory!]! }
 enum BookingState { ACTIVE ENDED }
-enum BookingTerminalReason { STUDENT_CANCELLATION RESCHEDULED CLASS_SESSION_CANCELLATION }
+enum BookingTerminalReason { STUDENT_CANCELLATION RESCHEDULED CLASS_SESSION_CANCELLATION ROLE_ASSIGNMENT_REMOVAL }
 type Booking { id: ID!, state: BookingState!, terminalReason: BookingTerminalReason, classCreditRefunded: Boolean!, bookedAt: String!, endedAt: String, classSession: ClassSession! }
 input BookClassSessionInput { idempotencyKey: ID!, classSessionId: ID! }
 input CancelBookingInput { idempotencyKey: ID!, bookingId: ID! }
@@ -148,7 +148,7 @@ union BookClassSessionResult = BookClassSessionSuccess | BookingError
 union CancelBookingResult = CancelBookingSuccess | BookingError
 union RescheduleBookingResult = RescheduleBookingSuccess | BookingError
 enum WaitlistEntryState { ACTIVE WITHDRAWN PROMOTED EXPIRED INELIGIBLE }
-enum WaitlistTerminalReason { WITHDRAWN PROMOTED EXPIRED CLASS_SESSION_UNAVAILABLE INSUFFICIENT_CLASS_CREDITS SCHEDULE_CONFLICT ALREADY_BOOKED }
+enum WaitlistTerminalReason { WITHDRAWN PROMOTED EXPIRED CLASS_SESSION_UNAVAILABLE INSUFFICIENT_CLASS_CREDITS SCHEDULE_CONFLICT ALREADY_BOOKED ROLE_ASSIGNMENT_REMOVAL }
 type WaitlistEntry { id: ID!, state: WaitlistEntryState!, terminalReason: WaitlistTerminalReason, joinedAt: String!, expiresAt: String!, completedAt: String, classSession: ClassSession!, resultingBooking: Booking }
 input JoinWaitlistInput { idempotencyKey: ID!, classSessionId: ID! }
 input WithdrawWaitlistInput { idempotencyKey: ID!, waitlistEntryId: ID! }
@@ -598,6 +598,23 @@ type RoleWorkspace {
   rolePlaces: [RolePlace!]!
 }
 
+enum RoleAssignmentChangeAction { GRANTED REMOVED }
+type RoleAssignmentChange { id: ID!, role: UserRole!, action: RoleAssignmentChangeAction!, reason: String!, changedAt: String! }
+type RoleAssignmentAdministrationUser { id: ID!, displayName: String!, roles: [UserRole!]!, roleAssignmentHistory: [RoleAssignmentChange!]! }
+type RoleAssignmentAdministration { users: [RoleAssignmentAdministrationUser!]!, organizations: [Organization!]! }
+input ChangeRoleAssignmentInput { idempotencyKey: ID!, userId: ID!, role: UserRole!, reason: String!, organizationId: ID }
+type RoleAssignmentChangeSuccess {
+  user: RoleAssignmentAdministrationUser!
+  endedBookingCount: Int!
+  removedWaitlistEntryCount: Int!
+  refundedClassCreditCount: Int!
+  subscriptionEnded: Boolean!
+  sponsorshipEnded: Boolean!
+}
+type RoleAssignmentError { code: String!, message: String!, classSessionIds: [ID!]! }
+union GrantRoleAssignmentResult = RoleAssignmentChangeSuccess | RoleAssignmentError
+union RemoveRoleAssignmentResult = RoleAssignmentChangeSuccess | RoleAssignmentError
+
 type InAppNotification {
   id: ID!
   messageId: String!
@@ -641,6 +658,7 @@ union ResolveAdministratorTaskResult = ResolveAdministratorTaskSuccess | Adminis
 type Query {
   notifications: [InAppNotification!]!
   administratorTasks: [AdministratorTaskItem!]!
+  roleAssignmentAdministration: RoleAssignmentAdministration!
   studentSubscription: Subscription
   studentPlacements: [StudentPlacement!]!
   classSessionDiscoveryOptions: ClassSessionDiscoveryOptions!
@@ -685,6 +703,8 @@ type Mutation {
   markNotificationRead(id: ID!): InAppNotification!
   archiveNotification(id: ID!): InAppNotification!
   resolveAdministratorTask(input: ResolveAdministratorTaskInput!): ResolveAdministratorTaskResult!
+  grantRoleAssignment(input: ChangeRoleAssignmentInput!): GrantRoleAssignmentResult!
+  removeRoleAssignment(input: ChangeRoleAssignmentInput!): RemoveRoleAssignmentResult!
   processSubscriptionProviderEvent(input: ProcessSubscriptionProviderEventInput!): ProcessSubscriptionProviderEventResult!
   scheduleSubscriptionCancellation(input: SubscriptionLifecycleInput!): ScheduleSubscriptionCancellationResult!
   undoSubscriptionCancellation(input: SubscriptionLifecycleInput!): UndoSubscriptionCancellationResult!
