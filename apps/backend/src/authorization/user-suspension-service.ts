@@ -14,6 +14,8 @@ type UserAccessErrorCode =
   | "USER_NOT_FOUND"
   | "USER_ALREADY_SUSPENDED"
   | "USER_NOT_SUSPENDED"
+  | "USER_ANONYMIZED"
+  | "USER_ANONYMIZATION_PENDING"
   | "SELF_SUSPENSION"
   | "FINAL_ACTIVE_PLATFORM_ADMINISTRATOR";
 
@@ -111,6 +113,8 @@ export async function suspendUser(
   await sql`select pg_advisory_xact_lock(hashtextextended(${input.userId}, 28))`.execute(transaction);
   const user = await transaction.selectFrom("users").select(["id", "interface_locale", "display_time_zone", "access_status"]).where("id", "=", input.userId).forUpdate().executeTakeFirst();
   if (!user) return deny(transaction, administrator, input, "user.suspended", correlationId, "USER_NOT_FOUND", "Choose an existing User.");
+  if (user.access_status === "ANONYMIZATION_PENDING") return deny(transaction, administrator, input, "user.suspended", correlationId, "USER_ANONYMIZATION_PENDING", "The User's anonymization is pending identity deletion.");
+  if (user.access_status === "ANONYMIZED") return deny(transaction, administrator, input, "user.suspended", correlationId, "USER_ANONYMIZED", "An anonymized Former User cannot be suspended or reactivated.");
   if (user.access_status === "SUSPENDED") return deny(transaction, administrator, input, "user.suspended", correlationId, "USER_ALREADY_SUSPENDED", "The User is already suspended.");
 
   const targetIsAdministrator = await transaction.selectFrom("role_assignments").select("user_id").where("user_id", "=", input.userId).where("role", "=", "PLATFORM_ADMINISTRATOR").executeTakeFirst();
@@ -182,6 +186,8 @@ export async function reactivateUser(
   await sql`select pg_advisory_xact_lock(hashtextextended(${input.userId}, 28))`.execute(transaction);
   const user = await transaction.selectFrom("users").select(["id", "interface_locale", "display_time_zone", "access_status"]).where("id", "=", input.userId).forUpdate().executeTakeFirst();
   if (!user) return deny(transaction, administrator, input, "user.reactivated", correlationId, "USER_NOT_FOUND", "Choose an existing User.");
+  if (user.access_status === "ANONYMIZATION_PENDING") return deny(transaction, administrator, input, "user.reactivated", correlationId, "USER_ANONYMIZATION_PENDING", "The User's anonymization is pending identity deletion.");
+  if (user.access_status === "ANONYMIZED") return deny(transaction, administrator, input, "user.reactivated", correlationId, "USER_ANONYMIZED", "An anonymized Former User cannot be suspended or reactivated.");
   if (user.access_status !== "SUSPENDED") return deny(transaction, administrator, input, "user.reactivated", correlationId, "USER_NOT_SUSPENDED", "The User is not suspended.");
 
   await transaction.updateTable("users").set({ access_status: "ACTIVE", suspension_reason: null, suspended_at: null, suspended_by_user_id: null }).where("id", "=", input.userId).executeTakeFirstOrThrow();

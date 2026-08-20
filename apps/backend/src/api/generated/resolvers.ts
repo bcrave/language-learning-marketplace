@@ -115,13 +115,16 @@ export type AdministratorTaskItem = {
 
 export enum AdministratorTaskKind {
   NotificationDeliveryReconciliation = 'NOTIFICATION_DELIVERY_RECONCILIATION',
+  UserAnonymizationReconciliation = 'USER_ANONYMIZATION_RECONCILIATION',
   UserSuspensionTeacherAssignment = 'USER_SUSPENSION_TEACHER_ASSIGNMENT'
 }
 
 export type AdministratorTaskSafeContext = {
   __typename?: 'AdministratorTaskSafeContext';
+  anonymizedUserId?: Maybe<Scalars['ID']['output']>;
   channel?: Maybe<NotificationChannel>;
   classSessionId?: Maybe<Scalars['ID']['output']>;
+  failureCode?: Maybe<Scalars['String']['output']>;
   messageId?: Maybe<Scalars['String']['output']>;
   recipientReference?: Maybe<Scalars['ID']['output']>;
   suspendedUserId?: Maybe<Scalars['ID']['output']>;
@@ -131,6 +134,30 @@ export enum AdministratorTaskState {
   Open = 'OPEN',
   Resolved = 'RESOLVED'
 }
+
+export type AnonymizeUserError = {
+  __typename?: 'AnonymizeUserError';
+  classSessionIds: Array<Scalars['ID']['output']>;
+  code: Scalars['String']['output'];
+  message: Scalars['String']['output'];
+};
+
+export type AnonymizeUserInput = {
+  confirmation: Scalars['String']['input'];
+  idempotencyKey: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+  userId: Scalars['ID']['input'];
+};
+
+export type AnonymizeUserResult = AnonymizeUserError | AnonymizeUserSuccess;
+
+export type AnonymizeUserSuccess = {
+  __typename?: 'AnonymizeUserSuccess';
+  redactedLearningFeedbackCount: Scalars['Int']['output'];
+  redactedSessionRatingCount: Scalars['Int']['output'];
+  state: UserAnonymizationState;
+  user: RoleAssignmentAdministrationUser;
+};
 
 export type AttendanceError = {
   __typename?: 'AttendanceError';
@@ -1090,6 +1117,7 @@ export type Mutation = {
   addLessonMaterial: AddLessonMaterialResult;
   adjustClassCredits: AdjustClassCreditsResult;
   administerAttendance: RecordAttendanceResult;
+  anonymizeUser: AnonymizeUserResult;
   archiveNotification: InAppNotification;
   bookClassSession: BookClassSessionResult;
   cancelBooking: CancelBookingResult;
@@ -1173,6 +1201,11 @@ export type MutationAdjustClassCreditsArgs = {
 
 export type MutationAdministerAttendanceArgs = {
   input: RecordAttendanceInput;
+};
+
+
+export type MutationAnonymizeUserArgs = {
+  input: AnonymizeUserInput;
 };
 
 
@@ -2426,7 +2459,14 @@ export type UserAccessError = {
 
 export enum UserAccessStatus {
   Active = 'ACTIVE',
+  AnonymizationPending = 'ANONYMIZATION_PENDING',
+  Anonymized = 'ANONYMIZED',
   Suspended = 'SUSPENDED'
+}
+
+export enum UserAnonymizationState {
+  Completed = 'COMPLETED',
+  Pending = 'PENDING'
 }
 
 export enum UserRole {
@@ -2625,6 +2665,10 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( AdjustClassCreditsSuccess )
     | ( ClassCreditAdjustmentError )
     | ( CurriculumConflict )
+  ;
+  AnonymizeUserResult:
+    | ( AnonymizeUserError )
+    | ( AnonymizeUserSuccess )
   ;
   BookClassSessionResult:
     | ( BookClassSessionSuccess )
@@ -2842,6 +2886,10 @@ export type ResolversTypes = {
   AdministratorTaskKind: AdministratorTaskKind;
   AdministratorTaskSafeContext: ResolverTypeWrapper<AdministratorTaskSafeContext>;
   AdministratorTaskState: AdministratorTaskState;
+  AnonymizeUserError: ResolverTypeWrapper<AnonymizeUserError>;
+  AnonymizeUserInput: AnonymizeUserInput;
+  AnonymizeUserResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['AnonymizeUserResult']>;
+  AnonymizeUserSuccess: ResolverTypeWrapper<AnonymizeUserSuccess>;
   AttendanceError: ResolverTypeWrapper<AttendanceError>;
   AttendanceErrorCode: AttendanceErrorCode;
   AttendanceOutcome: AttendanceOutcome;
@@ -3128,6 +3176,7 @@ export type ResolversTypes = {
   UserAccessChangeSuccess: ResolverTypeWrapper<UserAccessChangeSuccess>;
   UserAccessError: ResolverTypeWrapper<UserAccessError>;
   UserAccessStatus: UserAccessStatus;
+  UserAnonymizationState: UserAnonymizationState;
   UserRole: UserRole;
   WaitlistEntry: ResolverTypeWrapper<WaitlistEntry>;
   WaitlistEntryState: WaitlistEntryState;
@@ -3163,6 +3212,10 @@ export type ResolversParentTypes = {
   AdministratorTaskError: AdministratorTaskError;
   AdministratorTaskItem: AdministratorTaskItem;
   AdministratorTaskSafeContext: AdministratorTaskSafeContext;
+  AnonymizeUserError: AnonymizeUserError;
+  AnonymizeUserInput: AnonymizeUserInput;
+  AnonymizeUserResult: ResolversUnionTypes<ResolversParentTypes>['AnonymizeUserResult'];
+  AnonymizeUserSuccess: AnonymizeUserSuccess;
   AttendanceError: AttendanceError;
   AttendanceRecord: AttendanceRecord;
   AttendanceRecordInput: AttendanceRecordInput;
@@ -3483,11 +3536,32 @@ export type AdministratorTaskItemResolvers<ContextType = any, ParentType extends
 };
 
 export type AdministratorTaskSafeContextResolvers<ContextType = any, ParentType extends ResolversParentTypes['AdministratorTaskSafeContext'] = ResolversParentTypes['AdministratorTaskSafeContext']> = {
+  anonymizedUserId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   channel?: Resolver<Maybe<ResolversTypes['NotificationChannel']>, ParentType, ContextType>;
   classSessionId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  failureCode?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   messageId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   recipientReference?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   suspendedUserId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+};
+
+export type AnonymizeUserErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['AnonymizeUserError'] = ResolversParentTypes['AnonymizeUserError']> = {
+  classSessionIds?: Resolver<Array<ResolversTypes['ID']>, ParentType, ContextType>;
+  code?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type AnonymizeUserResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['AnonymizeUserResult'] = ResolversParentTypes['AnonymizeUserResult']> = {
+  __resolveType: TypeResolveFn<'AnonymizeUserError' | 'AnonymizeUserSuccess', ParentType, ContextType>;
+};
+
+export type AnonymizeUserSuccessResolvers<ContextType = any, ParentType extends ResolversParentTypes['AnonymizeUserSuccess'] = ResolversParentTypes['AnonymizeUserSuccess']> = {
+  redactedLearningFeedbackCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  redactedSessionRatingCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  state?: Resolver<ResolversTypes['UserAnonymizationState'], ParentType, ContextType>;
+  user?: Resolver<ResolversTypes['RoleAssignmentAdministrationUser'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 };
 
 export type AttendanceErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['AttendanceError'] = ResolversParentTypes['AttendanceError']> = {
@@ -4106,6 +4180,7 @@ export type MutationResolvers<ContextType = any, ParentType extends ResolversPar
   addLessonMaterial?: Resolver<ResolversTypes['AddLessonMaterialResult'], ParentType, ContextType, RequireFields<MutationAddLessonMaterialArgs, 'input'>>;
   adjustClassCredits?: Resolver<ResolversTypes['AdjustClassCreditsResult'], ParentType, ContextType, RequireFields<MutationAdjustClassCreditsArgs, 'input'>>;
   administerAttendance?: Resolver<ResolversTypes['RecordAttendanceResult'], ParentType, ContextType, RequireFields<MutationAdministerAttendanceArgs, 'input'>>;
+  anonymizeUser?: Resolver<ResolversTypes['AnonymizeUserResult'], ParentType, ContextType, RequireFields<MutationAnonymizeUserArgs, 'input'>>;
   archiveNotification?: Resolver<ResolversTypes['InAppNotification'], ParentType, ContextType, RequireFields<MutationArchiveNotificationArgs, 'id'>>;
   bookClassSession?: Resolver<ResolversTypes['BookClassSessionResult'], ParentType, ContextType, RequireFields<MutationBookClassSessionArgs, 'input'>>;
   cancelBooking?: Resolver<ResolversTypes['CancelBookingResult'], ParentType, ContextType, RequireFields<MutationCancelBookingArgs, 'input'>>;
@@ -4825,6 +4900,9 @@ export type Resolvers<ContextType = any> = {
   AdministratorTaskError?: AdministratorTaskErrorResolvers<ContextType>;
   AdministratorTaskItem?: AdministratorTaskItemResolvers<ContextType>;
   AdministratorTaskSafeContext?: AdministratorTaskSafeContextResolvers<ContextType>;
+  AnonymizeUserError?: AnonymizeUserErrorResolvers<ContextType>;
+  AnonymizeUserResult?: AnonymizeUserResultResolvers<ContextType>;
+  AnonymizeUserSuccess?: AnonymizeUserSuccessResolvers<ContextType>;
   AttendanceError?: AttendanceErrorResolvers<ContextType>;
   AttendanceRecord?: AttendanceRecordResolvers<ContextType>;
   AttendanceReviewError?: AttendanceReviewErrorResolvers<ContextType>;

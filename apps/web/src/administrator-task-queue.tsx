@@ -20,11 +20,14 @@ export function AdministratorTaskQueue({ createIdempotencyKey = () => crypto.ran
       <ul>
         {tasks.map((task) => (
           <li key={task.id}>
-            <p><FormattedMessage id={task.kind === "USER_SUSPENSION_TEACHER_ASSIGNMENT" ? "administratorTasks.userSuspensionTeacherAssignment" : "administratorTasks.notificationDelivery"} /></p>
+            <p><FormattedMessage id={task.kind === "USER_SUSPENSION_TEACHER_ASSIGNMENT" ? "administratorTasks.userSuspensionTeacherAssignment" : task.kind === "USER_ANONYMIZATION_RECONCILIATION" ? "administratorTasks.userAnonymizationReconciliation" : "administratorTasks.notificationDelivery"} /></p>
             <dl>
               <dt><FormattedMessage id="administratorTasks.correlation" /></dt><dd>{task.correlationReference}</dd>
               {task.kind === "USER_SUSPENSION_TEACHER_ASSIGNMENT" ? <>
                 <dt><FormattedMessage id="administratorTasks.classSession" /></dt><dd>{task.safeContext.classSessionId}</dd>
+              </> : task.kind === "USER_ANONYMIZATION_RECONCILIATION" ? <>
+                <dt><FormattedMessage id="administratorTasks.formerUser" /></dt><dd>{task.safeContext.anonymizedUserId}</dd>
+                <dt><FormattedMessage id="administratorTasks.failure" /></dt><dd>{task.safeContext.failureCode}</dd>
               </> : <>
                 <dt><FormattedMessage id="administratorTasks.channel" /></dt><dd>{task.safeContext.channel}</dd>
                 <dt><FormattedMessage id="administratorTasks.message" /></dt><dd>{task.safeContext.messageId}</dd>

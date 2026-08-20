@@ -31,6 +31,8 @@ const baseConfigSchema = z.object({
     .optional(),
   AUTH0_ISSUER: z.url().optional(),
   AUTH0_AUDIENCE: z.string().min(1).optional(),
+  AUTH0_MANAGEMENT_CLIENT_ID: z.string().min(1).optional(),
+  AUTH0_MANAGEMENT_CLIENT_SECRET: z.string().min(1).optional(),
 });
 
 export type AppConfig = z.infer<typeof baseConfigSchema>;
@@ -47,6 +49,10 @@ export function parseAppConfig(environment: Record<string, string | undefined>):
     (!config.AUTH0_ISSUER || !config.AUTH0_AUDIENCE)
   ) {
     throw new Error("Auth0 authentication requires AUTH0_ISSUER and AUTH0_AUDIENCE");
+  }
+
+  if (Boolean(config.AUTH0_MANAGEMENT_CLIENT_ID) !== Boolean(config.AUTH0_MANAGEMENT_CLIENT_SECRET)) {
+    throw new Error("Auth0 identity administration requires both AUTH0_MANAGEMENT_CLIENT_ID and AUTH0_MANAGEMENT_CLIENT_SECRET");
   }
 
   if (config.NODE_ENV === "production" && !config.API_TRUSTED_PROXY_SECRET) {

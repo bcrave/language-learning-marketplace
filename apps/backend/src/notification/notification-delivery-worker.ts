@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { TaskList } from "graphile-worker";
+import { sql } from "kysely";
 
 import type { Database } from "../database/database.js";
 
@@ -12,7 +13,7 @@ export type EmailDelivery = {
 };
 
 export interface EmailAdapter {
-  deliver(delivery: EmailDelivery): Promise<{ providerMessageId: string }>;
+  deliver(delivery: EmailDelivery, database?: Database): Promise<{ providerMessageId: string }>;
 }
 
 export class EmailDeliveryFailure extends Error {
@@ -28,13 +29,13 @@ const RETRY_DELAYS_MILLISECONDS = [60_000, 5 * 60_000, 30 * 60_000] as const;
 
 export function localRecordingEmailAdapter(db: Database): EmailAdapter {
   return {
-    async deliver(delivery) {
-      const existing = await db.selectFrom("recorded_email_deliveries")
+    async deliver(delivery, database = db) {
+      const existing = await database.selectFrom("recorded_email_deliveries")
         .select("id")
         .where("idempotency_key", "=", delivery.idempotencyKey)
         .executeTakeFirst();
       if (existing) return { providerMessageId: existing.id };
-      const accepted = await db.insertInto("recorded_email_deliveries").values({
+      const accepted = await database.insertInto("recorded_email_deliveries").values({
         idempotency_key: delivery.idempotencyKey,
         recipient_user_id: delivery.recipientUserId,
         locale: delivery.locale,
@@ -172,13 +173,32 @@ export async function processNotificationDeliveries(
     }
 
     const attemptNumber = intent.attempt_count;
-    let result: { providerMessageId: string };
+    let delivered = false;
     try {
-      result = await adapter.deliver({
-        idempotencyKey: `${sourceReference}:${intent.recipient_user_id}:EMAIL`,
-        locale: intent.locale,
-        recipientUserId: intent.recipient_user_id,
-        renderedContent: intent.rendered_content,
+      delivered = await db.transaction().execute(async (transaction) => {
+        await sql`select pg_advisory_xact_lock(hashtextextended(${intent.recipient_user_id}, 28))`.execute(transaction);
+        const [pendingIntent, recipient] = await Promise.all([
+          transaction.selectFrom("email_notification_intents").select("id").where("id", "=", intent.id).where("state", "=", "PENDING").executeTakeFirst(),
+          transaction.selectFrom("users").select("access_status").where("id", "=", intent.recipient_user_id).executeTakeFirst(),
+        ]);
+        if (!pendingIntent) return false;
+        if (!recipient || recipient.access_status === "ANONYMIZATION_PENDING" || recipient.access_status === "ANONYMIZED") {
+          await transaction.deleteFrom("email_notification_intents").where("id", "=", intent.id).execute();
+          await transaction.insertInto("delivery_receipts").values({ source_reference: sourceReference, recipient_user_id: intent.recipient_user_id, channel: "EMAIL", outcome: "SUPPRESSED", completed_at: now, provider_message_id: null }).onConflict((conflict) => conflict.columns(["source_reference", "recipient_user_id", "channel"]).doNothing()).execute();
+          await transaction.insertInto("audit_entries").values({ actor_user_id: null, system_identity: "NOTIFICATION_DELIVERY_WORKER", acting_role: null, operation: "notification.delivery-processed", target_type: "NotificationIntent", target_id: intent.id, outcome: "SUCCEEDED", reason_code: "USER_ANONYMIZATION_SUPPRESSED", correlation_id: correlationId }).execute();
+          return false;
+        }
+        const result = await adapter.deliver({
+          idempotencyKey: `${sourceReference}:${intent.recipient_user_id}:EMAIL`,
+          locale: intent.locale,
+          recipientUserId: intent.recipient_user_id,
+          renderedContent: intent.rendered_content,
+        }, transaction as Database);
+        await transaction.insertInto("notification_delivery_attempts").values({ notification_intent_id: intent.id, attempt_number: attemptNumber, outcome: "DELIVERED", safe_failure_code: null, attempted_at: now }).execute();
+        await transaction.insertInto("delivery_receipts").values({ source_reference: sourceReference, recipient_user_id: intent.recipient_user_id, channel: "EMAIL", outcome: "DELIVERED", completed_at: now, provider_message_id: result.providerMessageId }).execute();
+        await transaction.updateTable("email_notification_intents").set({ state: "DELIVERED", completed_at: now, provider_message_id: result.providerMessageId }).where("id", "=", intent.id).execute();
+        await transaction.insertInto("audit_entries").values({ actor_user_id: null, system_identity: "NOTIFICATION_DELIVERY_WORKER", acting_role: null, operation: "notification.delivery-processed", target_type: "NotificationIntent", target_id: intent.id, outcome: "SUCCEEDED", reason_code: "NOTIFICATION_DELIVERED", correlation_id: correlationId }).execute();
+        return true;
       });
     } catch (error) {
       const failure = error instanceof EmailDeliveryFailure
@@ -186,6 +206,9 @@ export async function processNotificationDeliveries(
         : new EmailDeliveryFailure("EMAIL_ADAPTER_FAILURE", false);
       const exhausted = !failure.retryable || attemptNumber >= 4;
       await db.transaction().execute(async (transaction) => {
+        await sql`select pg_advisory_xact_lock(hashtextextended(${intent.recipient_user_id}, 28))`.execute(transaction);
+        const pendingIntent = await transaction.selectFrom("email_notification_intents").select("id").where("id", "=", intent.id).where("state", "=", "PENDING").executeTakeFirst();
+        if (!pendingIntent) return;
         await transaction.insertInto("notification_delivery_attempts").values({
           notification_intent_id: intent.id,
           attempt_number: attemptNumber,
@@ -222,40 +245,7 @@ export async function processNotificationDeliveries(
       });
       continue;
     }
-    await db.transaction().execute(async (transaction) => {
-      await transaction.insertInto("notification_delivery_attempts").values({
-        notification_intent_id: intent.id,
-        attempt_number: attemptNumber,
-        outcome: "DELIVERED",
-        safe_failure_code: null,
-        attempted_at: now,
-      }).execute();
-      await transaction.insertInto("delivery_receipts").values({
-        source_reference: sourceReference,
-        recipient_user_id: intent.recipient_user_id,
-        channel: "EMAIL",
-        outcome: "DELIVERED",
-        completed_at: now,
-        provider_message_id: result.providerMessageId,
-      }).execute();
-      await transaction.updateTable("email_notification_intents").set({
-        state: "DELIVERED",
-        completed_at: now,
-        provider_message_id: result.providerMessageId,
-      }).where("id", "=", intent.id).execute();
-      await transaction.insertInto("audit_entries").values({
-        actor_user_id: null,
-        system_identity: "NOTIFICATION_DELIVERY_WORKER",
-        acting_role: null,
-        operation: "notification.delivery-processed",
-        target_type: "NotificationIntent",
-        target_id: intent.id,
-        outcome: "SUCCEEDED",
-        reason_code: "NOTIFICATION_DELIVERED",
-        correlation_id: correlationId,
-      }).execute();
-    });
-    deliveredCount += 1;
+    if (delivered) deliveredCount += 1;
   }
   return deliveredCount;
 }

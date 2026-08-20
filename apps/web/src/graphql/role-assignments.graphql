@@ -65,3 +65,15 @@ mutation ReactivateUser($input: ReactivateUserInput!) {
     ... on UserAccessError { code message }
   }
 }
+
+mutation AnonymizeUser($input: AnonymizeUserInput!) {
+  anonymizeUser(input: $input) {
+    ... on AnonymizeUserSuccess {
+      state
+      user { id displayName accessStatus suspensionReason roles roleAssignmentHistory { id role action reason changedAt } }
+      redactedLearningFeedbackCount
+      redactedSessionRatingCount
+    }
+    ... on AnonymizeUserError { code message classSessionIds }
+  }
+}

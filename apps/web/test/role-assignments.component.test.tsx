@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { IntlProvider } from "react-intl";
 
 import {
+  AnonymizeUserDocument,
   GrantRoleAssignmentDocument,
   RemoveRoleAssignmentDocument,
   RoleAssignmentAdministrationDocument,
@@ -57,6 +58,8 @@ describe("Role Assignment administration", () => {
     expect(await screen.findByRole("heading", { name: "Asignaciones de roles" })).toBeVisible();
     await user.selectOptions(screen.getByRole("combobox", { name: "Acción" }), "SUSPEND");
     expect(screen.getByRole("button", { name: "Suspender usuario" })).toBeVisible();
+    await user.selectOptions(screen.getByRole("combobox", { name: "Acción" }), "ANONYMIZE");
+    expect(screen.getByRole("textbox", { name: /ANONYMIZE USER/ })).toBeVisible();
     const results = await axe.run(container);
     expect(results.violations).toEqual([]);
   });
@@ -79,6 +82,28 @@ describe("Role Assignment administration", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("User suspended.");
     expect(screen.getByText("Suspended: Security review in progress")).toBeVisible();
     expect(screen.getAllByText("Student").some((element) => element.tagName === "LI")).toBe(true);
+  });
+
+  it("requires the deliberate phrase before anonymizing a User", async () => {
+    const user = userEvent.setup();
+    renderPanel([
+      { request: { query: RoleAssignmentAdministrationDocument }, result: { data: { roleAssignmentAdministration: { organizations: [], users: [roleUser] } } } },
+      {
+        request: { query: AnonymizeUserDocument, variables: { input: { idempotencyKey: "anonymize-user-key", userId, reason: "User requested irreversible privacy action", confirmation: "ANONYMIZE USER" } } },
+        result: { data: { anonymizeUser: { __typename: "AnonymizeUserSuccess", state: "PENDING", user: { ...roleUser, displayName: "Former User", accessStatus: "ANONYMIZATION_PENDING", roles: [] }, redactedLearningFeedbackCount: 1, redactedSessionRatingCount: 1 } } },
+      },
+    ], "en", () => "anonymize-user-key");
+
+    await screen.findByRole("heading", { name: "Role Assignments" });
+    await user.selectOptions(screen.getByRole("combobox", { name: "Action" }), "ANONYMIZE");
+    await user.type(screen.getByRole("textbox", { name: "Reason" }), "User requested irreversible privacy action");
+    expect(screen.getByRole("button", { name: "Anonymize User" })).toBeDisabled();
+    await user.type(screen.getByRole("textbox", { name: /Type ANONYMIZE USER/ }), "ANONYMIZE USER");
+    await user.click(screen.getByRole("button", { name: "Anonymize User" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("User Anonymization accepted. Identity deletion is pending.");
+    expect(screen.getByRole("heading", { name: "Former User" })).toBeVisible();
+    expect(screen.getByText("Anonymization pending identity deletion")).toBeVisible();
   });
 
   it("localizes typed server errors instead of displaying server-authored English", async () => {

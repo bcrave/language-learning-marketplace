@@ -18,6 +18,8 @@ type ChangeRoleAssignmentInput = {
 type RoleAssignmentErrorCode =
   | "INVALID_REASON"
   | "USER_NOT_FOUND"
+  | "USER_ANONYMIZED"
+  | "USER_ANONYMIZATION_PENDING"
   | "ROLE_ALREADY_ASSIGNED"
   | "ROLE_NOT_ASSIGNED"
   | "ORGANIZATION_REQUIRED"
@@ -115,12 +117,18 @@ export async function grantRoleAssignment(
     return deniedChange(transaction, administrator, input, correlationId, "INVALID_REASON", "Enter a concise reason from 3 through 200 characters without surrounding spaces.");
   }
   const user = await transaction.selectFrom("users")
-    .select(["id", "interface_locale", "display_time_zone"])
+    .select(["id", "interface_locale", "display_time_zone", "access_status"])
     .where("id", "=", input.userId)
     .forUpdate()
     .executeTakeFirst();
   if (!user) {
     return deniedChange(transaction, administrator, input, correlationId, "USER_NOT_FOUND", "Choose an existing User.");
+  }
+  if (user.access_status === "ANONYMIZATION_PENDING") {
+    return deniedChange(transaction, administrator, input, correlationId, "USER_ANONYMIZATION_PENDING", "The User's anonymization is pending identity deletion.");
+  }
+  if (user.access_status === "ANONYMIZED") {
+    return deniedChange(transaction, administrator, input, correlationId, "USER_ANONYMIZED", "An anonymized Former User cannot receive a Role Assignment.");
   }
   const existing = await transaction.selectFrom("role_assignments")
     .select("role")

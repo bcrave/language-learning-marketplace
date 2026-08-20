@@ -395,7 +395,7 @@ describe("Student Placement and Class Session Discovery GraphQL API", () => {
       headers: {
         "content-type": "application/json",
         "x-correlation-id": correlationId,
-        "x-demo-user-id": user.identity_subject,
+        "x-demo-user-id": user.identity_subject!,
       },
       body: JSON.stringify({ query }),
     });

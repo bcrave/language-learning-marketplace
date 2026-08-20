@@ -34,7 +34,7 @@ describe("Role Assignment administration GraphQL API", () => {
       `role_assignment_administration_${randomUUID().replaceAll("-", "")}`,
     );
     db = createDatabase(databaseUrl);
-    api = createApi({ db, authMode: "fake", nodeEnv: "test" });
+    api = createApi({ db, authMode: "fake", nodeEnv: "test", now: () => new Date("2030-01-01T12:00:00.000Z") });
     await db.insertInto("users").values([
       { id: administratorId, identity_issuer: "https://fake.local/", identity_subject: administratorSubject, display_name: "Avery Admin", interface_locale: "en", display_time_zone: "America/Denver" },
       { id: userId, identity_issuer: "https://fake.local/", identity_subject: userSubject, display_name: "Lucía User", interface_locale: "es", display_time_zone: "America/Denver" },
@@ -151,8 +151,8 @@ describe("Role Assignment administration GraphQL API", () => {
     });
     await db.insertInto("teacher_qualifications").values({ teacher_user_id: teacherId, target_language: "es", curriculum_level: "A1", granted_by_user_id: administratorId }).execute();
     await db.insertInto("class_sessions").values([
-      { id: classSessionId, lesson_unit_id: lessonUnitId, teacher_user_id: teacherId, starts_at: new Date("2026-08-20T18:00:00.000Z"), scheduling_time_zone: "America/Denver", seat_capacity: 5, occupied_seats: 1, state: "PUBLISHED", cancellation_reason: null, cancelled_at: null },
-      { id: waitlistSessionId, lesson_unit_id: lessonUnitId, teacher_user_id: teacherId, starts_at: new Date("2026-08-21T18:00:00.000Z"), scheduling_time_zone: "America/Denver", seat_capacity: 5, occupied_seats: 0, state: "PUBLISHED", cancellation_reason: null, cancelled_at: null },
+      { id: classSessionId, lesson_unit_id: lessonUnitId, teacher_user_id: teacherId, starts_at: new Date("2030-01-02T18:00:00.000Z"), scheduling_time_zone: "America/Denver", seat_capacity: 5, occupied_seats: 1, state: "PUBLISHED", cancellation_reason: null, cancelled_at: null },
+      { id: waitlistSessionId, lesson_unit_id: lessonUnitId, teacher_user_id: teacherId, starts_at: new Date("2030-01-03T18:00:00.000Z"), scheduling_time_zone: "America/Denver", seat_capacity: 5, occupied_seats: 0, state: "PUBLISHED", cancellation_reason: null, cancelled_at: null },
     ]).execute();
     await db.insertInto("class_credit_accounts").values({ student_user_id: userId, available_balance: 0 }).execute();
     await db.insertInto("class_credit_ledger_entries").values([
@@ -160,8 +160,8 @@ describe("Role Assignment administration GraphQL API", () => {
       { student_user_id: userId, amount: -1, source: "BOOKING_DEDUCTION", source_reference: bookingId, reason: null },
     ]).execute();
     await db.insertInto("bookings").values({ id: bookingId, student_user_id: userId, class_session_id: classSessionId, teacher_user_id_at_booking: teacherId, state: "ACTIVE", terminal_reason: null, class_credit_refunded: false, late_cancellation_refund_until: null, rescheduled_from_booking_id: null, booked_at: new Date("2026-08-17T18:00:00.000Z"), ended_at: null }).execute();
-    await db.insertInto("schedule_commitments").values({ user_id: userId, class_session_id: classSessionId, commitment_role: "STUDENT", starts_at: new Date("2026-08-20T18:00:00.000Z"), ends_at: new Date("2026-08-20T19:00:00.000Z"), active: true }).execute();
-    await db.insertInto("waitlist_entries").values({ id: randomUUID(), student_user_id: userId, class_session_id: waitlistSessionId, state: "ACTIVE", terminal_reason: null, joined_at: new Date("2026-08-17T18:00:00.000Z"), expires_at: new Date("2026-08-21T16:00:00.000Z"), completed_at: null, promoted_booking_id: null }).execute();
+    await db.insertInto("schedule_commitments").values({ user_id: userId, class_session_id: classSessionId, commitment_role: "STUDENT", starts_at: new Date("2030-01-02T18:00:00.000Z"), ends_at: new Date("2030-01-02T19:00:00.000Z"), active: true }).execute();
+    await db.insertInto("waitlist_entries").values({ id: randomUUID(), student_user_id: userId, class_session_id: waitlistSessionId, state: "ACTIVE", terminal_reason: null, joined_at: new Date("2029-12-31T18:00:00.000Z"), expires_at: new Date("2030-01-03T16:00:00.000Z"), completed_at: null, promoted_booking_id: null }).execute();
     await db.insertInto("subscriptions").values({ student_user_id: userId, state: "ACTIVE", activated_at: new Date("2026-08-01T15:00:00.000Z"), anchor_day: 1, accounting_time_utc: "15:00:00", renewal_count: 0, next_anniversary_at: new Date("2026-09-01T15:00:00.000Z"), cancellation_effective_at: null }).execute();
 
     const correlationId = randomUUID();

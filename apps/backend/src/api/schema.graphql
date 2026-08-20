@@ -600,7 +600,7 @@ type RoleWorkspace {
 
 enum RoleAssignmentChangeAction { GRANTED REMOVED }
 type RoleAssignmentChange { id: ID!, role: UserRole!, action: RoleAssignmentChangeAction!, reason: String!, changedAt: String! }
-enum UserAccessStatus { ACTIVE SUSPENDED }
+enum UserAccessStatus { ACTIVE SUSPENDED ANONYMIZATION_PENDING ANONYMIZED }
 type RoleAssignmentAdministrationUser { id: ID!, displayName: String!, accessStatus: UserAccessStatus!, suspensionReason: String, roles: [UserRole!]!, roleAssignmentHistory: [RoleAssignmentChange!]! }
 type RoleAssignmentAdministration { users: [RoleAssignmentAdministrationUser!]!, organizations: [Organization!]! }
 input ChangeRoleAssignmentInput { idempotencyKey: ID!, userId: ID!, role: UserRole!, reason: String!, organizationId: ID }
@@ -627,6 +627,11 @@ type UserAccessChangeSuccess {
 type UserAccessError { code: String!, message: String! }
 union SuspendUserResult = UserAccessChangeSuccess | UserAccessError
 union ReactivateUserResult = UserAccessChangeSuccess | UserAccessError
+input AnonymizeUserInput { idempotencyKey: ID!, userId: ID!, reason: String!, confirmation: String! }
+enum UserAnonymizationState { PENDING COMPLETED }
+type AnonymizeUserSuccess { state: UserAnonymizationState!, user: RoleAssignmentAdministrationUser!, redactedLearningFeedbackCount: Int!, redactedSessionRatingCount: Int! }
+type AnonymizeUserError { code: String!, message: String!, classSessionIds: [ID!]! }
+union AnonymizeUserResult = AnonymizeUserSuccess | AnonymizeUserError
 
 type InAppNotification {
   id: ID!
@@ -638,7 +643,7 @@ type InAppNotification {
 }
 
 enum NotificationChannel { IN_APP EMAIL }
-enum AdministratorTaskKind { NOTIFICATION_DELIVERY_RECONCILIATION USER_SUSPENSION_TEACHER_ASSIGNMENT }
+enum AdministratorTaskKind { NOTIFICATION_DELIVERY_RECONCILIATION USER_SUSPENSION_TEACHER_ASSIGNMENT USER_ANONYMIZATION_RECONCILIATION }
 enum AdministratorTaskState { OPEN RESOLVED }
 
 type AdministratorTaskSafeContext {
@@ -647,6 +652,8 @@ type AdministratorTaskSafeContext {
   recipientReference: ID
   classSessionId: ID
   suspendedUserId: ID
+  anonymizedUserId: ID
+  failureCode: String
 }
 
 type AdministratorTaskItem {
@@ -722,6 +729,7 @@ type Mutation {
   removeRoleAssignment(input: ChangeRoleAssignmentInput!): RemoveRoleAssignmentResult!
   suspendUser(input: ChangeUserAccessInput!): SuspendUserResult!
   reactivateUser(input: ReactivateUserInput!): ReactivateUserResult!
+  anonymizeUser(input: AnonymizeUserInput!): AnonymizeUserResult!
   processSubscriptionProviderEvent(input: ProcessSubscriptionProviderEventInput!): ProcessSubscriptionProviderEventResult!
   scheduleSubscriptionCancellation(input: SubscriptionLifecycleInput!): ScheduleSubscriptionCancellationResult!
   undoSubscriptionCancellation(input: SubscriptionLifecycleInput!): UndoSubscriptionCancellationResult!

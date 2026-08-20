@@ -19,6 +19,7 @@ import {
 import { administratorFor } from "../authorization/administrator-policy.js";
 import { grantRoleAssignment, removeRoleAssignment, roleAssignmentAdministration } from "../authorization/role-assignment-service.js";
 import { reactivateUser, suspendUser } from "../authorization/user-suspension-service.js";
+import { anonymizeUser } from "../authorization/user-anonymization-service.js";
 import { organizationManagerFor } from "../authorization/organization-manager-policy.js";
 import { studentFor } from "../authorization/student-policy.js";
 import { recordAdministrationAudit } from "../audit/administration-audit.js";
@@ -277,6 +278,7 @@ export function createApi(options: {
       JoinWaitlistResult: { __resolveType: (value) => value.__typename! },
       WithdrawWaitlistResult: { __resolveType: (value) => value.__typename! },
       ResolveAdministratorTaskResult: { __resolveType: (value) => value.__typename! },
+      AnonymizeUserResult: { __resolveType: (value) => value.__typename! },
       RecordAttendanceResult: { __resolveType: (value) => value.__typename! },
       RequestAttendanceReviewResult: { __resolveType: (value) => value.__typename! },
       DecideAttendanceReviewResult: { __resolveType: (value) => value.__typename! },
@@ -815,6 +817,23 @@ export function createApi(options: {
             input,
             (transaction) => reactivateUser(transaction, administrator, { userId: input.userId }, context.correlationId, options.now?.() ?? new Date()),
             { __typename: "UserAccessError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input." },
+            "User",
+          ));
+        },
+        anonymizeUser: async (_parent, { input }, context) => {
+          const administrator = await authenticateAdministrator(context, "user.anonymized", "User");
+          if (options.nodeEnv === "production") {
+            await recordAdministrationAudit(context.db, { administratorId: administrator.id, correlationId: context.correlationId, operation: "user.anonymized", targetType: "User", targetId: input.userId, outcome: "DENIED", reasonCode: "PUBLIC_DEMONSTRATION_PROTECTED" });
+            return graphQLResult({ __typename: "AnonymizeUserError", code: "PUBLIC_DEMONSTRATION_PROTECTED", message: "User Anonymization is unavailable in the public demonstration.", classSessionIds: [] });
+          }
+          return graphQLResult(await idempotentAdministrationMutation(
+            context,
+            administrator,
+            "user.anonymized",
+            input.idempotencyKey,
+            input,
+            (transaction) => anonymizeUser(transaction, administrator, { userId: input.userId, reason: input.reason, confirmation: input.confirmation }, context.correlationId, options.now?.() ?? new Date()),
+            { __typename: "AnonymizeUserError", code: "IDEMPOTENCY_KEY_REUSED", message: "The Idempotency Key was already used with different input.", classSessionIds: [] },
             "User",
           ));
         },
@@ -1942,6 +1961,10 @@ export function createApi(options: {
               correlation_id: correlationId,
             }).execute();
             throw createGraphQLError(`Your User is suspended: ${user.suspension_reason}`, { extensions: { code: "USER_SUSPENDED" } });
+          }
+          if (user?.access_status === "ANONYMIZATION_PENDING") {
+            await options.db.insertInto("audit_entries").values({ actor_user_id: user.id, acting_role: null, operation: "authenticated-operation.blocked", target_type: "User", target_id: user.id, outcome: "DENIED", reason_code: "USER_ANONYMIZATION_PENDING", correlation_id: correlationId }).execute();
+            throw createGraphQLError("Your User Anonymization is pending identity deletion", { extensions: { code: "USER_ANONYMIZATION_PENDING" } });
           }
           return identity;
         },

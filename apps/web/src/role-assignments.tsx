@@ -1,8 +1,10 @@
 import { useMutation, useQuery } from "@apollo/client/react";
 import { useEffect, useState } from "react";
 import { useIntl } from "react-intl";
+import { USER_ANONYMIZATION_CONFIRMATION } from "@marketplace/core";
 
 import {
+  AnonymizeUserDocument,
   GrantRoleAssignmentDocument,
   RemoveRoleAssignmentDocument,
   ReactivateUserDocument,
@@ -24,7 +26,9 @@ const roleMessageIds: Record<UserRole, string> = {
 
 const errorMessageIds: Record<string, string> = {
   INVALID_REASON: "roleAssignments.error.INVALID_REASON",
+  INVALID_ANONYMIZATION_REASON: "roleAssignments.error.INVALID_ANONYMIZATION_REASON",
   USER_NOT_FOUND: "roleAssignments.error.USER_NOT_FOUND",
+  USER_ANONYMIZED: "roleAssignments.error.USER_ANONYMIZED",
   ROLE_ALREADY_ASSIGNED: "roleAssignments.error.ROLE_ALREADY_ASSIGNED",
   ROLE_NOT_ASSIGNED: "roleAssignments.error.ROLE_NOT_ASSIGNED",
   ORGANIZATION_REQUIRED: "roleAssignments.error.ORGANIZATION_REQUIRED",
@@ -37,10 +41,16 @@ const errorMessageIds: Record<string, string> = {
   USER_NOT_SUSPENDED: "roleAssignments.error.USER_NOT_SUSPENDED",
   SELF_SUSPENSION: "roleAssignments.error.SELF_SUSPENSION",
   FINAL_ACTIVE_PLATFORM_ADMINISTRATOR: "roleAssignments.error.FINAL_ACTIVE_PLATFORM_ADMINISTRATOR",
+  CONFIRMATION_REQUIRED: "roleAssignments.error.CONFIRMATION_REQUIRED",
+  USER_ALREADY_ANONYMIZED: "roleAssignments.error.USER_ALREADY_ANONYMIZED",
+  USER_ANONYMIZATION_PENDING: "roleAssignments.error.USER_ANONYMIZATION_PENDING",
+  SELF_ANONYMIZATION: "roleAssignments.error.SELF_ANONYMIZATION",
+  PRIVILEGED_ACCESS_REQUIRES_RESOLUTION: "roleAssignments.error.PRIVILEGED_ACCESS_REQUIRES_RESOLUTION",
+  FUTURE_COMMITMENTS_REQUIRE_RESOLUTION: "roleAssignments.error.FUTURE_COMMITMENTS_REQUIRE_RESOLUTION",
   PUBLIC_DEMONSTRATION_PROTECTED: "roleAssignments.error.PUBLIC_DEMONSTRATION_PROTECTED",
 };
 
-type AdministrationAction = "GRANT" | "REMOVE" | "SUSPEND" | "REACTIVATE";
+type AdministrationAction = "GRANT" | "REMOVE" | "SUSPEND" | "REACTIVATE" | "ANONYMIZE";
 
 export function RoleAssignmentAdministrationPanel({
   idempotencyKeyFactory = () => crypto.randomUUID(),
@@ -53,12 +63,14 @@ export function RoleAssignmentAdministrationPanel({
   const [remove, { loading: removing }] = useMutation(RemoveRoleAssignmentDocument);
   const [suspend, { loading: suspending }] = useMutation(SuspendUserDocument);
   const [reactivate, { loading: reactivating }] = useMutation(ReactivateUserDocument);
+  const [anonymize, { loading: anonymizing }] = useMutation(AnonymizeUserDocument);
   const [users, setUsers] = useState<AdministrationUser[]>([]);
   const [action, setAction] = useState<AdministrationAction>("GRANT");
   const [userId, setUserId] = useState("");
   const [role, setRole] = useState<UserRole>("STUDENT");
   const [organizationId, setOrganizationId] = useState("");
   const [reason, setReason] = useState("");
+  const [confirmation, setConfirmation] = useState("");
   const [announcement, setAnnouncement] = useState<string | null>(null);
   const [failure, setFailure] = useState<{ message: string; classSessionIds: string[] } | null>(null);
 
@@ -87,15 +99,19 @@ export function RoleAssignmentAdministrationPanel({
           ? (await remove({ variables: { input: roleInput } })).data?.removeRoleAssignment
           : action === "SUSPEND"
             ? (await suspend({ variables: { input: accessInput } })).data?.suspendUser
-            : (await reactivate({ variables: { input: { idempotencyKey: accessInput.idempotencyKey, userId } } })).data?.reactivateUser;
+            : action === "REACTIVATE"
+              ? (await reactivate({ variables: { input: { idempotencyKey: accessInput.idempotencyKey, userId } } })).data?.reactivateUser
+              : (await anonymize({ variables: { input: { ...accessInput, confirmation } } })).data?.anonymizeUser;
       if (result && "user" in result) {
         setUsers((current) => current.map((candidate) => candidate.id === result.user.id ? result.user : candidate));
         setReason("");
+        setConfirmation("");
         const announcementId = {
           GRANT: "roleAssignments.granted",
           REMOVE: "roleAssignments.removed",
           SUSPEND: "roleAssignments.suspended",
           REACTIVATE: "roleAssignments.reactivated",
+          ANONYMIZE: "roleAssignments.anonymizationPending",
         }[action];
         setAnnouncement(intl.formatMessage({ id: announcementId }));
         return;
@@ -131,6 +147,7 @@ export function RoleAssignmentAdministrationPanel({
           <option value="REMOVE">{intl.formatMessage({ id: "roleAssignments.action.remove" })}</option>
           <option value="SUSPEND">{intl.formatMessage({ id: "roleAssignments.action.suspend" })}</option>
           <option value="REACTIVATE">{intl.formatMessage({ id: "roleAssignments.action.reactivate" })}</option>
+          <option value="ANONYMIZE">{intl.formatMessage({ id: "roleAssignments.action.anonymize" })}</option>
         </select>
         {(action === "GRANT" || action === "REMOVE") && <>
           <label htmlFor="role-assignment-role">{intl.formatMessage({ id: "roleAssignments.role" })}</label>
@@ -147,14 +164,20 @@ export function RoleAssignmentAdministrationPanel({
         </>}
         {action !== "REACTIVATE" && <>
           <label htmlFor="role-assignment-reason">{intl.formatMessage({ id: "roleAssignments.reason" })}</label>
-          <input id="role-assignment-reason" minLength={3} maxLength={200} required value={reason} onChange={(event) => setReason(event.target.value)} />
+          <input id="role-assignment-reason" minLength={action === "ANONYMIZE" ? 10 : 3} maxLength={action === "ANONYMIZE" ? 500 : 200} required value={reason} onChange={(event) => setReason(event.target.value)} />
         </>}
-        <button disabled={granting || removing || suspending || reactivating || !userId} type="submit">
+        {action === "ANONYMIZE" && <>
+          <p>{intl.formatMessage({ id: "roleAssignments.anonymizeWarning" })}</p>
+          <label htmlFor="role-assignment-confirmation">{intl.formatMessage({ id: "roleAssignments.confirmAnonymize" })}</label>
+          <input id="role-assignment-confirmation" autoComplete="off" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
+        </>}
+        <button disabled={granting || removing || suspending || reactivating || anonymizing || !userId || (action === "ANONYMIZE" && confirmation !== USER_ANONYMIZATION_CONFIRMATION)} type="submit">
           {intl.formatMessage({ id: {
             GRANT: "roleAssignments.grant",
             REMOVE: "roleAssignments.remove",
             SUSPEND: "roleAssignments.suspend",
             REACTIVATE: "roleAssignments.reactivate",
+            ANONYMIZE: "roleAssignments.anonymize",
           }[action] })}
         </button>
       </form>
@@ -167,7 +190,11 @@ export function RoleAssignmentAdministrationPanel({
         {users.map((candidate) => <article key={candidate.id} aria-labelledby={`role-user-${candidate.id}`}>
           <h3 id={`role-user-${candidate.id}`}>{candidate.displayName}</h3>
           <p>{candidate.id}</p>
-          <p>{candidate.accessStatus === "SUSPENDED"
+          <p>{candidate.accessStatus === "ANONYMIZATION_PENDING"
+            ? intl.formatMessage({ id: "roleAssignments.access.anonymizationPending" })
+            : candidate.accessStatus === "ANONYMIZED"
+            ? intl.formatMessage({ id: "roleAssignments.access.anonymized" })
+            : candidate.accessStatus === "SUSPENDED"
             ? intl.formatMessage({ id: "roleAssignments.access.suspended" }, { reason: candidate.suspensionReason })
             : intl.formatMessage({ id: "roleAssignments.access.active" })}</p>
           <h4>{intl.formatMessage({ id: "roleAssignments.activeRoles" })}</h4>

@@ -88,6 +88,28 @@ describe("Notification delivery worker", () => {
     }]);
   });
 
+  it("suppresses a claimed email when User Anonymization has started", async () => {
+    const sourceReference = `anonymization-race:${randomUUID()}`;
+    await db.insertInto("email_notification_intents").values({
+      recipient_user_id: studentId,
+      message_id: "booking.created.student",
+      locale: "en",
+      variables: JSON.stringify({ classSessionId: randomUUID() }),
+      rendered_content: "This content must not escape.",
+      source_reference: sourceReference,
+      next_attempt_at: new Date("2026-08-09T12:00:00Z"),
+    }).execute();
+    await db.updateTable("users").set({ access_status: "ANONYMIZATION_PENDING", display_name: "Former User", interface_locale: null, display_time_zone: null, anonymized_at: new Date("2026-08-09T12:00:00Z"), anonymized_by_user_id: administratorId }).where("id", "=", studentId).execute();
+    let deliveryAttempts = 0;
+
+    expect(await processNotificationDeliveries(db, { deliver: async () => { deliveryAttempts += 1; return { providerMessageId: "must-not-send" }; } }, new Date("2026-08-09T12:00:00Z"), "anonymization-race")).toBe(0);
+
+    expect(deliveryAttempts).toBe(0);
+    expect(await db.selectFrom("email_notification_intents").select("id").where("source_reference", "=", sourceReference).execute()).toEqual([]);
+    expect(await db.selectFrom("delivery_receipts").select("outcome").where("source_reference", "=", sourceReference).where("channel", "=", "EMAIL").executeTakeFirstOrThrow()).toEqual({ outcome: "SUPPRESSED" });
+    await db.updateTable("users").set({ access_status: "ACTIVE", display_name: "Sofía Student", interface_locale: "es", display_time_zone: "America/Denver", anonymized_at: null, anonymized_by_user_id: null }).where("id", "=", studentId).execute();
+  });
+
   it("exhausts safe retries into one role-scoped administrator task", async () => {
     const sourceReference = `booking.created.student:${randomUUID()}`;
     const studentIntent = await db.insertInto("email_notification_intents").values({

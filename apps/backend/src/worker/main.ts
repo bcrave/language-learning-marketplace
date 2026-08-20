@@ -8,23 +8,32 @@ import { notificationDeliveryTasks } from "../notification/notification-delivery
 import { reportExportTasks } from "../reporting/report-export-worker.js";
 import { sponsorshipTasks } from "../sponsorship/sponsorship-worker.js";
 import { waitlistTasks } from "../waitlist/waitlist-worker.js";
+import { userAnonymizationTasks } from "../authorization/user-anonymization-worker.js";
+import { Auth0IdentityAdministration } from "../auth/auth0-identity-administration.js";
+import { createSimulatedIdentityAdministration, createUnavailableIdentityAdministration } from "../auth/identity-administration.js";
 
 const config = parseAppConfig(process.env);
 const db = createDatabase(config.DATABASE_URL);
 await migrateDatabase(db);
+const identityAdministration = config.AUTH_MODE === "fake"
+  ? createSimulatedIdentityAdministration()
+  : config.AUTH0_ISSUER && config.AUTH0_MANAGEMENT_CLIENT_ID && config.AUTH0_MANAGEMENT_CLIENT_SECRET
+    ? new Auth0IdentityAdministration({ issuer: config.AUTH0_ISSUER, clientId: config.AUTH0_MANAGEMENT_CLIENT_ID, clientSecret: config.AUTH0_MANAGEMENT_CLIENT_SECRET })
+    : createUnavailableIdentityAdministration();
 
 const runner = await run({
   connectionString: config.DATABASE_URL,
   concurrency: 1,
   noHandleSignals: true,
   pollInterval: 10_000,
-  crontab: "* * * * * deliver_class_session_reminders\n* * * * * process_waitlist_entries\n* * * * * deliver_notification_intents\n0 3 * * * compact_terminal_notifications\n* * * * * expire_sponsorship_invitations\n* * * * * grant_sponsorship_credits\n* * * * * generate_report_exports\n*/5 * * * * expire_report_exports",
+  crontab: "* * * * * deliver_class_session_reminders\n* * * * * process_waitlist_entries\n* * * * * deliver_notification_intents\n0 3 * * * compact_terminal_notifications\n* * * * * expire_sponsorship_invitations\n* * * * * grant_sponsorship_credits\n* * * * * generate_report_exports\n*/5 * * * * expire_report_exports\n* * * * * anonymize_users",
   taskList: {
     ...classSessionReminderTasks(db),
     ...waitlistTasks(db),
     ...notificationDeliveryTasks(db),
     ...sponsorshipTasks(db),
     ...reportExportTasks(db),
+    ...userAnonymizationTasks(db, identityAdministration),
   },
 });
 

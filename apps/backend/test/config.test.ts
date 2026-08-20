@@ -17,6 +17,14 @@ describe("authentication configuration", () => {
       }),
     ).toThrowError("Fake authentication is unavailable in production");
   });
+
+  it("requires both Auth0 management credentials when either is configured", () => {
+    expect(() => parseAppConfig({
+      NODE_ENV: "test",
+      DATABASE_URL: "postgres://example.invalid/marketplace",
+      AUTH0_MANAGEMENT_CLIENT_ID: "management-client",
+    })).toThrowError("Auth0 identity administration requires both");
+  });
 });
 
 describe("verified source configuration", () => {
