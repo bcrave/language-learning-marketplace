@@ -1,4 +1,5 @@
 import type { UserIdentity, UserRole } from "@marketplace/core";
+import { sql } from "kysely";
 
 import type { Database } from "../database/database.js";
 import type { WorkspacePlace } from "../database/types.js";
@@ -84,6 +85,7 @@ export async function loadRoleWorkspace(
 export type RememberWorkspacePlaceResult =
   | "SUCCEEDED"
   | "UNKNOWN_USER"
+  | "USER_SUSPENDED"
   | "ROLE_ASSIGNMENT_REQUIRED"
   | "INCOMPATIBLE_WORKSPACE_PLACE";
 
@@ -137,7 +139,29 @@ export async function rememberRoleWorkspacePlace(
   }
 
   try {
-    await db.transaction().execute(async (transaction) => {
+    const transactionResult = await db.transaction().execute(async (transaction) => {
+      await sql`select pg_advisory_xact_lock(hashtextextended(${verifiedContext.userId}, 28))`.execute(transaction);
+      const access = await transaction
+        .selectFrom("users")
+        .select("access_status")
+        .where("id", "=", verifiedContext.userId)
+        .executeTakeFirstOrThrow();
+      if (access.access_status === "SUSPENDED") {
+        await transaction
+          .insertInto("audit_entries")
+          .values({
+            actor_user_id: verifiedContext.userId,
+            acting_role: verifiedContext.actingRole,
+            operation: "role-workspace-place.remembered",
+            target_type: "User",
+            target_id: verifiedContext.userId,
+            outcome: "DENIED",
+            reason_code: "USER_SUSPENDED",
+            correlation_id: correlationId,
+          })
+          .execute();
+        return "USER_SUSPENDED" as const;
+      }
       await transaction
         .insertInto("role_workspace_places")
         .values({ user_id: verifiedContext.userId, role: actingRole, place })
@@ -161,7 +185,9 @@ export async function rememberRoleWorkspacePlace(
           correlation_id: correlationId,
         })
         .execute();
+      return "SUCCEEDED" as const;
     });
+    return transactionResult;
   } catch (error) {
     await db
       .insertInto("audit_entries")
@@ -178,5 +204,4 @@ export async function rememberRoleWorkspacePlace(
       .execute();
     throw error;
   }
-  return "SUCCEEDED";
 }

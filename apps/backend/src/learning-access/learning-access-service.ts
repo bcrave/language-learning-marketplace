@@ -210,7 +210,7 @@ export async function enterClassroom(
     return { status: "OK" as const, result: classroomError("CLASS_SESSION_NOT_FOUND", "Choose an available Class Session.") };
   }
   try {
-    return await db.transaction().execute(async (transaction) => {
+    return await inTransaction(db, async (transaction) => {
       const session = await transaction.selectFrom("class_sessions")
         .select(["id", "lesson_unit_id", "teacher_user_id", "starts_at", "state"])
         .where("id", "=", classSessionId)
@@ -251,6 +251,11 @@ export async function enterClassroom(
     await recordAccessAudit(db, actor, "classroom.entered", "ClassSession", classSessionId, "FAILED", "CLASSROOM_PROVIDER_FAILED", correlationId);
     throw error;
   }
+}
+
+async function inTransaction<T>(db: Database, perform: (transaction: Database) => Promise<T>): Promise<T> {
+  if (db.isTransaction) return perform(db);
+  return db.transaction().execute((transaction) => perform(transaction as Database));
 }
 
 async function recordAccessAudit(

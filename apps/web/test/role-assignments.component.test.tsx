@@ -10,6 +10,7 @@ import {
   GrantRoleAssignmentDocument,
   RemoveRoleAssignmentDocument,
   RoleAssignmentAdministrationDocument,
+  SuspendUserDocument,
 } from "../src/generated/graphql.js";
 import { RoleAssignmentAdministrationPanel } from "../src/role-assignments.js";
 
@@ -19,6 +20,8 @@ const userId = "00000000-0000-4000-8000-000000000046";
 const roleUser = {
   id: userId,
   displayName: "Lucía User",
+  accessStatus: "ACTIVE" as const,
+  suspensionReason: null,
   roles: ["STUDENT" as const],
   roleAssignmentHistory: [],
 };
@@ -47,12 +50,35 @@ describe("Role Assignment administration", () => {
   });
 
   it("has no serious or critical automated accessibility violations", async () => {
+    const user = userEvent.setup();
     const { container } = renderPanel([
       { request: { query: RoleAssignmentAdministrationDocument }, result: { data: { roleAssignmentAdministration: { organizations: [], users: [roleUser] } } } },
     ], "es");
     expect(await screen.findByRole("heading", { name: "Asignaciones de roles" })).toBeVisible();
+    await user.selectOptions(screen.getByRole("combobox", { name: "Acción" }), "SUSPEND");
+    expect(screen.getByRole("button", { name: "Suspender usuario" })).toBeVisible();
     const results = await axe.run(container);
     expect(results.violations).toEqual([]);
+  });
+
+  it("suspends a User with a visible reason while keeping assigned roles visible", async () => {
+    const user = userEvent.setup();
+    renderPanel([
+      { request: { query: RoleAssignmentAdministrationDocument }, result: { data: { roleAssignmentAdministration: { organizations: [], users: [roleUser] } } } },
+      {
+        request: { query: SuspendUserDocument, variables: { input: { idempotencyKey: "suspend-user-key", userId, reason: "Security review in progress" } } },
+        result: { data: { suspendUser: { __typename: "UserAccessChangeSuccess", user: { ...roleUser, accessStatus: "SUSPENDED", suspensionReason: "Security review in progress" }, endedBookingCount: 0, removedWaitlistEntryCount: 0, refundedClassCreditCount: 0, teacherClassSessionIds: [] } } },
+      },
+    ], "en", () => "suspend-user-key");
+
+    await screen.findByRole("heading", { name: "Role Assignments" });
+    await user.selectOptions(screen.getByRole("combobox", { name: "Action" }), "SUSPEND");
+    await user.type(screen.getByRole("textbox", { name: "Reason" }), "Security review in progress");
+    await user.click(screen.getByRole("button", { name: "Suspend User" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("User suspended.");
+    expect(screen.getByText("Suspended: Security review in progress")).toBeVisible();
+    expect(screen.getAllByText("Student").some((element) => element.tagName === "LI")).toBe(true);
   });
 
   it("localizes typed server errors instead of displaying server-authored English", async () => {

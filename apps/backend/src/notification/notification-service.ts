@@ -50,7 +50,7 @@ export async function updateNotificationState(
   db: Database,
   input: { notificationId: string; userId: string; action: "READ" | "ARCHIVE"; correlationId: string; now: Date },
 ) {
-  return db.transaction().execute(async (transaction) => {
+  return inTransaction(db, async (transaction) => {
     const updated = await transaction.updateTable("in_app_notifications")
       .set(input.action === "READ" ? { read_at: input.now } : { archived_at: input.now })
       .where("id", "=", input.notificationId)
@@ -73,6 +73,11 @@ export async function updateNotificationState(
   });
 }
 
+async function inTransaction<T>(db: Database, perform: (transaction: Database) => Promise<T>): Promise<T> {
+  if (db.isTransaction) return perform(db);
+  return db.transaction().execute((transaction) => perform(transaction as Database));
+}
+
 export async function openAdministratorTasks(db: Database) {
   return db.selectFrom("administrator_task_items")
     .selectAll()
@@ -88,7 +93,7 @@ export async function resolveAdministratorTask(db: Database, administratorId: st
       .where("state", "=", "OPEN")
       .returningAll()
       .executeTakeFirst();
-    if (task) {
+    if (task?.kind === "NOTIFICATION_DELIVERY_RECONCILIATION") {
       await db.updateTable("email_notification_intents").set({ state: "SUPPRESSED", completed_at: now })
         .where("source_reference", "=", task.source_reference)
         .where("recipient_user_id", "=", task.recipient_reference)

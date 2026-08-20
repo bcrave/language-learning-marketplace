@@ -6,6 +6,7 @@ import { recordAdministrationAudit } from "../audit/administration-audit.js";
 import type { Administrator } from "./administrator-policy.js";
 import type { Database } from "../database/database.js";
 import { requestWaitlistPromotion } from "../waitlist/waitlist-promotion-request.js";
+import { projectAdministrationUser } from "./user-administration-projection.js";
 
 type ChangeRoleAssignmentInput = {
   organizationId?: string | null;
@@ -92,45 +93,13 @@ const initialWorkspacePaths: Record<UserRole, string> = {
   PLATFORM_ADMINISTRATOR: "/administration/operations",
 };
 
-export async function projectRoleAssignmentUser(db: Database, userId: string) {
-  const user = await db.selectFrom("users")
-    .select(["id", "display_name"])
-    .where("id", "=", userId)
-    .executeTakeFirstOrThrow();
-  const [roles, history] = await Promise.all([
-    db.selectFrom("role_assignments")
-      .select("role")
-      .where("user_id", "=", userId)
-      .orderBy("role")
-      .execute(),
-    db.selectFrom("role_assignment_changes")
-      .select(["id", "role", "action", "reason", "changed_at"])
-      .where("user_id", "=", userId)
-      .orderBy("changed_at", "desc")
-      .orderBy("id", "desc")
-      .execute(),
-  ]);
-  return {
-    id: user.id,
-    displayName: user.display_name,
-    roles: roles.map(({ role }) => role),
-    roleAssignmentHistory: history.map((change) => ({
-      id: change.id,
-      role: change.role,
-      action: change.action,
-      reason: change.reason,
-      changedAt: change.changed_at.toISOString(),
-    })),
-  };
-}
-
 export async function roleAssignmentAdministration(db: Database) {
   const [userIds, organizations] = await Promise.all([
     db.selectFrom("users").select("id").orderBy("display_name").orderBy("id").execute(),
     db.selectFrom("organizations").select(["id", "name"]).orderBy("name").orderBy("id").execute(),
   ]);
   return {
-    users: await Promise.all(userIds.map(({ id }) => projectRoleAssignmentUser(db, id))),
+    users: await Promise.all(userIds.map(({ id }) => projectAdministrationUser(db, id))),
     organizations,
   };
 }
@@ -205,7 +174,7 @@ export async function grantRoleAssignment(
   }, change.changed_at, change.id);
   return {
     __typename: "RoleAssignmentChangeSuccess" as const,
-    user: await projectRoleAssignmentUser(transaction, input.userId),
+    user: await projectAdministrationUser(transaction, input.userId),
     endedBookingCount: 0,
     removedWaitlistEntryCount: 0,
     refundedClassCreditCount: 0,
@@ -331,5 +300,5 @@ export async function removeRoleAssignment(
     refundedClassCreditCount,
     subscriptionEnded,
   }, change.changed_at, change.id);
-  return { __typename: "RoleAssignmentChangeSuccess" as const, user: await projectRoleAssignmentUser(transaction, input.userId), endedBookingCount, removedWaitlistEntryCount, refundedClassCreditCount, subscriptionEnded, sponsorshipEnded: false };
+  return { __typename: "RoleAssignmentChangeSuccess" as const, user: await projectAdministrationUser(transaction, input.userId), endedBookingCount, removedWaitlistEntryCount, refundedClassCreditCount, subscriptionEnded, sponsorshipEnded: false };
 }

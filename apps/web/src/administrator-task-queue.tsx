@@ -20,11 +20,15 @@ export function AdministratorTaskQueue({ createIdempotencyKey = () => crypto.ran
       <ul>
         {tasks.map((task) => (
           <li key={task.id}>
-            <p><FormattedMessage id="administratorTasks.notificationDelivery" /></p>
+            <p><FormattedMessage id={task.kind === "USER_SUSPENSION_TEACHER_ASSIGNMENT" ? "administratorTasks.userSuspensionTeacherAssignment" : "administratorTasks.notificationDelivery"} /></p>
             <dl>
               <dt><FormattedMessage id="administratorTasks.correlation" /></dt><dd>{task.correlationReference}</dd>
-              <dt><FormattedMessage id="administratorTasks.channel" /></dt><dd>{task.safeContext.channel}</dd>
-              <dt><FormattedMessage id="administratorTasks.message" /></dt><dd>{task.safeContext.messageId}</dd>
+              {task.kind === "USER_SUSPENSION_TEACHER_ASSIGNMENT" ? <>
+                <dt><FormattedMessage id="administratorTasks.classSession" /></dt><dd>{task.safeContext.classSessionId}</dd>
+              </> : <>
+                <dt><FormattedMessage id="administratorTasks.channel" /></dt><dd>{task.safeContext.channel}</dd>
+                <dt><FormattedMessage id="administratorTasks.message" /></dt><dd>{task.safeContext.messageId}</dd>
+              </>}
             </dl>
             <label htmlFor={`task-reason-${task.id}`}><FormattedMessage id="administratorTasks.reason" /></label>
             <input id={`task-reason-${task.id}`} value={resolutionReasons[task.id] ?? ""} onChange={(event) => setResolutionReasons((current) => ({ ...current, [task.id]: event.target.value }))} />

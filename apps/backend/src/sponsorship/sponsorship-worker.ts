@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { TaskList } from "graphile-worker";
+import { sql } from "kysely";
 
 import type { Database } from "../database/database.js";
 import { monthlySubscriptionAnniversary } from "../subscription/subscription-time.js";
@@ -97,6 +98,9 @@ export async function grantDueSponsorshipCredits(db: Database, now: Date, correl
   for (const dueSponsorship of dueSponsorships) {
     try {
       const processed = await db.transaction().execute(async (transaction) => {
+        const sponsorshipStudent = await transaction.selectFrom("sponsorships").select("student_user_id").where("id", "=", dueSponsorship.id).executeTakeFirst();
+        if (!sponsorshipStudent) return false;
+        await sql`select pg_advisory_xact_lock(hashtextextended(${sponsorshipStudent.student_user_id}, 28))`.execute(transaction);
         const sponsorship = await transaction.selectFrom("sponsorships")
           .selectAll()
           .where("id", "=", dueSponsorship.id)
@@ -121,6 +125,30 @@ export async function grantDueSponsorshipCredits(db: Database, now: Date, correl
             .where("id", "=", sponsorship.id)
             .executeTakeFirstOrThrow();
           return false;
+        }
+
+        const student = await transaction.selectFrom("users")
+          .select("access_status")
+          .where("id", "=", sponsorship.student_user_id)
+          .forUpdate()
+          .executeTakeFirstOrThrow();
+        if (student.access_status === "SUSPENDED") {
+          await transaction.updateTable("sponsorships")
+            .set({ grant_count: sponsorship.grant_count + 1, next_anniversary_at: nextAnniversaryAt, updated_at: now })
+            .where("id", "=", sponsorship.id)
+            .executeTakeFirstOrThrow();
+          await transaction.insertInto("audit_entries").values({
+            actor_user_id: null,
+            system_identity: "SPONSORSHIP_CREDIT_WORKER",
+            acting_role: null,
+            operation: "organization-credit.skipped",
+            target_type: "Sponsorship",
+            target_id: sponsorship.id,
+            outcome: "SUCCEEDED",
+            reason_code: "ORGANIZATION_CREDIT_SKIPPED_USER_SUSPENDED",
+            correlation_id: correlationId,
+          }).execute();
+          return true;
         }
 
         await transaction.insertInto("class_credit_accounts").values({ student_user_id: sponsorship.student_user_id })

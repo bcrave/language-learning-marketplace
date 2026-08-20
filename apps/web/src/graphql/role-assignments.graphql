@@ -4,6 +4,8 @@ query RoleAssignmentAdministration {
     users {
       id
       displayName
+      accessStatus
+      suspensionReason
       roles
       roleAssignmentHistory { id role action reason changedAt }
     }
@@ -13,7 +15,7 @@ query RoleAssignmentAdministration {
 mutation GrantRoleAssignment($input: ChangeRoleAssignmentInput!) {
   grantRoleAssignment(input: $input) {
     ... on RoleAssignmentChangeSuccess {
-      user { id displayName roles roleAssignmentHistory { id role action reason changedAt } }
+      user { id displayName accessStatus suspensionReason roles roleAssignmentHistory { id role action reason changedAt } }
       endedBookingCount
       removedWaitlistEntryCount
       refundedClassCreditCount
@@ -27,7 +29,7 @@ mutation GrantRoleAssignment($input: ChangeRoleAssignmentInput!) {
 mutation RemoveRoleAssignment($input: ChangeRoleAssignmentInput!) {
   removeRoleAssignment(input: $input) {
     ... on RoleAssignmentChangeSuccess {
-      user { id displayName roles roleAssignmentHistory { id role action reason changedAt } }
+      user { id displayName accessStatus suspensionReason roles roleAssignmentHistory { id role action reason changedAt } }
       endedBookingCount
       removedWaitlistEntryCount
       refundedClassCreditCount
@@ -35,5 +37,31 @@ mutation RemoveRoleAssignment($input: ChangeRoleAssignmentInput!) {
       sponsorshipEnded
     }
     ... on RoleAssignmentError { code message classSessionIds }
+  }
+}
+
+mutation SuspendUser($input: ChangeUserAccessInput!) {
+  suspendUser(input: $input) {
+    ... on UserAccessChangeSuccess {
+      user { id displayName accessStatus suspensionReason roles roleAssignmentHistory { id role action reason changedAt } }
+      endedBookingCount
+      removedWaitlistEntryCount
+      refundedClassCreditCount
+      teacherClassSessionIds
+    }
+    ... on UserAccessError { code message }
+  }
+}
+
+mutation ReactivateUser($input: ReactivateUserInput!) {
+  reactivateUser(input: $input) {
+    ... on UserAccessChangeSuccess {
+      user { id displayName accessStatus suspensionReason roles roleAssignmentHistory { id role action reason changedAt } }
+      endedBookingCount
+      removedWaitlistEntryCount
+      refundedClassCreditCount
+      teacherClassSessionIds
+    }
+    ... on UserAccessError { code message }
   }
 }

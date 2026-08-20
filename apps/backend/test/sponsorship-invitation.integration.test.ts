@@ -184,6 +184,31 @@ describe("Sponsorship Invitation GraphQL API", () => {
     expect(managerNotifications).toHaveLength(0);
   });
 
+  it("skips a suspended Student's due Organization Credit Benefit without backfill", async () => {
+    const suspendedStudentId = randomUUID();
+    const suspendedStudentSubject = randomUUID();
+    await db.insertInto("users").values({ id: suspendedStudentId, identity_issuer: "https://fake.local/", identity_subject: suspendedStudentSubject, display_name: "Suspended Student", interface_locale: "en", display_time_zone: "America/Denver" }).execute();
+    await db.insertInto("role_assignments").values({ user_id: suspendedStudentId, role: "STUDENT" }).execute();
+    const invited = await inviteStudent(suspendedStudentId);
+    const invitationId = (invited.data?.inviteToSponsorship as { invitation: { id: string } }).invitation.id;
+    const accepted = await acceptInvitation(invitationId, suspendedStudentSubject);
+    const sponsorshipId = (accepted.data!.acceptSponsorshipInvitation as { sponsorship: { id: string } }).sponsorship.id;
+    const firstDue = new Date("2026-09-19T18:00:00.000Z");
+    await db.updateTable("sponsorships").set({ next_anniversary_at: firstDue }).where("id", "=", sponsorshipId).execute();
+    await db.updateTable("users").set({ access_status: "SUSPENDED", suspension_reason: "Security review", suspended_at: new Date("2026-09-18T18:00:00.000Z"), suspended_by_user_id: organizationManagerId }).where("id", "=", suspendedStudentId).execute();
+
+    expect(await grantDueSponsorshipCredits(db, firstDue, "skip-suspended-grant")).toBe(1);
+    expect(await db.selectFrom("class_credit_accounts").select("available_balance").where("student_user_id", "=", suspendedStudentId).executeTakeFirstOrThrow()).toEqual({ available_balance: 8 });
+    const afterSkip = await db.selectFrom("sponsorships").select(["grant_count", "next_anniversary_at"]).where("id", "=", sponsorshipId).executeTakeFirstOrThrow();
+    expect(afterSkip.grant_count).toBe(1);
+    expect(afterSkip.next_anniversary_at.getTime()).toBeGreaterThan(firstDue.getTime());
+    expect(await db.selectFrom("audit_entries").select(["outcome", "reason_code"]).where("correlation_id", "=", "skip-suspended-grant").executeTakeFirstOrThrow()).toEqual({ outcome: "SUCCEEDED", reason_code: "ORGANIZATION_CREDIT_SKIPPED_USER_SUSPENDED" });
+
+    await db.updateTable("users").set({ access_status: "ACTIVE", suspension_reason: null, suspended_at: null, suspended_by_user_id: null }).where("id", "=", suspendedStudentId).execute();
+    expect(await grantDueSponsorshipCredits(db, afterSkip.next_anniversary_at, "grant-after-reactivation")).toBeGreaterThanOrEqual(1);
+    expect(await db.selectFrom("class_credit_accounts").select("available_balance").where("student_user_id", "=", suspendedStudentId).executeTakeFirstOrThrow()).toEqual({ available_balance: 16 });
+  });
+
   it("authorizes Organization Manager and Student operations and records privacy-safe Audit Entries", async () => {
     const deniedInviteCorrelation = randomUUID();
     const deniedInvite = await inviteStudent(studentId, studentSubject, deniedInviteCorrelation);
