@@ -238,6 +238,105 @@ export enum AttendanceReviewRequestState {
   Upheld = 'UPHELD'
 }
 
+/**
+ * One immutable Audit Entry as an authorized viewer sees it: opaque actor and target
+ * identities, the acting role, the outcome, the reason code, the time, and the
+ * correlation identifier. It carries no secret, no sensitive content, and no raw
+ * operational diagnostic.
+ */
+export type AuditEntry = {
+  __typename?: 'AuditEntry';
+  actingRole?: Maybe<UserRole>;
+  actorUserId?: Maybe<Scalars['ID']['output']>;
+  correlationId: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  occurredAt: Scalars['String']['output'];
+  operation: Scalars['String']['output'];
+  outcome: AuditOutcome;
+  reasonCode: Scalars['String']['output'];
+  systemIdentity?: Maybe<Scalars['String']['output']>;
+  targetId: Scalars['String']['output'];
+  targetType: Scalars['String']['output'];
+};
+
+export type AuditLog = {
+  __typename?: 'AuditLog';
+  appliedFilter: AuditLogFilter;
+  entries: Array<AuditEntry>;
+  pageInfo: AuditLogPageInfo;
+  scope: AuditLogScope;
+};
+
+export type AuditLogError = {
+  __typename?: 'AuditLogError';
+  code: AuditLogErrorCode;
+  message: Scalars['String']['output'];
+};
+
+export enum AuditLogErrorCode {
+  AuditLogRowLimitExceeded = 'AUDIT_LOG_ROW_LIMIT_EXCEEDED',
+  DisplayTimeZoneRequired = 'DISPLAY_TIME_ZONE_REQUIRED',
+  InvalidAuditLogCursor = 'INVALID_AUDIT_LOG_CURSOR',
+  InvalidAuditLogFilter = 'INVALID_AUDIT_LOG_FILTER',
+  InvalidAuditLogRange = 'INVALID_AUDIT_LOG_RANGE'
+}
+
+export type AuditLogExport = {
+  __typename?: 'AuditLogExport';
+  appliedFilter: AuditLogFilter;
+  contentType: Scalars['String']['output'];
+  csv: Scalars['String']['output'];
+  exportedAt: Scalars['String']['output'];
+  fileName: Scalars['String']['output'];
+  rowCount: Scalars['Int']['output'];
+  schemaVersion: Scalars['String']['output'];
+  scope: AuditLogScope;
+};
+
+export type AuditLogExportResult = AuditLogError | AuditLogExport;
+
+export type AuditLogFilter = {
+  __typename?: 'AuditLogFilter';
+  actingRole?: Maybe<UserRole>;
+  actorUserId?: Maybe<Scalars['ID']['output']>;
+  correlationId?: Maybe<Scalars['String']['output']>;
+  fromLocalDate: Scalars['String']['output'];
+  operation?: Maybe<Scalars['String']['output']>;
+  outcome?: Maybe<AuditOutcome>;
+  timeZone: Scalars['String']['output'];
+  toLocalDate: Scalars['String']['output'];
+};
+
+export type AuditLogFilterInput = {
+  actingRole?: InputMaybe<UserRole>;
+  actorUserId?: InputMaybe<Scalars['ID']['input']>;
+  after?: InputMaybe<Scalars['String']['input']>;
+  correlationId?: InputMaybe<Scalars['String']['input']>;
+  fromLocalDate?: InputMaybe<Scalars['String']['input']>;
+  operation?: InputMaybe<Scalars['String']['input']>;
+  outcome?: InputMaybe<AuditOutcome>;
+  toLocalDate?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type AuditLogPageInfo = {
+  __typename?: 'AuditLogPageInfo';
+  endCursor?: Maybe<Scalars['String']['output']>;
+  hasNextPage: Scalars['Boolean']['output'];
+};
+
+export type AuditLogResult = AuditLog | AuditLogError;
+
+export enum AuditLogScope {
+  AssignedOrganization = 'ASSIGNED_ORGANIZATION',
+  MarketplaceWide = 'MARKETPLACE_WIDE'
+}
+
+export enum AuditOutcome {
+  Denied = 'DENIED',
+  Failed = 'FAILED',
+  Succeeded = 'SUCCEEDED'
+}
+
 export type AvailabilityException = {
   __typename?: 'AvailabilityException';
   endsAt: Scalars['String']['output'];
@@ -1603,6 +1702,8 @@ export type Query = {
   administrationCurriculum: AdministrationCurriculum;
   administratorFeedbackAndRatings: Array<FeedbackAndRatingItem>;
   administratorTasks: Array<AdministratorTaskItem>;
+  auditLog: AuditLogResult;
+  auditLogExport: AuditLogExportResult;
   classRoster?: Maybe<ClassRoster>;
   classSessionDiscoveryOptions: ClassSessionDiscoveryOptions;
   discoverClassSessions: ClassSessionDiscoveryConnection;
@@ -1647,6 +1748,16 @@ export type QueryAdministrationClassCreditsArgs = {
 
 export type QueryAdministrationCurriculumArgs = {
   locale: InterfaceLocale;
+};
+
+
+export type QueryAuditLogArgs = {
+  filter?: InputMaybe<AuditLogFilterInput>;
+};
+
+
+export type QueryAuditLogExportArgs = {
+  filter?: InputMaybe<AuditLogFilterInput>;
 };
 
 
@@ -2670,6 +2781,14 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = {
     | ( AnonymizeUserError )
     | ( AnonymizeUserSuccess )
   ;
+  AuditLogExportResult:
+    | ( AuditLogError )
+    | ( AuditLogExport )
+  ;
+  AuditLogResult:
+    | ( AuditLog )
+    | ( AuditLogError )
+  ;
   BookClassSessionResult:
     | ( BookClassSessionSuccess )
     | ( BookingError )
@@ -2900,6 +3019,18 @@ export type ResolversTypes = {
   AttendanceReviewErrorCode: AttendanceReviewErrorCode;
   AttendanceReviewRequest: ResolverTypeWrapper<AttendanceReviewRequest>;
   AttendanceReviewRequestState: AttendanceReviewRequestState;
+  AuditEntry: ResolverTypeWrapper<AuditEntry>;
+  AuditLog: ResolverTypeWrapper<AuditLog>;
+  AuditLogError: ResolverTypeWrapper<AuditLogError>;
+  AuditLogErrorCode: AuditLogErrorCode;
+  AuditLogExport: ResolverTypeWrapper<AuditLogExport>;
+  AuditLogExportResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['AuditLogExportResult']>;
+  AuditLogFilter: ResolverTypeWrapper<AuditLogFilter>;
+  AuditLogFilterInput: AuditLogFilterInput;
+  AuditLogPageInfo: ResolverTypeWrapper<AuditLogPageInfo>;
+  AuditLogResult: ResolverTypeWrapper<ResolversUnionTypes<ResolversTypes>['AuditLogResult']>;
+  AuditLogScope: AuditLogScope;
+  AuditOutcome: AuditOutcome;
   AvailabilityException: ResolverTypeWrapper<AvailabilityException>;
   AvailabilityExceptionSessionConflict: ResolverTypeWrapper<AvailabilityExceptionSessionConflict>;
   BookClassSessionInput: BookClassSessionInput;
@@ -3221,6 +3352,15 @@ export type ResolversParentTypes = {
   AttendanceRecordInput: AttendanceRecordInput;
   AttendanceReviewError: AttendanceReviewError;
   AttendanceReviewRequest: AttendanceReviewRequest;
+  AuditEntry: AuditEntry;
+  AuditLog: AuditLog;
+  AuditLogError: AuditLogError;
+  AuditLogExport: AuditLogExport;
+  AuditLogExportResult: ResolversUnionTypes<ResolversParentTypes>['AuditLogExportResult'];
+  AuditLogFilter: AuditLogFilter;
+  AuditLogFilterInput: AuditLogFilterInput;
+  AuditLogPageInfo: AuditLogPageInfo;
+  AuditLogResult: ResolversUnionTypes<ResolversParentTypes>['AuditLogResult'];
   AvailabilityException: AvailabilityException;
   AvailabilityExceptionSessionConflict: AvailabilityExceptionSessionConflict;
   BookClassSessionInput: BookClassSessionInput;
@@ -3596,6 +3736,70 @@ export type AttendanceReviewRequestResolvers<ContextType = any, ParentType exten
   state?: Resolver<ResolversTypes['AttendanceReviewRequestState'], ParentType, ContextType>;
   studentDisplayName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   studentVisibleRationale?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+};
+
+export type AuditEntryResolvers<ContextType = any, ParentType extends ResolversParentTypes['AuditEntry'] = ResolversParentTypes['AuditEntry']> = {
+  actingRole?: Resolver<Maybe<ResolversTypes['UserRole']>, ParentType, ContextType>;
+  actorUserId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  correlationId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  occurredAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  operation?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  outcome?: Resolver<ResolversTypes['AuditOutcome'], ParentType, ContextType>;
+  reasonCode?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  systemIdentity?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  targetId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  targetType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
+export type AuditLogResolvers<ContextType = any, ParentType extends ResolversParentTypes['AuditLog'] = ResolversParentTypes['AuditLog']> = {
+  appliedFilter?: Resolver<ResolversTypes['AuditLogFilter'], ParentType, ContextType>;
+  entries?: Resolver<Array<ResolversTypes['AuditEntry']>, ParentType, ContextType>;
+  pageInfo?: Resolver<ResolversTypes['AuditLogPageInfo'], ParentType, ContextType>;
+  scope?: Resolver<ResolversTypes['AuditLogScope'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type AuditLogErrorResolvers<ContextType = any, ParentType extends ResolversParentTypes['AuditLogError'] = ResolversParentTypes['AuditLogError']> = {
+  code?: Resolver<ResolversTypes['AuditLogErrorCode'], ParentType, ContextType>;
+  message?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type AuditLogExportResolvers<ContextType = any, ParentType extends ResolversParentTypes['AuditLogExport'] = ResolversParentTypes['AuditLogExport']> = {
+  appliedFilter?: Resolver<ResolversTypes['AuditLogFilter'], ParentType, ContextType>;
+  contentType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  csv?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  exportedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  fileName?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  rowCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  schemaVersion?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  scope?: Resolver<ResolversTypes['AuditLogScope'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+};
+
+export type AuditLogExportResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['AuditLogExportResult'] = ResolversParentTypes['AuditLogExportResult']> = {
+  __resolveType: TypeResolveFn<'AuditLogError' | 'AuditLogExport', ParentType, ContextType>;
+};
+
+export type AuditLogFilterResolvers<ContextType = any, ParentType extends ResolversParentTypes['AuditLogFilter'] = ResolversParentTypes['AuditLogFilter']> = {
+  actingRole?: Resolver<Maybe<ResolversTypes['UserRole']>, ParentType, ContextType>;
+  actorUserId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  correlationId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  fromLocalDate?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  operation?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  outcome?: Resolver<Maybe<ResolversTypes['AuditOutcome']>, ParentType, ContextType>;
+  timeZone?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  toLocalDate?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+};
+
+export type AuditLogPageInfoResolvers<ContextType = any, ParentType extends ResolversParentTypes['AuditLogPageInfo'] = ResolversParentTypes['AuditLogPageInfo']> = {
+  endCursor?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  hasNextPage?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+};
+
+export type AuditLogResultResolvers<ContextType = any, ParentType extends ResolversParentTypes['AuditLogResult'] = ResolversParentTypes['AuditLogResult']> = {
+  __resolveType: TypeResolveFn<'AuditLog' | 'AuditLogError', ParentType, ContextType>;
 };
 
 export type AvailabilityExceptionResolvers<ContextType = any, ParentType extends ResolversParentTypes['AvailabilityException'] = ResolversParentTypes['AvailabilityException']> = {
@@ -4337,6 +4541,8 @@ export type QueryResolvers<ContextType = any, ParentType extends ResolversParent
   administrationCurriculum?: Resolver<ResolversTypes['AdministrationCurriculum'], ParentType, ContextType, RequireFields<QueryAdministrationCurriculumArgs, 'locale'>>;
   administratorFeedbackAndRatings?: Resolver<Array<ResolversTypes['FeedbackAndRatingItem']>, ParentType, ContextType>;
   administratorTasks?: Resolver<Array<ResolversTypes['AdministratorTaskItem']>, ParentType, ContextType>;
+  auditLog?: Resolver<ResolversTypes['AuditLogResult'], ParentType, ContextType, Partial<QueryAuditLogArgs>>;
+  auditLogExport?: Resolver<ResolversTypes['AuditLogExportResult'], ParentType, ContextType, Partial<QueryAuditLogExportArgs>>;
   classRoster?: Resolver<Maybe<ResolversTypes['ClassRoster']>, ParentType, ContextType, RequireFields<QueryClassRosterArgs, 'actingRole' | 'classSessionId'>>;
   classSessionDiscoveryOptions?: Resolver<ResolversTypes['ClassSessionDiscoveryOptions'], ParentType, ContextType>;
   discoverClassSessions?: Resolver<ResolversTypes['ClassSessionDiscoveryConnection'], ParentType, ContextType, RequireFields<QueryDiscoverClassSessionsArgs, 'input'>>;
@@ -4907,6 +5113,14 @@ export type Resolvers<ContextType = any> = {
   AttendanceRecord?: AttendanceRecordResolvers<ContextType>;
   AttendanceReviewError?: AttendanceReviewErrorResolvers<ContextType>;
   AttendanceReviewRequest?: AttendanceReviewRequestResolvers<ContextType>;
+  AuditEntry?: AuditEntryResolvers<ContextType>;
+  AuditLog?: AuditLogResolvers<ContextType>;
+  AuditLogError?: AuditLogErrorResolvers<ContextType>;
+  AuditLogExport?: AuditLogExportResolvers<ContextType>;
+  AuditLogExportResult?: AuditLogExportResultResolvers<ContextType>;
+  AuditLogFilter?: AuditLogFilterResolvers<ContextType>;
+  AuditLogPageInfo?: AuditLogPageInfoResolvers<ContextType>;
+  AuditLogResult?: AuditLogResultResolvers<ContextType>;
   AvailabilityException?: AvailabilityExceptionResolvers<ContextType>;
   AvailabilityExceptionSessionConflict?: AvailabilityExceptionSessionConflictResolvers<ContextType>;
   BookClassSessionResult?: BookClassSessionResultResolvers<ContextType>;

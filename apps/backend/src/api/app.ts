@@ -23,6 +23,13 @@ import { anonymizeUser } from "../authorization/user-anonymization-service.js";
 import { organizationManagerFor } from "../authorization/organization-manager-policy.js";
 import { studentFor } from "../authorization/student-policy.js";
 import { recordAdministrationAudit } from "../audit/administration-audit.js";
+import {
+  auditLogError,
+  auditLogViewerFor,
+  exportAuditLog,
+  readAuditLog,
+  type AuditLogViewer,
+} from "../audit/audit-log-service.js";
 import { administerAttendance, classRosterForViewer, recordAttendance } from "../attendance/attendance-service.js";
 import { administrationAttendanceReviewRequests, decideAttendanceReview, requestAttendanceReview, studentAttendanceRecords } from "../attendance/attendance-review-service.js";
 import { courseProgressForStudent } from "../attendance/course-progress-service.js";
@@ -207,6 +214,17 @@ const endCohortMembershipInputSchema = z.object({
   cohortMembershipId: z.uuid(),
   effectiveUntil: z.iso.datetime().nullish(),
 });
+const auditLogFilterInputSchema = z.object({
+  fromLocalDate: z.iso.date().nullish(),
+  toLocalDate: z.iso.date().nullish(),
+  outcome: z.enum(["SUCCEEDED", "DENIED", "FAILED"]).nullish(),
+  actingRole: z.enum(["STUDENT", "TEACHER", "ORGANIZATION_MANAGER", "PLATFORM_ADMINISTRATOR"]).nullish(),
+  operation: z.string().trim().max(200).nullish(),
+  actorUserId: z.uuid().nullish(),
+  correlationId: z.string().trim().max(200).nullish(),
+  after: z.string().min(1).max(500).nullish(),
+}).strict();
+
 const requestReportExportInputSchema = z.object({
   idempotencyKey: z.string().min(1).max(200),
   kind: z.enum(["ORDINARY", "CORRECTION_HISTORY"]),
@@ -297,6 +315,8 @@ export function createApi(options: {
       AddCohortMembershipResult: { __resolveType: (value) => value.__typename! },
       EndCohortMembershipResult: { __resolveType: (value) => value.__typename! },
       RequestReportExportResult: { __resolveType: (value) => value.__typename! },
+      AuditLogResult: { __resolveType: (value) => value.__typename! },
+      AuditLogExportResult: { __resolveType: (value) => value.__typename! },
       GrantRoleAssignmentResult: { __resolveType: (value) => value.__typename! },
       RemoveRoleAssignmentResult: { __resolveType: (value) => value.__typename! },
       SuspendUserResult: { __resolveType: (value) => value.__typename! },
@@ -444,6 +464,33 @@ export function createApi(options: {
               extensions: { code: error.code === "REPORT_EXPORT_NOT_FOUND" ? "NOT_FOUND" : "BAD_USER_INPUT" },
             });
           }
+        },
+        auditLog: async (_parent, { filter }, context) => {
+          const viewer = await authenticateAuditLogViewer(context, "audit-log.read");
+          const validatedFilter = auditLogFilterInputSchema.safeParse(filter ?? {});
+          if (!validatedFilter.success) {
+            return graphQLResult(auditLogError("INVALID_AUDIT_LOG_FILTER", "Choose valid Audit Log filters."));
+          }
+          return graphQLResult(await readAuditLog(
+            context.db,
+            viewer,
+            validatedFilter.data,
+            options.now?.() ?? new Date(),
+          ));
+        },
+        auditLogExport: async (_parent, { filter }, context) => {
+          const viewer = await authenticateAuditLogViewer(context, "audit-log.exported");
+          const validatedFilter = auditLogFilterInputSchema.safeParse(filter ?? {});
+          if (!validatedFilter.success) {
+            return graphQLResult(auditLogError("INVALID_AUDIT_LOG_FILTER", "Choose valid Audit Log filters."));
+          }
+          return graphQLResult(await exportAuditLog(
+            context.db,
+            viewer,
+            validatedFilter.data,
+            context.correlationId,
+            options.now?.() ?? new Date(),
+          ));
         },
         discoverClassSessions: async (_parent, { input }, context) => {
           const student = await authenticateStudent(context, "class-session-discovery.read", "ClassSessionDiscovery");
@@ -1578,6 +1625,48 @@ export function createApi(options: {
       throw createGraphQLError("The Teacher Role Assignment is required", { extensions: { code: "FORBIDDEN" } });
     }
     return result.teacher;
+  }
+
+  /**
+   * The Audit Log applies the viewer's own relationship scope (ADR 0059), so the
+   * scope is resolved from current Role Assignments here and travels with the
+   * request rather than being asserted by it.
+   *
+   * A role that may not read the Audit Log is refused, and that refusal is itself a
+   * denied sensitive read: it is the one Audit Log access that always writes an
+   * Audit Entry.
+   */
+  async function authenticateAuditLogViewer(context: ApiContext, operation: string): Promise<AuditLogViewer> {
+    const identity = await context.authenticator.authenticate(context.request);
+    if (!identity) {
+      throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+    }
+    const user = await context.db.selectFrom("users")
+      .select("id")
+      .where("identity_issuer", "=", identity.issuer)
+      .where("identity_subject", "=", identity.subject)
+      .executeTakeFirst();
+    if (!user) {
+      throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
+    }
+    const viewer = await auditLogViewerFor(context.db, user.id);
+    if (!viewer) {
+      await context.db.insertInto("audit_entries").values({
+        actor_user_id: user.id,
+        acting_role: null,
+        operation,
+        target_type: "AuditLog",
+        target_id: user.id,
+        outcome: "DENIED",
+        reason_code: "AUDIT_LOG_ROLE_REQUIRED",
+        correlation_id: context.correlationId,
+      }).execute();
+      throw createGraphQLError(
+        "An Organization Manager or Platform Administrator Role Assignment is required",
+        { extensions: { code: "FORBIDDEN" } },
+      );
+    }
+    return viewer;
   }
 
   /**

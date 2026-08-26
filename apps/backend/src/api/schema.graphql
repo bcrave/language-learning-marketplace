@@ -512,6 +512,85 @@ type ReportExportError { code: ReportExportErrorCode!, message: String! }
 
 union RequestReportExportResult = RequestReportExportSuccess | ReportExportError
 
+enum AuditLogScope { ASSIGNED_ORGANIZATION MARKETPLACE_WIDE }
+
+enum AuditOutcome { SUCCEEDED DENIED FAILED }
+
+"""
+One immutable Audit Entry as an authorized viewer sees it: opaque actor and target
+identities, the acting role, the outcome, the reason code, the time, and the
+correlation identifier. It carries no secret, no sensitive content, and no raw
+operational diagnostic.
+"""
+type AuditEntry {
+  id: ID!
+  occurredAt: String!
+  actorUserId: ID
+  systemIdentity: String
+  actingRole: UserRole
+  operation: String!
+  targetType: String!
+  targetId: String!
+  outcome: AuditOutcome!
+  reasonCode: String!
+  correlationId: String!
+}
+
+input AuditLogFilterInput {
+  fromLocalDate: String
+  toLocalDate: String
+  outcome: AuditOutcome
+  actingRole: UserRole
+  operation: String
+  actorUserId: ID
+  correlationId: String
+  after: String
+}
+
+type AuditLogFilter {
+  fromLocalDate: String!
+  toLocalDate: String!
+  timeZone: String!
+  outcome: AuditOutcome
+  actingRole: UserRole
+  operation: String
+  actorUserId: ID
+  correlationId: String
+}
+
+type AuditLogPageInfo { endCursor: String, hasNextPage: Boolean! }
+
+type AuditLog {
+  scope: AuditLogScope!
+  appliedFilter: AuditLogFilter!
+  entries: [AuditEntry!]!
+  pageInfo: AuditLogPageInfo!
+}
+
+type AuditLogExport {
+  scope: AuditLogScope!
+  appliedFilter: AuditLogFilter!
+  schemaVersion: String!
+  exportedAt: String!
+  rowCount: Int!
+  fileName: String!
+  contentType: String!
+  csv: String!
+}
+
+enum AuditLogErrorCode {
+  INVALID_AUDIT_LOG_FILTER
+  INVALID_AUDIT_LOG_RANGE
+  DISPLAY_TIME_ZONE_REQUIRED
+  INVALID_AUDIT_LOG_CURSOR
+  AUDIT_LOG_ROW_LIMIT_EXCEEDED
+}
+
+type AuditLogError { code: AuditLogErrorCode!, message: String! }
+
+union AuditLogResult = AuditLog | AuditLogError
+union AuditLogExportResult = AuditLogExport | AuditLogError
+
 type User {
   id: ID!
   displayName: String!
@@ -719,6 +798,8 @@ type Query {
   marketplaceOperationalReport(input: MarketplaceOperationalReportInput): MarketplaceOperationalReport!
   reportExports: [ReportExport!]!
   reportExportArtifact(id: ID!): ReportExportArtifact!
+  auditLog(filter: AuditLogFilterInput): AuditLogResult!
+  auditLogExport(filter: AuditLogFilterInput): AuditLogExportResult!
 }
 
 type Mutation {

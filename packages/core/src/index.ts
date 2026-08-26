@@ -333,6 +333,81 @@ export function correctionHistoryExportIsOrganizationScoped(actingRole: UserRole
   return actingRole === "ORGANIZATION_MANAGER";
 }
 
+/**
+ * The Audit Log is read through the viewer's own relationship scope (ADR 0059).
+ * Marketplace-wide operational authority reads every Audit Entry; an Organization
+ * Manager reads the acting record of its own Organization's managers and nothing
+ * else, so a sponsored Student's own activity never becomes visible through a
+ * surface the Sponsorship disclosure does not cover. No other role reaches it.
+ */
+export const AUDIT_LOG_SCOPES = ["ASSIGNED_ORGANIZATION", "MARKETPLACE_WIDE"] as const;
+export type AuditLogScope = (typeof AUDIT_LOG_SCOPES)[number];
+
+export function auditLogScopeFor(actingRole: UserRole): AuditLogScope | null {
+  if (actingRole === "PLATFORM_ADMINISTRATOR") return "MARKETPLACE_WIDE";
+  if (actingRole === "ORGANIZATION_MANAGER") return "ASSIGNED_ORGANIZATION";
+  return null;
+}
+
+export function auditLogIsAuthorized(actingRole: UserRole) {
+  return auditLogScopeFor(actingRole) !== null;
+}
+
+/**
+ * An Audit Entry names its actor by opaque identity alone: the acting User's
+ * identifier or the background system identity, never a display name, an address, or
+ * a provider subject. Reads and exports both go through this so neither can widen
+ * into an identity the Audit Log is not allowed to carry.
+ */
+export function auditActorReference(entry: { actorUserId: string | null; systemIdentity: string | null }) {
+  return entry.actorUserId ?? `system:${entry.systemIdentity ?? "UNKNOWN"}`;
+}
+
+export const AUDIT_LOG_PAGE_SIZE = 20;
+
+export const AUDIT_LOG_EXPORT_SCHEMA_VERSION = "audit_log.v1";
+export const AUDIT_LOG_EXPORT_MAXIMUM_ROW_COUNT = 5_000;
+
+export const AUDIT_LOG_EXPORT_COLUMNS = [
+  "schema_version",
+  "exported_at",
+  "viewer_time_zone",
+  "audit_entry_id",
+  "occurred_at",
+  "actor_reference",
+  "acting_role",
+  "operation",
+  "target_type",
+  "target_reference",
+  "outcome",
+  "reason_code",
+  "correlation_id",
+] as const;
+
+/**
+ * An Audit Log export that would exceed the accepted row count is refused rather
+ * than shortened, for the same reason a Report Export is (ADR 0056): a truncated
+ * file still opens, still looks complete, and quietly drops the entries an
+ * investigation most needs.
+ */
+export function auditLogExportRowLimitRefusal(rowCount: number) {
+  return rowCount > AUDIT_LOG_EXPORT_MAXIMUM_ROW_COUNT ? "AUDIT_LOG_ROW_LIMIT_EXCEEDED" as const : null;
+}
+
+export const AUDIT_ENTRY_RETENTION_DAYS = 90;
+
+/**
+ * Retention expires a whole monthly partition or nothing. A month is expired only
+ * once every instant it can hold is older than the retention window, so dropping it
+ * can never remove an Audit Entry that retention still covers, and no entry inside a
+ * retained month is ever selectively rewritten to make room.
+ */
+export function auditPartitionIsExpired(partitionMonthStart: Date, now: Date) {
+  const cutoff = new Date(now.getTime() - AUDIT_ENTRY_RETENTION_DAYS * 24 * 60 * 60_000);
+  const cutoffMonthStart = Date.UTC(cutoff.getUTCFullYear(), cutoff.getUTCMonth(), 1);
+  return partitionMonthStart.getTime() < cutoffMonthStart;
+}
+
 // A spreadsheet treats a leading formula character as code rather than as a name, so
 // a value that starts with one is prefixed and quoted. Numbers are written as
 // numbers, which keeps a negative count readable instead of disguising it.
@@ -796,6 +871,48 @@ export const interfaceMessages = {
     "reportExport.error.REPORT_EXPORT_NOT_FOUND": "That Report Export was not found.",
     "reportExport.error.REPORT_EXPORT_NOT_DOWNLOADABLE": "That Report Export is no longer available. Request a fresh export.",
     "reportExport.error.IDEMPOTENCY_KEY_REUSED": "That request identifier was already used for a different export.",
+    "auditLog.title": "Audit Log",
+    "auditLog.help": "Every authenticated mutation, denied sensitive read, and background action leaves one immutable Audit Entry. Entries are never edited or removed one at a time.",
+    "auditLog.scope.MARKETPLACE_WIDE": "You are reading the marketplace-wide Audit Log.",
+    "auditLog.scope.ASSIGNED_ORGANIZATION": "You are reading what your Organization's managers did. It excludes every other Organization, marketplace-wide administration, and the activity of the Students you sponsor.",
+    "auditLog.excludes": "An Audit Entry carries opaque actor and target identities, the acting role, the outcome, a reason code, the time, and a correlation identifier. It never carries secrets, User-visible reasons, private content, or operational diagnostics.",
+    "auditLog.retention": "Complete monthly partitions expire after 90 days.",
+    "auditLog.loading": "Loading the Audit Log…",
+    "auditLog.loadError": "We couldn't load the Audit Log. Try again.",
+    "auditLog.filter.legend": "Filter Audit Entries",
+    "auditLog.filter.from": "From",
+    "auditLog.filter.to": "To",
+    "auditLog.filter.outcome": "Outcome",
+    "auditLog.filter.anyOutcome": "Any outcome",
+    "auditLog.filter.actingRole": "Acting role",
+    "auditLog.filter.anyActingRole": "Any acting role",
+    "auditLog.filter.operation": "Operation",
+    "auditLog.filter.actorUserId": "Acting User identifier",
+    "auditLog.filter.correlationId": "Correlation identifier",
+    "auditLog.filter.help": "Dates are read in your Display Time Zone, over a range of at most 12 months.",
+    "auditLog.filter.apply": "Apply filters",
+    "auditLog.appliedRange": "{from} through {to}, read in {timeZone}",
+    "auditLog.outcome.SUCCEEDED": "Succeeded",
+    "auditLog.outcome.DENIED": "Denied",
+    "auditLog.outcome.FAILED": "Failed",
+    "auditLog.entry.summary": "{operation} — {outcome}",
+    "auditLog.entry.occurredAt": "Occurred {occurredAt}",
+    "auditLog.entry.actor.user": "Acted by User {actorUserId} as {actingRole}",
+    "auditLog.entry.actor.unattributedUser": "Acted by User {actorUserId} with no acting role",
+    "auditLog.entry.actor.system": "Acted by the background system identity {systemIdentity}",
+    "auditLog.entry.target": "Target {targetType} {targetId}",
+    "auditLog.entry.reason": "Reason {reasonCode}",
+    "auditLog.entry.correlation": "Correlation {correlationId}",
+    "auditLog.list.empty": "No Audit Entry matches these filters.",
+    "auditLog.more": "Show older entries",
+    "auditLog.export": "Export these Audit Entries",
+    "auditLog.exporting": "Preparing the export…",
+    "auditLog.exportReady": "{fileName} is ready: {rows, number} Audit Entries.",
+    "auditLog.error.INVALID_AUDIT_LOG_FILTER": "One of these filters is not readable. Check the actor identifier and try again.",
+    "auditLog.error.INVALID_AUDIT_LOG_RANGE": "Choose a range of at most 12 months that starts on or before it ends.",
+    "auditLog.error.DISPLAY_TIME_ZONE_REQUIRED": "Save a Display Time Zone before reading the Audit Log.",
+    "auditLog.error.INVALID_AUDIT_LOG_CURSOR": "That Audit Log page is no longer valid. Apply the filters again.",
+    "auditLog.error.AUDIT_LOG_ROW_LIMIT_EXCEEDED": "The filters match more than 5,000 Audit Entries. The export was refused rather than shortened; narrow the range or the filters.",
     "marketplaceReport.progress.title": "Course Progress",
     "marketplaceReport.progress.empty": "No Course carries reportable progress yet.",
     "marketplaceReport.progress.current": "Course Progress is current effective now rather than confined to the reported range.",
@@ -1623,6 +1740,48 @@ export const interfaceMessages = {
     "reportExport.error.REPORT_EXPORT_NOT_FOUND": "No se encontró esa exportación de informe.",
     "reportExport.error.REPORT_EXPORT_NOT_DOWNLOADABLE": "Esa exportación de informe ya no está disponible. Solicita una exportación nueva.",
     "reportExport.error.IDEMPOTENCY_KEY_REUSED": "Ese identificador de solicitud ya se usó para otra exportación.",
+    "auditLog.title": "Registro de auditoría",
+    "auditLog.help": "Cada mutación autenticada, lectura sensible denegada y acción en segundo plano deja una entrada de auditoría inmutable. Las entradas nunca se editan ni se eliminan de una en una.",
+    "auditLog.scope.MARKETPLACE_WIDE": "Estás leyendo el registro de auditoría de todo el mercado.",
+    "auditLog.scope.ASSIGNED_ORGANIZATION": "Estás leyendo lo que hicieron las personas responsables de tu organización. Excluye a las demás organizaciones, la administración de la plataforma y la actividad del alumnado que patrocinas.",
+    "auditLog.excludes": "Una entrada de auditoría lleva identidades opacas de actor y destino, el rol de actuación, el resultado, un código de motivo, la hora y un identificador de correlación. Nunca lleva secretos, motivos visibles para las personas usuarias, contenido privado ni diagnósticos operativos.",
+    "auditLog.retention": "Las particiones mensuales completas caducan a los 90 días.",
+    "auditLog.loading": "Cargando el registro de auditoría…",
+    "auditLog.loadError": "No pudimos cargar el registro de auditoría. Inténtalo de nuevo.",
+    "auditLog.filter.legend": "Filtrar entradas de auditoría",
+    "auditLog.filter.from": "Desde",
+    "auditLog.filter.to": "Hasta",
+    "auditLog.filter.outcome": "Resultado",
+    "auditLog.filter.anyOutcome": "Cualquier resultado",
+    "auditLog.filter.actingRole": "Rol de actuación",
+    "auditLog.filter.anyActingRole": "Cualquier rol de actuación",
+    "auditLog.filter.operation": "Operación",
+    "auditLog.filter.actorUserId": "Identificador de la persona usuaria que actuó",
+    "auditLog.filter.correlationId": "Identificador de correlación",
+    "auditLog.filter.help": "Las fechas se leen en tu zona horaria de visualización, en un rango de 12 meses como máximo.",
+    "auditLog.filter.apply": "Aplicar filtros",
+    "auditLog.appliedRange": "Del {from} al {to}, leído en {timeZone}",
+    "auditLog.outcome.SUCCEEDED": "Correcta",
+    "auditLog.outcome.DENIED": "Denegada",
+    "auditLog.outcome.FAILED": "Fallida",
+    "auditLog.entry.summary": "{operation}: {outcome}",
+    "auditLog.entry.occurredAt": "Ocurrió el {occurredAt}",
+    "auditLog.entry.actor.user": "Realizada por la persona usuaria {actorUserId} como {actingRole}",
+    "auditLog.entry.actor.unattributedUser": "Realizada por la persona usuaria {actorUserId} sin rol de actuación",
+    "auditLog.entry.actor.system": "Realizada por la identidad de sistema en segundo plano {systemIdentity}",
+    "auditLog.entry.target": "Destino {targetType} {targetId}",
+    "auditLog.entry.reason": "Motivo {reasonCode}",
+    "auditLog.entry.correlation": "Correlación {correlationId}",
+    "auditLog.list.empty": "Ninguna entrada de auditoría coincide con estos filtros.",
+    "auditLog.more": "Mostrar entradas anteriores",
+    "auditLog.export": "Exportar estas entradas de auditoría",
+    "auditLog.exporting": "Preparando la exportación…",
+    "auditLog.exportReady": "{fileName} está listo: {rows, number} entradas de auditoría.",
+    "auditLog.error.INVALID_AUDIT_LOG_FILTER": "Uno de estos filtros no se puede leer. Revisa el identificador de la persona que actuó e inténtalo de nuevo.",
+    "auditLog.error.INVALID_AUDIT_LOG_RANGE": "Elige un rango de 12 meses como máximo que empiece antes de terminar o el mismo día.",
+    "auditLog.error.DISPLAY_TIME_ZONE_REQUIRED": "Guarda una zona horaria de visualización antes de leer el registro de auditoría.",
+    "auditLog.error.INVALID_AUDIT_LOG_CURSOR": "Esa página del registro de auditoría ya no es válida. Vuelve a aplicar los filtros.",
+    "auditLog.error.AUDIT_LOG_ROW_LIMIT_EXCEEDED": "Los filtros coinciden con más de 5000 entradas de auditoría. La exportación se rechazó en lugar de acortarse; reduce el rango o los filtros.",
     "marketplaceReport.progress.title": "Progreso del Curso",
     "marketplaceReport.progress.empty": "Todavía no hay ningún Curso con progreso que informar.",
     "marketplaceReport.progress.current": "El Progreso del Curso es el valor efectivo actual y no se limita al intervalo informado.",
