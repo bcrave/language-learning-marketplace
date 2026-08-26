@@ -1,0 +1,58 @@
+query AuditLog($filter: AuditLogFilterInput) {
+  auditLog(filter: $filter) {
+    __typename
+    ... on AuditLog {
+      scope
+      appliedFilter {
+        fromLocalDate
+        toLocalDate
+        timeZone
+        outcome
+        actingRole
+        operation
+        actorUserId
+        correlationId
+      }
+      entries {
+        id
+        occurredAt
+        actorUserId
+        systemIdentity
+        actingRole
+        operation
+        targetType
+        targetId
+        outcome
+        reasonCode
+        correlationId
+      }
+      pageInfo {
+        endCursor
+        hasNextPage
+      }
+    }
+    ... on AuditLogError {
+      code
+      message
+    }
+  }
+}
+
+query AuditLogExport($filter: AuditLogFilterInput) {
+  auditLogExport(filter: $filter) {
+    __typename
+    ... on AuditLogExport {
+      scope
+      schemaVersion
+      exportedAt
+      rowCount
+      fileName
+      contentType
+      csv
+    }
+    ... on AuditLogError {
+      code
+      message
+    }
+  }
+}

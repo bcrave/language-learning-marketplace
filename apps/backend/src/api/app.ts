@@ -23,6 +23,14 @@ import { anonymizeUser } from "../authorization/user-anonymization-service.js";
 import { organizationManagerFor } from "../authorization/organization-manager-policy.js";
 import { studentFor } from "../authorization/student-policy.js";
 import { recordAdministrationAudit } from "../audit/administration-audit.js";
+import {
+  auditLogError,
+  auditLogViewerFor,
+  exportAuditLog,
+  readAuditLog,
+  recordAuditLogExportRefusal,
+  type AuditLogViewer,
+} from "../audit/audit-log-service.js";
 import { administerAttendance, classRosterForViewer, recordAttendance } from "../attendance/attendance-service.js";
 import { administrationAttendanceReviewRequests, decideAttendanceReview, requestAttendanceReview, studentAttendanceRecords } from "../attendance/attendance-review-service.js";
 import { courseProgressForStudent } from "../attendance/course-progress-service.js";
@@ -87,13 +95,15 @@ import { organizationAttendanceAndProgressReport, UnknownCohort } from "../spons
 import { marketplaceOperationalReport } from "../reporting/marketplace-report-service.js";
 import {
   reportExportArtifact,
-  reportExportAuthorizationFor,
   reportExportError,
   reportExportsForRequester,
   requestReportExport,
   ReportExportUnavailable,
-  type ReportExportRequester,
 } from "../reporting/report-export-service.js";
+import {
+  reportingAuthorityFor,
+  type ReportingAuthority,
+} from "../authorization/reporting-authority.js";
 import { InvalidReportRange, MissingDisplayTimeZone } from "../reporting/report-range.js";
 import {
   addCohortMembership,
@@ -207,6 +217,17 @@ const endCohortMembershipInputSchema = z.object({
   cohortMembershipId: z.uuid(),
   effectiveUntil: z.iso.datetime().nullish(),
 });
+const auditLogFilterInputSchema = z.object({
+  fromLocalDate: z.iso.date().nullish(),
+  toLocalDate: z.iso.date().nullish(),
+  outcome: z.enum(["SUCCEEDED", "DENIED", "FAILED"]).nullish(),
+  actingRole: z.enum(["STUDENT", "TEACHER", "ORGANIZATION_MANAGER", "PLATFORM_ADMINISTRATOR"]).nullish(),
+  operation: z.string().trim().max(200).nullish(),
+  actorUserId: z.uuid().nullish(),
+  correlationId: z.string().trim().max(200).nullish(),
+  after: z.string().min(1).max(500).nullish(),
+}).strict();
+
 const requestReportExportInputSchema = z.object({
   idempotencyKey: z.string().min(1).max(200),
   kind: z.enum(["ORDINARY", "CORRECTION_HISTORY"]),
@@ -297,6 +318,8 @@ export function createApi(options: {
       AddCohortMembershipResult: { __resolveType: (value) => value.__typename! },
       EndCohortMembershipResult: { __resolveType: (value) => value.__typename! },
       RequestReportExportResult: { __resolveType: (value) => value.__typename! },
+      AuditLogResult: { __resolveType: (value) => value.__typename! },
+      AuditLogExportResult: { __resolveType: (value) => value.__typename! },
       GrantRoleAssignmentResult: { __resolveType: (value) => value.__typename! },
       RemoveRoleAssignmentResult: { __resolveType: (value) => value.__typename! },
       SuspendUserResult: { __resolveType: (value) => value.__typename! },
@@ -444,6 +467,34 @@ export function createApi(options: {
               extensions: { code: error.code === "REPORT_EXPORT_NOT_FOUND" ? "NOT_FOUND" : "BAD_USER_INPUT" },
             });
           }
+        },
+        auditLog: async (_parent, { filter }, context) => {
+          const viewer = await authenticateAuditLogViewer(context, "audit-log.read");
+          const validatedFilter = auditLogFilterInputSchema.safeParse(filter ?? {});
+          if (!validatedFilter.success) {
+            return graphQLResult(auditLogError("INVALID_AUDIT_LOG_FILTER", "Choose valid Audit Log filters."));
+          }
+          return graphQLResult(await readAuditLog(
+            context.db,
+            viewer,
+            validatedFilter.data,
+            options.now?.() ?? new Date(),
+          ));
+        },
+        auditLogExport: async (_parent, { filter }, context) => {
+          const viewer = await authenticateAuditLogViewer(context, "audit-log.exported");
+          const validatedFilter = auditLogFilterInputSchema.safeParse(filter ?? {});
+          if (!validatedFilter.success) {
+            await recordAuditLogExportRefusal(context.db, viewer, "INVALID_AUDIT_LOG_FILTER", context.correlationId);
+            return graphQLResult(auditLogError("INVALID_AUDIT_LOG_FILTER", "Choose valid Audit Log filters."));
+          }
+          return graphQLResult(await exportAuditLog(
+            context.db,
+            viewer,
+            validatedFilter.data,
+            context.correlationId,
+            options.now?.() ?? new Date(),
+          ));
         },
         discoverClassSessions: async (_parent, { input }, context) => {
           const student = await authenticateStudent(context, "class-session-discovery.read", "ClassSessionDiscovery");
@@ -1581,12 +1632,10 @@ export function createApi(options: {
   }
 
   /**
-   * Report Exports are the one surface both reporting roles reach through the same
-   * operation, so the requester is authenticated once and the authority it resolved
-   * to travels with the request. Marketplace-wide authority wins where a User holds
-   * both, which is what `reportExportAuthorizationFor` decides.
+   * The authenticated User behind one request, or the refusal that there is none.
+   * Every surface that resolves its own authority starts here.
    */
-  async function authenticateReportExportRequester(context: ApiContext, operation: string): Promise<ReportExportRequester> {
+  async function authenticatedUserId(context: ApiContext) {
     const identity = await context.authenticator.authenticate(context.request);
     if (!identity) {
       throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
@@ -1599,20 +1648,60 @@ export function createApi(options: {
     if (!user) {
       throw createGraphQLError("Authentication is required", { extensions: { code: "UNAUTHENTICATED" } });
     }
-    const requester = await reportExportAuthorizationFor(context.db, user.id);
-    if (!requester) {
-      await context.db.insertInto("audit_entries").values({
-        actor_user_id: user.id,
-        acting_role: null,
-        operation,
-        target_type: "ReportExport",
-        target_id: user.id,
-        outcome: "DENIED",
-        reason_code: "REPORT_EXPORT_ROLE_REQUIRED",
-        correlation_id: context.correlationId,
-      }).execute();
-      throw createGraphQLError("An Organization Manager or Platform Administrator Role Assignment is required", { extensions: { code: "FORBIDDEN" } });
-    }
+    return user.id;
+  }
+
+  /** The refusal both reporting surfaces give a role that holds neither authority. */
+  async function refuseReportingAuthority(
+    context: ApiContext,
+    userId: string,
+    operation: string,
+    targetType: string,
+    reasonCode: string,
+  ): Promise<never> {
+    await context.db.insertInto("audit_entries").values({
+      actor_user_id: userId,
+      // Two roles could have opened this surface and the User holds neither, so
+      // there is no attempted role to name.
+      acting_role: null,
+      operation,
+      target_type: targetType,
+      target_id: userId,
+      outcome: "DENIED",
+      reason_code: reasonCode,
+      correlation_id: context.correlationId,
+    }).execute();
+    throw createGraphQLError(
+      "An Organization Manager or Platform Administrator Role Assignment is required",
+      { extensions: { code: "FORBIDDEN" } },
+    );
+  }
+
+  /**
+   * The Audit Log applies the viewer's own relationship scope (ADR 0059), so the
+   * scope is resolved from current Role Assignments here and travels with the
+   * request rather than being asserted by it.
+   *
+   * A role that may not read the Audit Log is refused, and that refusal is itself a
+   * denied sensitive read: it is the one Audit Log access that always writes an
+   * Audit Entry.
+   */
+  async function authenticateAuditLogViewer(context: ApiContext, operation: string): Promise<AuditLogViewer> {
+    const userId = await authenticatedUserId(context);
+    const viewer = await auditLogViewerFor(context.db, userId);
+    if (!viewer) return refuseReportingAuthority(context, userId, operation, "AuditLog", "AUDIT_LOG_ROLE_REQUIRED");
+    return viewer;
+  }
+
+  /**
+   * Report Exports are the one surface both reporting roles reach through the same
+   * operation, so the requester is authenticated once and the authority it resolved
+   * to travels with the request.
+   */
+  async function authenticateReportExportRequester(context: ApiContext, operation: string): Promise<ReportingAuthority> {
+    const userId = await authenticatedUserId(context);
+    const requester = await reportingAuthorityFor(context.db, userId);
+    if (!requester) return refuseReportingAuthority(context, userId, operation, "ReportExport", "REPORT_EXPORT_ROLE_REQUIRED");
     return requester;
   }
 

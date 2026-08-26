@@ -6,7 +6,8 @@ import type { TaskList } from "graphile-worker";
 import type { Database } from "../database/database.js";
 import { buildReportExtract } from "./report-export-extract.js";
 import { notifyReportExportRequester } from "./report-export-notifications.js";
-import { reportExportAuthorizationStillHolds, type ReportExportActingRole } from "./report-export-service.js";
+import type { ReportingActingRole } from "../authorization/reporting-authority.js";
+import { reportExportAuthorizationStillHolds } from "./report-export-service.js";
 import { lastIncludedLocalDate, localDateString, resolveReportRange } from "./report-range.js";
 
 /**
@@ -41,7 +42,7 @@ export function reportExportTasks(
 type ClaimedExport = {
   id: string;
   requested_by_user_id: string;
-  acting_role: ReportExportActingRole;
+  acting_role: ReportingActingRole;
   organization_id: string | null;
   kind: ReportExportKind;
   period_start: Date;
