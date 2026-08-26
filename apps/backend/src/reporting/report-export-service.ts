@@ -7,6 +7,11 @@ import {
   type ReportExportState,
 } from "@marketplace/core";
 
+import {
+  reportingAuthorityFor,
+  type ReportingActingRole,
+  type ReportingAuthority,
+} from "../authorization/reporting-authority.js";
 import type { Database } from "../database/database.js";
 import {
   localDateString,
@@ -14,15 +19,6 @@ import {
   resolveReportRange,
   type ResolvedReportRange,
 } from "./report-range.js";
-
-export type ReportExportActingRole = "ORGANIZATION_MANAGER" | "PLATFORM_ADMINISTRATOR";
-
-export type ReportExportRequester = {
-  id: string;
-  actingRole: ReportExportActingRole;
-  organizationId: string | null;
-  locale: "en" | "es";
-};
 
 export type ReportExportErrorCode =
   | "INVALID_REPORT_RANGE"
@@ -42,7 +38,7 @@ export function reportExportError(code: ReportExportErrorCode, message: string) 
 type ReportExportRow = {
   id: string;
   requested_by_user_id: string;
-  acting_role: ReportExportActingRole;
+  acting_role: ReportingActingRole;
   organization_id: string | null;
   kind: ReportExportKind;
   schema_version: string;
@@ -111,7 +107,7 @@ const PROJECTED_COLUMNS = [
 ] as const;
 
 async function recordReportExportAudit(db: Database, values: {
-  requester: ReportExportRequester;
+  requester: ReportingAuthority;
   operation: string;
   targetId: string;
   outcome: "SUCCEEDED" | "DENIED" | "FAILED";
@@ -131,61 +127,15 @@ async function recordReportExportAudit(db: Database, values: {
 }
 
 /**
- * The Report Export authority one User holds now, read from their current Role
- * Assignments rather than from anything the request carried. Generation and download
- * both recheck through this function, so a removed Role Assignment or a moved
- * Organization Manager stops producing and stops downloading (ADR 0056).
- *
- * Marketplace-wide authority is decided first: an administrator who also manages an
- * Organization exports as an administrator, and never silently narrows to one
- * Organization's scope.
- */
-export async function reportExportAuthorizationFor(
-  db: Database,
-  userId: string,
-): Promise<ReportExportRequester | null> {
-  const user = await db.selectFrom("users")
-    .select(["id", "interface_locale"])
-    .where("id", "=", userId)
-    .executeTakeFirst();
-  if (!user) return null;
-  const locale = user.interface_locale ?? "en";
-
-  const administrator = await db.selectFrom("role_assignments")
-    .select("role")
-    .where("user_id", "=", userId)
-    .where("role", "=", "PLATFORM_ADMINISTRATOR")
-    .executeTakeFirst();
-  if (administrator) {
-    return { id: userId, actingRole: "PLATFORM_ADMINISTRATOR", organizationId: null, locale };
-  }
-
-  const membership = await db.selectFrom("organization_managers")
-    .innerJoin("role_assignments", (join) => join
-      .onRef("role_assignments.user_id", "=", "organization_managers.user_id")
-      .on("role_assignments.role", "=", "ORGANIZATION_MANAGER"))
-    .select("organization_managers.organization_id")
-    .where("organization_managers.user_id", "=", userId)
-    .executeTakeFirst();
-  if (!membership) return null;
-  return {
-    id: userId,
-    actingRole: "ORGANIZATION_MANAGER",
-    organizationId: membership.organization_id,
-    locale,
-  };
-}
-
-/**
  * Confirms the authority a stored Report Export was requested under is still held,
  * unchanged. A requester who has since become an administrator, or moved to another
  * Organization, does not keep an extract built under the old scope.
  */
 export async function reportExportAuthorizationStillHolds(
   db: Database,
-  reportExport: { requested_by_user_id: string; acting_role: ReportExportActingRole; organization_id: string | null; kind: ReportExportKind },
+  reportExport: { requested_by_user_id: string; acting_role: ReportingActingRole; organization_id: string | null; kind: ReportExportKind },
 ) {
-  const current = await reportExportAuthorizationFor(db, reportExport.requested_by_user_id);
+  const current = await reportingAuthorityFor(db, reportExport.requested_by_user_id);
   return current !== null
     && current.actingRole === reportExport.acting_role
     && current.organizationId === reportExport.organization_id
@@ -205,7 +155,7 @@ export type RequestReportExportInput = {
  */
 export async function requestReportExport(
   db: Database,
-  requester: ReportExportRequester,
+  requester: ReportingAuthority,
   input: RequestReportExportInput,
   correlationId: string,
   now: Date,
@@ -294,7 +244,7 @@ const UNIQUE_VIOLATION = "23505";
 
 async function insertQueuedExport(
   db: Database,
-  requester: ReportExportRequester,
+  requester: ReportingAuthority,
   input: RequestReportExportInput,
   range: ResolvedReportRange,
   correlationId: string,
@@ -321,7 +271,7 @@ async function insertQueuedExport(
 }
 
 /** One requester's own Report Exports, newest first. Nobody sees another's. */
-export async function reportExportsForRequester(db: Database, requester: ReportExportRequester, now: Date) {
+export async function reportExportsForRequester(db: Database, requester: ReportingAuthority, now: Date) {
   const rows = await db.selectFrom("report_exports")
     .select([...PROJECTED_COLUMNS])
     .where("requested_by_user_id", "=", requester.id)
@@ -351,7 +301,7 @@ export class ReportExportUnavailable extends Error {
  */
 export async function reportExportArtifact(
   db: Database,
-  requester: ReportExportRequester,
+  requester: ReportingAuthority,
   reportExportId: string,
   correlationId: string,
   now: Date,

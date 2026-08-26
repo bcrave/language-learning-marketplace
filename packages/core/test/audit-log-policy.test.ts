@@ -1,7 +1,6 @@
 import {
   auditActorReference,
   auditLogExportRowLimitRefusal,
-  auditLogIsAuthorized,
   auditLogScopeFor,
   auditPartitionIsExpired,
   AUDIT_ENTRY_RETENTION_DAYS,
@@ -27,13 +26,12 @@ describe("Audit Log scope policy", () => {
   it("leaves the Audit Log closed to the roles whose own activity it records", () => {
     expect(auditLogScopeFor("STUDENT")).toBeNull();
     expect(auditLogScopeFor("TEACHER")).toBeNull();
-    expect(auditLogIsAuthorized("STUDENT")).toBe(false);
-    expect(auditLogIsAuthorized("TEACHER")).toBe(false);
   });
 
-  it("never resolves a scope for a role that may not read the Audit Log at all", () => {
+  it("resolves a scope only for the two roles that hold reporting authority", () => {
     fc.assert(fc.property(fc.constantFrom(...USER_ROLES), (role) =>
-      auditLogScopeFor(role) === null || auditLogIsAuthorized(role)));
+      (auditLogScopeFor(role) === null)
+        === (role !== "ORGANIZATION_MANAGER" && role !== "PLATFORM_ADMINISTRATOR")));
   });
 });
 

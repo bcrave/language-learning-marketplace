@@ -16,7 +16,7 @@ create index audit_entries_actor_occurred_at_idx
 -- Retention drops whole expired partitions, so the months ahead have to exist before
 -- an insert reaches for them. `expire_audit_partitions` from the authenticated
 -- foundation removes; this one prepares, and the two run in the same sweep.
-create function ensure_audit_partitions(reference_time timestamptz, month_horizon integer default 3)
+create function ensure_audit_partitions(reference_time timestamptz)
 returns text[] language plpgsql as $$
 declare
   month_offset integer;
@@ -24,7 +24,7 @@ declare
   partition_name text;
   prepared_partitions text[] := array[]::text[];
 begin
-  for month_offset in 0..month_horizon loop
+  for month_offset in 0..3 loop
     month_start := date_trunc('month', reference_time) + make_interval(months => month_offset);
     partition_name := 'audit_entries_' || to_char(month_start, 'YYYY_MM');
     if to_regclass(partition_name) is null then
@@ -41,4 +41,4 @@ begin
 end;
 $$;
 
-revoke all on function ensure_audit_partitions(timestamptz, integer) from public;
+revoke all on function ensure_audit_partitions(timestamptz) from public;

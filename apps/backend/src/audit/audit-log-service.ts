@@ -12,23 +12,35 @@ import {
 } from "@marketplace/core";
 import { z } from "zod";
 
+import {
+  reportingAuthorityFor,
+  type ReportingAuthority,
+} from "../authorization/reporting-authority.js";
 import type { Database } from "../database/database.js";
 import type { AuditEntriesTable } from "../database/types.js";
 import {
   exportInstant,
+  InvalidReportRange,
+  MissingDisplayTimeZone,
   reportingDisplayTimeZone,
   resolveReportRange,
   type ResolvedReportRange,
 } from "../reporting/report-range.js";
 
-export type AuditLogActingRole = "ORGANIZATION_MANAGER" | "PLATFORM_ADMINISTRATOR";
+export type AuditLogViewer = ReportingAuthority & { scope: AuditLogScope };
 
-export type AuditLogViewer = {
-  id: string;
-  actingRole: AuditLogActingRole;
-  organizationId: string | null;
-  scope: AuditLogScope;
-};
+/**
+ * The Audit Log a reporting authority may read, or nothing. The scope is the whole
+ * decision this adds: which entries the viewer's own relationship allows them to
+ * see (ADR 0059).
+ */
+export async function auditLogViewerFor(db: Database, userId: string): Promise<AuditLogViewer | null> {
+  const authority = await reportingAuthorityFor(db, userId);
+  if (!authority) return null;
+  const scope = auditLogScopeFor(authority.actingRole);
+  if (!scope) return null;
+  return { ...authority, scope };
+}
 
 export type AuditLogErrorCode =
   | "INVALID_AUDIT_LOG_FILTER"
@@ -51,46 +63,6 @@ export type AuditLogFilterInput = {
   correlationId?: string | null | undefined;
   after?: string | null | undefined;
 };
-
-/**
- * The Audit Log authority one User holds now, read from their current Role
- * Assignments rather than from anything the request carried, so a removed Role
- * Assignment stops the next read rather than the next sign-in.
- *
- * Marketplace-wide authority is decided first: an administrator who also manages an
- * Organization reads the whole Audit Log and never silently narrows to one
- * Organization's managers.
- */
-export async function auditLogViewerFor(db: Database, userId: string): Promise<AuditLogViewer | null> {
-  const administrator = await db.selectFrom("role_assignments")
-    .select("role")
-    .where("user_id", "=", userId)
-    .where("role", "=", "PLATFORM_ADMINISTRATOR")
-    .executeTakeFirst();
-  if (administrator) {
-    return {
-      id: userId,
-      actingRole: "PLATFORM_ADMINISTRATOR",
-      organizationId: null,
-      scope: auditLogScopeFor("PLATFORM_ADMINISTRATOR")!,
-    };
-  }
-
-  const membership = await db.selectFrom("organization_managers")
-    .innerJoin("role_assignments", (join) => join
-      .onRef("role_assignments.user_id", "=", "organization_managers.user_id")
-      .on("role_assignments.role", "=", "ORGANIZATION_MANAGER"))
-    .select("organization_managers.organization_id")
-    .where("organization_managers.user_id", "=", userId)
-    .executeTakeFirst();
-  if (!membership) return null;
-  return {
-    id: userId,
-    actingRole: "ORGANIZATION_MANAGER",
-    organizationId: membership.organization_id,
-    scope: auditLogScopeFor("ORGANIZATION_MANAGER")!,
-  };
-}
 
 const cursorSchema = z.object({ occurredAt: z.iso.datetime(), id: z.uuid() }).strict();
 
@@ -190,10 +162,14 @@ async function resolveFilter(
   input: AuditLogFilterInput,
   now: Date,
 ): Promise<AppliedFilter | ReturnType<typeof auditLogError>> {
+  // Both refusals are named by their own error class, so a dropped connection or an
+  // unexpected failure keeps travelling rather than reaching the viewer disguised as
+  // a Display Time Zone they never saved or a range they can fix.
   let timeZone: string;
   try {
     timeZone = await reportingDisplayTimeZone(db, viewer.id);
-  } catch {
+  } catch (error) {
+    if (!(error instanceof MissingDisplayTimeZone)) throw error;
     return auditLogError(
       "DISPLAY_TIME_ZONE_REQUIRED",
       "A saved Display Time Zone is required to read the Audit Log.",
@@ -203,7 +179,8 @@ async function resolveFilter(
   try {
     range = resolveReportRange({ fromLocalDate: input.fromLocalDate, toLocalDate: input.toLocalDate }, timeZone, now);
   } catch (error) {
-    return auditLogError("INVALID_AUDIT_LOG_RANGE", (error as Error).message);
+    if (!(error instanceof InvalidReportRange)) throw error;
+    return auditLogError("INVALID_AUDIT_LOG_RANGE", error.message);
   }
   return {
     range,
@@ -228,9 +205,16 @@ function scopedAuditEntries(db: Database, viewer: AuditLogViewer, filter: Applie
     .where("occurred_at", "<", filter.range.endInstantExclusive);
 
   if (viewer.scope === "ASSIGNED_ORGANIZATION") {
-    query = query.where("actor_user_id", "in", (eb) => eb.selectFrom("organization_managers")
-      .select("organization_managers.user_id")
-      .where("organization_managers.organization_id", "=", viewer.organizationId));
+    // Both halves are load-bearing. The membership narrows to this Organization's
+    // managers; the acting role narrows to what they did as managers. Without the
+    // second, a User who manages this Organization and also studies here would have
+    // their own Bookings and denied reads exposed to their Organization — the
+    // Sponsorship widening ADR 0059 exists to make impossible.
+    query = query
+      .where("acting_role", "=", "ORGANIZATION_MANAGER")
+      .where("actor_user_id", "in", (eb) => eb.selectFrom("organization_managers")
+        .select("organization_managers.user_id")
+        .where("organization_managers.organization_id", "=", viewer.organizationId));
   }
 
   if (filter.outcome) query = query.where("outcome", "=", filter.outcome);
@@ -239,6 +223,26 @@ function scopedAuditEntries(db: Database, viewer: AuditLogViewer, filter: Applie
   if (filter.actorUserId) query = query.where("actor_user_id", "=", filter.actorUserId);
   if (filter.correlationId) query = query.where("correlation_id", "=", filter.correlationId);
   return query;
+}
+
+/**
+ * An export refused before the service ever runs — an unreadable filter caught at
+ * the API boundary — still leaves the same evidence as one refused inside it. The
+ * refusal is audited wherever it is decided.
+ */
+export async function recordAuditLogExportRefusal(
+  db: Database,
+  viewer: AuditLogViewer,
+  reasonCode: AuditLogErrorCode,
+  correlationId: string,
+) {
+  await recordAuditLogAudit(db, {
+    viewer,
+    operation: "audit-log.exported",
+    outcome: "DENIED",
+    reasonCode,
+    correlationId,
+  });
 }
 
 async function recordAuditLogAudit(db: Database, values: {

@@ -340,17 +340,12 @@ export function correctionHistoryExportIsOrganizationScoped(actingRole: UserRole
  * else, so a sponsored Student's own activity never becomes visible through a
  * surface the Sponsorship disclosure does not cover. No other role reaches it.
  */
-export const AUDIT_LOG_SCOPES = ["ASSIGNED_ORGANIZATION", "MARKETPLACE_WIDE"] as const;
-export type AuditLogScope = (typeof AUDIT_LOG_SCOPES)[number];
+export type AuditLogScope = "ASSIGNED_ORGANIZATION" | "MARKETPLACE_WIDE";
 
 export function auditLogScopeFor(actingRole: UserRole): AuditLogScope | null {
   if (actingRole === "PLATFORM_ADMINISTRATOR") return "MARKETPLACE_WIDE";
   if (actingRole === "ORGANIZATION_MANAGER") return "ASSIGNED_ORGANIZATION";
   return null;
-}
-
-export function auditLogIsAuthorized(actingRole: UserRole) {
-  return auditLogScopeFor(actingRole) !== null;
 }
 
 /**

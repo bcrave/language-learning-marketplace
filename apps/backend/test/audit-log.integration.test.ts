@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  auditPartitionIsExpired,
   AUDIT_LOG_EXPORT_COLUMNS,
   AUDIT_LOG_EXPORT_MAXIMUM_ROW_COUNT,
   AUDIT_LOG_PAGE_SIZE,
@@ -10,6 +11,7 @@ import {
   startPostgreSqlTemplate,
   type StartedPostgreSqlContainer,
 } from "@marketplace/test-support";
+import { Temporal } from "@js-temporal/polyfill";
 import { sql } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -18,9 +20,38 @@ import { maintainAuditPartitions } from "../src/audit/audit-retention-worker.js"
 import { createDatabase, type Database } from "../src/database/database.js";
 import { migrateDatabase } from "../src/database/migrate.js";
 
-const READ_INSTANT = new Date("2026-08-26T18:00:00.000Z");
-const BUSY_LOCAL_DATE = "2026-08-22";
-const FLOOD_LOCAL_DATE = "2026-08-24";
+/**
+ * Audit Entries written by real mutations take the database's own clock, so this
+ * fixture is anchored to the real instant the suite runs at and every seeded row is
+ * placed relative to it. A hardcoded calendar would drift out of the default range
+ * the day after it was written.
+ */
+const READ_INSTANT = new Date();
+
+function instantBefore(days: number, utcHour: number) {
+  const instant = new Date(READ_INSTANT);
+  instant.setUTCDate(instant.getUTCDate() - days);
+  instant.setUTCHours(utcHour, 0, 0, 0);
+  return instant;
+}
+
+const VIEWER_TIME_ZONE = "America/Denver";
+
+function localDateIn(instant: Date) {
+  return Temporal.Instant.from(instant.toISOString()).toZonedDateTimeISO(VIEWER_TIME_ZONE).toPlainDate().toString();
+}
+
+function localDatePlusDays(localDate: string, days: number) {
+  return Temporal.PlainDate.from(localDate).add({ days }).toString();
+}
+
+// A day of its own for the paging fixture and another for the export-bound fixture,
+// so neither disturbs the reads that look at what the marketplace actually did.
+const BUSY_INSTANT = instantBefore(4, 12);
+const FLOOD_INSTANT = instantBefore(2, 12);
+const DUAL_ROLE_INSTANT = instantBefore(5, 18);
+const BUSY_LOCAL_DATE = localDateIn(BUSY_INSTANT);
+const FLOOD_LOCAL_DATE = localDateIn(FLOOD_INSTANT);
 
 // A Student-visible Credit Adjustment reason. It belongs to the Class Credit ledger,
 // never to an Audit Entry, so every Audit Log surface is checked against this text.
@@ -101,6 +132,8 @@ describe("Audit Log GraphQL API", () => {
   const zonelessManagerSubject = randomUUID();
   const studentId = randomUUID();
   const studentSubject = randomUUID();
+  const dualRoleId = randomUUID();
+  const dualRoleSubject = randomUUID();
   const teacherId = randomUUID();
   const teacherSubject = randomUUID();
   const organizationId = randomUUID();
@@ -132,6 +165,7 @@ describe("Audit Log GraphQL API", () => {
       user(rivalManagerId, rivalManagerSubject, "Riley Rival", "America/Denver"),
       user(zonelessManagerId, zonelessManagerSubject, "Zev Zoneless", null),
       user(studentId, studentSubject, "Sam Student", "America/Denver"),
+      user(dualRoleId, dualRoleSubject, "Dana Dual", "America/Denver"),
       user(teacherId, teacherSubject, "Tomás Teacher", "America/Denver"),
     ]).execute();
     await db.insertInto("role_assignments").values([
@@ -141,6 +175,8 @@ describe("Audit Log GraphQL API", () => {
       { user_id: rivalManagerId, role: "ORGANIZATION_MANAGER" },
       { user_id: zonelessManagerId, role: "ORGANIZATION_MANAGER" },
       { user_id: studentId, role: "STUDENT" },
+      { user_id: dualRoleId, role: "ORGANIZATION_MANAGER" },
+      { user_id: dualRoleId, role: "STUDENT" },
       { user_id: teacherId, role: "TEACHER" },
     ]).execute();
     await db.insertInto("organizations").values([
@@ -151,17 +187,17 @@ describe("Audit Log GraphQL API", () => {
       { user_id: managerId, organization_id: organizationId },
       { user_id: colleagueId, organization_id: organizationId },
       { user_id: zonelessManagerId, organization_id: organizationId },
+      { user_id: dualRoleId, organization_id: organizationId },
       { user_id: rivalManagerId, organization_id: rivalOrganizationId },
     ]).execute();
 
     // Real authenticated mutations, so the entries under inspection are the ones the
     // application actually writes rather than fixtures shaped to suit the reader.
-    now = new Date("2026-08-20T15:00:00.000Z");
     await createCohort("Onboarding", managerSubject);
+    await createCohort("Night Shift", dualRoleSubject);
     await createCohort("Field Operations", colleagueSubject);
     await createCohort("Wards", rivalManagerSubject);
 
-    now = new Date("2026-08-21T16:30:00.000Z");
     await graphql(
       `mutation Adjust($input: AdjustClassCreditsInput!) {
         adjustClassCredits(input: $input) { __typename }
@@ -183,9 +219,22 @@ describe("Audit Log GraphQL API", () => {
         'SUCCEEDED',
         'COHORT_RENAMED',
         'busy-day-' || minute,
-        timestamptz '2026-08-22T12:00:00Z' + make_interval(mins => minute)
+        ${BUSY_INSTANT}::timestamptz + make_interval(mins => minute)
       from generate_series(1, ${AUDIT_LOG_PAGE_SIZE + 5}) as minute
     `.execute(db);
+
+    // What the dual-role User did as a Student, in the same Organization they manage.
+    await db.insertInto("audit_entries").values({
+      actor_user_id: dualRoleId,
+      acting_role: "STUDENT",
+      operation: "booking.created",
+      target_type: "Booking",
+      target_id: randomUUID(),
+      outcome: "SUCCEEDED",
+      reason_code: "BOOKING_CREATED",
+      correlation_id: "dual-role-student-activity",
+      occurred_at: DUAL_ROLE_INSTANT,
+    }).execute();
 
     now = READ_INSTANT;
   }, 180_000);
@@ -199,11 +248,12 @@ describe("Audit Log GraphQL API", () => {
     const auditLog = await readAuditLog(administratorSubject);
 
     expect(auditLog.scope).toBe("MARKETPLACE_WIDE");
+    const today = localDateIn(READ_INSTANT);
     expect(auditLog.appliedFilter).toMatchObject({
       // Thirty days back from the reader's own local today, in their Display Time Zone.
-      fromLocalDate: "2026-07-28",
-      toLocalDate: "2026-08-26",
-      timeZone: "America/Denver",
+      fromLocalDate: localDatePlusDays(today, -29),
+      toLocalDate: today,
+      timeZone: VIEWER_TIME_ZONE,
     });
 
     const adjustment = auditLog.entries.find((entry) => entry.operation === "class-credit.adjusted")!;
@@ -240,16 +290,39 @@ describe("Audit Log GraphQL API", () => {
 
     expect(auditLog.scope).toBe("ASSIGNED_ORGANIZATION");
     expect([...new Set(auditLog.entries.map((entry) => entry.actorUserId))].sort())
-      .toEqual([managerId, colleagueId].sort());
+      .toEqual([managerId, colleagueId, dualRoleId].sort());
 
-    // Another Organization's manager, the administrator's own actions, and every
-    // Student's activity stay outside the scope entirely.
-    const everything = await readAuditLog(managerSubject);
-    expect(everything.entries).not.toEqual([]);
-    expect(everything.entries.some((entry) => entry.actorUserId === rivalManagerId)).toBe(false);
-    expect(everything.entries.some((entry) => entry.actorUserId === administratorId)).toBe(false);
-    expect(everything.entries.some((entry) => entry.actorUserId === studentId)).toBe(false);
-    expect(everything.entries.some((entry) => entry.systemIdentity !== null)).toBe(false);
+    // Marketplace-wide authority reads the same Cohort creations and finds the
+    // other Organization's manager among them, so the entry exists and only the
+    // scope hides it.
+    const marketplaceWide = await readAuditLog(administratorSubject, { operation: "cohort.created" });
+    expect(marketplaceWide.entries.some((entry) => entry.actorUserId === rivalManagerId)).toBe(true);
+
+    // The administrator's own actions, a Student's denied read, and every background
+    // action stay outside an Organization's scope entirely.
+    const administration = await readAuditLog(managerSubject, { operation: "class-credit.adjusted" });
+    expect(administration.entries).toEqual([]);
+
+    const denied = await readAuditLog(managerSubject, { outcome: "DENIED" });
+    expect(denied.entries.some((entry) => entry.actorUserId === studentId)).toBe(false);
+    expect(denied.entries.some((entry) => entry.systemIdentity !== null)).toBe(false);
+  });
+
+  it("excludes what a manager of the Organization did while acting in another role", async () => {
+    // Everything one dual-role User did, which is few enough to fit one page.
+    const theirRecord = await readAuditLog(managerSubject, { actorUserId: dualRoleId });
+    expect(theirRecord.pageInfo.hasNextPage).toBe(false);
+
+    // The same User, acting as a manager, is inside the Organization's record.
+    expect(theirRecord.entries.some((entry) => entry.operation === "cohort.created")).toBe(true);
+    // Acting as a Student, they are not: a Sponsorship discloses attendance and
+    // progress, never the Student's own Bookings.
+    expect(theirRecord.entries.some((entry) => entry.operation === "booking.created")).toBe(false);
+    expect(theirRecord.entries.every((entry) => entry.actingRole === "ORGANIZATION_MANAGER")).toBe(true);
+
+    // Marketplace-wide authority still sees it.
+    const marketplaceWide = await readAuditLog(administratorSubject, { correlationId: "dual-role-student-activity" });
+    expect(marketplaceWide.entries.map((entry) => entry.operation)).toEqual(["booking.created"]);
   });
 
   it("keeps the correcting actor and its reason in the Audit Log rather than in an Organization's reporting", async () => {
@@ -330,10 +403,11 @@ describe("Audit Log GraphQL API", () => {
   });
 
   it("refuses a range it cannot interpret and a viewer with no saved Display Time Zone", async () => {
-    const reversed = await auditLogResult(administratorSubject, { fromLocalDate: "2026-08-26", toLocalDate: "2026-08-01" });
+    const today = localDateIn(READ_INSTANT);
+    const reversed = await auditLogResult(administratorSubject, { fromLocalDate: today, toLocalDate: localDatePlusDays(today, -25) });
     expect(reversed).toMatchObject({ __typename: "AuditLogError", code: "INVALID_AUDIT_LOG_RANGE" });
 
-    const tooWide = await auditLogResult(administratorSubject, { fromLocalDate: "2025-01-01", toLocalDate: "2026-08-26" });
+    const tooWide = await auditLogResult(administratorSubject, { fromLocalDate: localDatePlusDays(today, -400), toLocalDate: today });
     expect(tooWide).toMatchObject({ __typename: "AuditLogError", code: "INVALID_AUDIT_LOG_RANGE" });
 
     const zoneless = await auditLogResult(zonelessManagerSubject, null);
@@ -344,6 +418,32 @@ describe("Audit Log GraphQL API", () => {
 
     const badActor = await auditLogResult(administratorSubject, { actorUserId: "not-an-identifier" });
     expect(badActor).toMatchObject({ __typename: "AuditLogError", code: "INVALID_AUDIT_LOG_FILTER" });
+  });
+
+  it("audits an export refused by a filter the boundary cannot read", async () => {
+    const correlationId = randomUUID();
+    const response = await graphql(
+      AUDIT_LOG_EXPORT_QUERY,
+      { filter: { actorUserId: "not-an-identifier" } },
+      administratorSubject,
+      correlationId,
+    );
+    expect(response.data!["auditLogExport"]).toMatchObject({
+      __typename: "AuditLogError",
+      code: "INVALID_AUDIT_LOG_FILTER",
+    });
+
+    const refusal = await db.selectFrom("audit_entries")
+      .selectAll()
+      .where("correlation_id", "=", correlationId)
+      .executeTakeFirstOrThrow();
+    expect(refusal).toMatchObject({
+      actor_user_id: administratorId,
+      acting_role: "PLATFORM_ADMINISTRATOR",
+      operation: "audit-log.exported",
+      outcome: "DENIED",
+      reason_code: "INVALID_AUDIT_LOG_FILTER",
+    });
   });
 
   it("exports the viewer's own scope as a bounded file and audits the export", async () => {
@@ -369,7 +469,7 @@ describe("Audit Log GraphQL API", () => {
       scope: "ASSIGNED_ORGANIZATION",
       schemaVersion: "audit_log.v1",
       rowCount: AUDIT_LOG_PAGE_SIZE + 5,
-      fileName: "audit_log.v1_2026-08-22_2026-08-23.csv",
+      fileName: `audit_log.v1_${BUSY_LOCAL_DATE}_${localDatePlusDays(BUSY_LOCAL_DATE, 1)}.csv`,
       contentType: "text/csv; charset=utf-8",
     });
 
@@ -402,14 +502,15 @@ describe("Audit Log GraphQL API", () => {
       acting_role: null,
       operation: "audit-log.partition-prepared",
       target_type: "AuditLogPartition",
-      target_id: "audit_entries_2026_09",
+      target_id: "audit_entries_fixture",
       outcome: "SUCCEEDED",
       reason_code: "AUDIT_PARTITION_PREPARED",
       correlation_id: "audit-retention-fixture",
-      occurred_at: new Date("2026-08-23T09:00:00.000Z"),
+      occurred_at: instantBefore(3, 9),
     }).execute();
 
-    const exported = await exportAuditLog(administratorSubject, { fromLocalDate: "2026-08-23", toLocalDate: "2026-08-23" });
+    const backgroundLocalDate = localDateIn(instantBefore(3, 9));
+    const exported = await exportAuditLog(administratorSubject, { fromLocalDate: backgroundLocalDate, toLocalDate: backgroundLocalDate });
     expect(exported.csv).toContain("system:AUDIT_RETENTION_WORKER");
   });
 
@@ -425,7 +526,7 @@ describe("Audit Log GraphQL API", () => {
         'SUCCEEDED',
         'CLASS_SESSION_PUBLISHED',
         'flood-' || entry,
-        timestamptz '2026-08-24T12:00:00Z' + make_interval(secs => entry)
+        ${FLOOD_INSTANT}::timestamptz + make_interval(secs => entry)
       from generate_series(1, ${AUDIT_LOG_EXPORT_MAXIMUM_ROW_COUNT + 1}) as entry
     `.execute(db);
 
@@ -477,18 +578,19 @@ describe("Audit Log GraphQL API", () => {
       outcome: "SUCCEEDED",
       reason_code: "CLASS_SESSION_PUBLISHED",
       correlation_id: "retained-entry",
-      occurred_at: new Date("2027-08-15T12:00:00.000Z"),
+      occurred_at: instantBefore(-340, 12),
     }).execute();
 
-    const sweptAt = new Date("2027-10-01T04:00:00.000Z");
+    // Far enough ahead that this fixture's own month has left the window entirely,
+    // and that the month the sweep runs in has no partition yet.
+    const sweptAt = instantBefore(-400, 4);
     const { preparedPartitions, expiredPartitions } = await maintainAuditPartitions(db, sweptAt, "audit-retention-test");
 
     // Retention prepares the months ahead before it drops the months behind.
-    expect(preparedPartitions).toContain("audit_entries_2027_10");
-    expect(expiredPartitions).toContain("audit_entries_2026_08");
-    // Ninety days back from 1 October 2027 lands in July, so July onwards is whole.
-    expect(expiredPartitions).not.toContain("audit_entries_2027_07");
-    expect(expiredPartitions).not.toContain("audit_entries_2027_08");
+    expect(preparedPartitions).toContain(partitionNameFor(sweptAt));
+    expect(expiredPartitions).toContain(partitionNameFor(READ_INSTANT));
+    // The retained entry's month is inside the 90 days, so it is left whole.
+    expect(expiredPartitions).not.toContain(partitionNameFor(instantBefore(-340, 12)));
 
     expect(await db.selectFrom("audit_entries").select("id")
       .where("correlation_id", "=", "retained-entry").execute()).toHaveLength(1);
@@ -499,7 +601,7 @@ describe("Audit Log GraphQL API", () => {
       .selectAll()
       .where("correlation_id", "=", "audit-retention-test")
       .where("operation", "=", "audit-log.partition-expired")
-      .where("target_id", "=", "audit_entries_2026_08")
+      .where("target_id", "=", partitionNameFor(READ_INSTANT))
       .executeTakeFirstOrThrow();
     expect(retentionAudit).toMatchObject({
       actor_user_id: null,
@@ -507,7 +609,28 @@ describe("Audit Log GraphQL API", () => {
       outcome: "SUCCEEDED",
       reason_code: "AUDIT_PARTITION_EXPIRED",
     });
+
+    // The domain rule and the rule PostgreSQL applies are checked against each
+    // other, so the property test in the core package cannot quietly describe a
+    // retention window the database does not use.
+    const surviving = await sql<{ relname: string }>`
+      select child.relname
+      from pg_inherits inheritance
+      join pg_class parent on parent.oid = inheritance.inhparent
+      join pg_class child on child.oid = inheritance.inhrelid
+      where parent.oid = 'audit_entries'::regclass
+        and child.relname ~ '^audit_entries_[0-9]{4}_[0-9]{2}$'
+    `.execute(db);
+    for (const partition of [...surviving.rows.map((row) => row.relname), ...expiredPartitions]) {
+      const [year, month] = partition.slice("audit_entries_".length).split("_").map(Number);
+      const monthStart = new Date(Date.UTC(year!, month! - 1, 1));
+      expect(auditPartitionIsExpired(monthStart, sweptAt)).toBe(expiredPartitions.includes(partition));
+    }
   });
+
+  function partitionNameFor(instant: Date) {
+    return `audit_entries_${instant.getUTCFullYear()}_${String(instant.getUTCMonth() + 1).padStart(2, "0")}`;
+  }
 
   async function createCohort(name: string, subject: string) {
     const response = await graphql(
