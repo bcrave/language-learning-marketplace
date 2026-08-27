@@ -2,6 +2,8 @@
 
 This manifest is the canonical specification for the public demonstration's sample curriculum. Stable keys are fixture identities, not a database-schema decision. Full guide copy remains implementation and editorial work.
 
+The loaded manifest is versioned (currently `2026-08-26.1`). A Canonical Data Rebuild records the version it published, and the version changes whenever the accepted catalog or showcase states below change.
+
 ## Catalog rules
 
 - The catalog has one Course at each A1–C2 Curriculum Level in English (`en`) and Spanish (`es`).
@@ -151,7 +153,7 @@ Spanish C2. Controla con precisión el registro, la implicación y la síntesis 
 - The shared Student's Course Progress is English A1 `3/6` active (`en-a1-02`, `en-a1-03`, `en-a1-06`), English A2 `2/2`, Spanish A1 `2/6` (`es-a1-01`, `es-a1-04`), and Spanish B1 `0/2`. The retired English A1 completion contributes zero to current progress.
 - The Sponsorship captures English A1 at `1/6` on acceptance, attributes two active completions during Sponsorship, and freezes `3/6` at its end. The Organization Manager sees the baseline, gain, and ending counts but not the pre-Sponsorship unit identity.
 - The shared Student has an active Booking for a future `en-a1-05` session and can access both materials. A second Student has a Student Cancellation without Completion for `es-a1-03` and cannot access its materials.
-- A synthetic Student's sole Attended record for `en-a1-05` is corrected to No-show; its Completion and material access are removed.
+- A synthetic Student's sole Attended record for `en-a1-05` is corrected to No-show, which removes the Lesson Unit Completion and the Course Progress resting on it. That Student's Booking remains active, and an active Booking is its own path to Lesson Materials, so material access continues until the Booking ends. Completion-derived access is what the correction withdraws.
 - The shared Teacher is assigned to the future `en-a1-05` session and can access its materials. A qualified but unassigned Teacher receives Not Found. Qualification alone never grants access.
 - Platform Administrators manage every material. Organization Managers receive no Lesson Material access through reporting or Sponsorship. Anonymous and merely discovering Students see summaries and objectives only.
 
@@ -163,3 +165,15 @@ Spanish C2. Controla con precisión el registro, la implicación y la síntesis 
 - Exactly 8 Topics; each is used, every unit has one or two, and multi-Topic units exercise match-any discovery.
 - All `en-*` original content is English and all `es-*` original content is Spanish. External references retain publisher language and provenance.
 - No fixture claims mastery, certification, Course enrollment, Interface Locale translation of authored content, public Lesson Material access, or ownership/licensing of linked content.
+
+Every invariant below is re-derived from the loaded state, not from what the loader believes it wrote, and all of them must pass inside the loading transaction before anything is published. A violation rolls the load back and leaves the previous state reachable.
+
+- Synthetic identities cover all four application roles, and every identity maps to the synthetic issuer rather than a real external account.
+- Every Class Credit account's available balance equals the sum of its append-only ledger, and no balance is negative.
+- Every Class Session offers 2–8 seats and records occupied seats exactly equal to its active Bookings.
+- Every Booking has a matching Student schedule commitment whose active flag follows the Booking's state, every ended Booking carries an explicit terminal reason, and no Student holds two active Bookings for one Class Session.
+- Every Attendance Record follows the end of its Class Session and agrees with its latest correction; a Lesson Unit Completion exists exactly where an effective Attended outcome supports it.
+- Course Progress read through the Student's own projection matches the accepted counts, with retired units excluded from the denominator.
+- The Sponsorship's state agrees with its ending, no Student holds overlapping active Sponsorships, each boundary snapshot matches its accepted counts and frozen unit set, and every Organization Credit Benefit grant names its Sponsorship.
+- Every Cohort membership stays inside its Sponsorship's Organization and never outlives the Sponsorship.
+- Lesson Material access, asked of the same relationship scope the reader uses, is open or closed exactly where the accepted demonstrations say.

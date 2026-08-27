@@ -25,7 +25,7 @@ export function createSimulatedClassroomProvider(): ClassroomProvider {
   };
 }
 
-type AccessActor = { id: string; actingRole: UserRole };
+export type AccessActor = { id: string; actingRole: UserRole };
 const uuidSchema = z.uuid();
 const TEACHER_RELATIONSHIP_AFTER_START_MILLISECONDS = 49 * 60 * 60_000;
 
@@ -55,7 +55,12 @@ async function accessActor(
   return { status: "OK" as const, actor: { id: user.id, actingRole } };
 }
 
-async function accessibleLessonUnits(
+/**
+ * The Lesson Unit relationship scope itself, without the audited read around it.
+ * Canonical fixture validation asks the same question the reader asks, and must not
+ * leave denied-read Audit Entries attributed to a person who never read anything.
+ */
+export async function accessibleLessonUnits(
   db: Database,
   actor: AccessActor,
   now: Date,

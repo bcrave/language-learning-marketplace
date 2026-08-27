@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDatabase, type Database } from "../src/database/database.js";
 import { canonicalCurriculumFixtures } from "../src/database/canonical-curriculum-fixtures.js";
 import { migrateDatabase } from "../src/database/migrate.js";
-import { seedDemoCurriculum, seedDemoStudents } from "../src/database/seed.js";
+import { applyCanonicalCurriculum, applyCanonicalIdentities } from "../src/fixtures/canonical-fixture-loader.js";
 
 describe("Canonical synthetic curriculum fixtures", () => {
   let db: Database;
@@ -22,8 +22,8 @@ describe("Canonical synthetic curriculum fixtures", () => {
     await migrateDatabase(templateDb);
     await templateDb.destroy();
     db = createDatabase(await clonePostgreSqlTemplate(postgres, `curriculum_fixtures_${randomUUID().replaceAll("-", "")}`));
-    await seedDemoStudents(db);
-    await seedDemoCurriculum(db);
+    await applyCanonicalIdentities(db);
+    await applyCanonicalCurriculum(db);
   }, 120_000);
 
   afterAll(async () => {

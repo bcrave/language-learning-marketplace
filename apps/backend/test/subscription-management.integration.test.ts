@@ -10,7 +10,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApi } from "../src/api/app.js";
 import { createDatabase, type Database } from "../src/database/database.js";
 import { migrateDatabase } from "../src/database/migrate.js";
-import { DEMO_STUDENT_ID, seedDemoStudents, seedDemoSubscription } from "../src/database/seed.js";
+import { applyCanonicalIdentities, applyCanonicalSubscription } from "../src/fixtures/canonical-fixture-loader.js";
+import { CANONICAL_STUDENT_ID } from "../src/fixtures/canonical-fixture-manifest.js";
 
 describe("Subscription management GraphQL API", () => {
   let api: ReturnType<typeof createApi>;
@@ -216,18 +217,18 @@ describe("Subscription management GraphQL API", () => {
 
   it("seeds the shared Student with an active canonical Subscription and eight owned Class Credits", async () => {
     const now = new Date("2026-08-05T18:00:00.000Z");
-    await seedDemoStudents(db);
-    await seedDemoSubscription(db, now);
-    await seedDemoSubscription(db, now);
+    await applyCanonicalIdentities(db);
+    await applyCanonicalSubscription(db, { now });
+    await applyCanonicalSubscription(db, { now });
 
-    expect(await db.selectFrom("subscriptions").select(["state", "next_anniversary_at"]).where("student_user_id", "=", DEMO_STUDENT_ID).executeTakeFirstOrThrow()).toEqual({
+    expect(await db.selectFrom("subscriptions").select(["state", "next_anniversary_at"]).where("student_user_id", "=", CANONICAL_STUDENT_ID).executeTakeFirstOrThrow()).toEqual({
       state: "ACTIVE",
       next_anniversary_at: new Date("2026-09-04T18:00:00.000Z"),
     });
-    expect(await db.selectFrom("class_credit_accounts").select("available_balance").where("student_user_id", "=", DEMO_STUDENT_ID).executeTakeFirstOrThrow()).toEqual({ available_balance: 8 });
+    expect(await db.selectFrom("class_credit_accounts").select("available_balance").where("student_user_id", "=", CANONICAL_STUDENT_ID).executeTakeFirstOrThrow()).toEqual({ available_balance: 8 });
     const elapsedAnniversary = new Date("2026-08-05T00:00:00.000Z");
-    await db.updateTable("subscriptions").set({ state: "CANCELLATION_SCHEDULED", next_anniversary_at: elapsedAnniversary, cancellation_effective_at: elapsedAnniversary }).where("student_user_id", "=", DEMO_STUDENT_ID).executeTakeFirstOrThrow();
-    expect(await studentMutation("undoSubscriptionCancellation", "UndoSubscriptionCancellationSuccess", DEMO_STUDENT_ID)).toEqual({
+    await db.updateTable("subscriptions").set({ state: "CANCELLATION_SCHEDULED", next_anniversary_at: elapsedAnniversary, cancellation_effective_at: elapsedAnniversary }).where("student_user_id", "=", CANONICAL_STUDENT_ID).executeTakeFirstOrThrow();
+    expect(await studentMutation("undoSubscriptionCancellation", "UndoSubscriptionCancellationSuccess", CANONICAL_STUDENT_ID)).toEqual({
       data: { undoSubscriptionCancellation: { conflictCode: "SUBSCRIPTION_CANCELLATION_EFFECTIVE" } },
     });
   });

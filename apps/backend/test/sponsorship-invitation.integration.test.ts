@@ -10,7 +10,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApi } from "../src/api/app.js";
 import { createDatabase, type Database } from "../src/database/database.js";
 import { migrateDatabase } from "../src/database/migrate.js";
-import { DEMO_LIMITED_STUDENT_ID, DEMO_STUDENT_ID, seedDemoOrganizations, seedDemoSponsorship, seedDemoStudents } from "../src/database/seed.js";
+import { applyCanonicalIdentities, applyCanonicalOrganizations, applyCanonicalPendingInvitation } from "../src/fixtures/canonical-fixture-loader.js";
+import { CANONICAL_LIMITED_STUDENT_ID, CANONICAL_STUDENT_ID } from "../src/fixtures/canonical-fixture-manifest.js";
 import { expireDueSponsorshipInvitations, grantDueSponsorshipCredits } from "../src/sponsorship/sponsorship-worker.js";
 
 describe("Sponsorship Invitation GraphQL API", () => {
@@ -230,17 +231,17 @@ describe("Sponsorship Invitation GraphQL API", () => {
   });
 
   it("seeds a canonical Organization Manager with a pending Sponsorship Invitation to the shared limited Student", async () => {
-    await seedDemoStudents(db);
-    await seedDemoOrganizations(db);
-    await seedDemoSponsorship(db);
-    await seedDemoSponsorship(db);
+    await applyCanonicalIdentities(db);
+    await applyCanonicalOrganizations(db);
+    await applyCanonicalPendingInvitation(db);
+    await applyCanonicalPendingInvitation(db);
 
     const invitation = await db.selectFrom("sponsorship_invitations")
       .select(["state", "student_user_id", "invited_by_user_id"])
-      .where("student_user_id", "=", DEMO_LIMITED_STUDENT_ID)
+      .where("student_user_id", "=", CANONICAL_LIMITED_STUDENT_ID)
       .executeTakeFirstOrThrow();
-    expect(invitation).toEqual({ state: "PENDING", student_user_id: DEMO_LIMITED_STUDENT_ID, invited_by_user_id: DEMO_STUDENT_ID });
-    const manager = await db.selectFrom("organization_managers").select("organization_id").where("user_id", "=", DEMO_STUDENT_ID).executeTakeFirstOrThrow();
+    expect(invitation).toEqual({ state: "PENDING", student_user_id: CANONICAL_LIMITED_STUDENT_ID, invited_by_user_id: CANONICAL_STUDENT_ID });
+    const manager = await db.selectFrom("organization_managers").select("organization_id").where("user_id", "=", CANONICAL_STUDENT_ID).executeTakeFirstOrThrow();
     expect(manager.organization_id).toBeTruthy();
   });
 

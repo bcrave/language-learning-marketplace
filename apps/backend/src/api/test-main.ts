@@ -3,7 +3,7 @@ import { startPostgreSqlTemplate } from "@marketplace/test-support";
 import { parseAppConfig } from "../config.js";
 import { createDatabase } from "../database/database.js";
 import { migrateDatabase } from "../database/migrate.js";
-import { seedDemoCurriculum, seedDemoStudents, seedDemoSubscription } from "../database/seed.js";
+import { loadCanonicalFixtures } from "../fixtures/canonical-fixture-loader.js";
 
 const postgres = process.env.E2E_USE_TESTCONTAINERS === "true"
   ? await startPostgreSqlTemplate()
@@ -14,9 +14,7 @@ const config = parseAppConfig(process.env);
 const db = createDatabase(config.DATABASE_URL);
 try {
   await migrateDatabase(db);
-  await seedDemoStudents(db);
-  await seedDemoSubscription(db);
-  await seedDemoCurriculum(db);
+  await loadCanonicalFixtures(db);
 } finally {
   await db.destroy();
 }
