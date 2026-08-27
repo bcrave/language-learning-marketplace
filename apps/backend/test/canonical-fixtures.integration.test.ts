@@ -165,26 +165,44 @@ describe("Canonical synthetic fixture load", () => {
     expect(await validateCanonicalFixtures(db, manifest, loadedAt)).toEqual([]);
   });
 
-  it("publishes nothing when an invariant fails, and audits the refusal", async () => {
-    const emptyDb = createDatabase(await clonePostgreSqlTemplate(postgres, `canonical_refused_${randomUUID().replaceAll("-", "")}`));
-    try {
-      const overstated = structuredClone(manifest);
-      overstated.expectations.inventory.courses += 1;
+  it("discards a refused load's work and leaves the published state reachable", async () => {
+    // A manifest carrying a Course the accepted inventory does not admit. The load
+    // writes it, validation refuses the result, and the write has to disappear.
+    const smuggled = structuredClone(manifest);
+    smuggled.courses.push({
+      stableKey: "fr-a1", title: "Unaccepted French A1", summary: "A Course the accepted inventory does not admit.",
+      units: [{
+        stableKey: "fr-a1-01", title: "Unaccepted unit", state: "ACTIVE", order: 1,
+        summary: "A Lesson Unit that must never reach the demonstration.",
+        objectives: ["Never be published."], topicKeys: ["EC"],
+      }],
+    });
+    const before = await publishedCounts();
 
-      await expect(loadCanonicalFixtures(emptyDb, { now: loadedAt, correlationId: "canonical-refused", manifest: overstated }))
-        .rejects.toThrow(CanonicalFixtureValidationError);
+    const refusal = await loadCanonicalFixtures(db, { now: loadedAt, correlationId: "canonical-refused", manifest: smuggled })
+      .then(() => undefined, (error: unknown) => error);
 
-      // The transaction rolled back, so no half-built demonstration is reachable.
-      expect(await emptyDb.selectFrom("courses").select("id").execute()).toEqual([]);
-      expect(await emptyDb.selectFrom("users").select("id").execute()).toEqual([]);
-      expect(await emptyDb.selectFrom("audit_entries").select(["operation", "outcome", "reason_code"])
-        .where("correlation_id", "=", "canonical-refused").orderBy("occurred_at").execute()).toEqual([
-        { operation: "canonical-fixtures.load-started", outcome: "SUCCEEDED", reason_code: "CANONICAL_FIXTURE_LOAD_STARTED" },
-        { operation: "canonical-fixtures.load-failed", outcome: "FAILED", reason_code: "CANONICAL_FIXTURE_VALIDATION_FAILED" },
-      ]);
-    } finally {
-      await emptyDb.destroy();
-    }
+    expect(refusal).toBeInstanceOf(CanonicalFixtureValidationError);
+    // The refusal counted 13 Courses, so the smuggled one really was written before
+    // validation ran. The rollback below discards work rather than finding none.
+    expect((refusal as CanonicalFixtureValidationError).violations).toContainEqual({
+      invariant: "inventory.courses",
+      detail: "Courses: expected 12, found 13",
+    });
+
+    // The rollback discarded real work: the smuggled Course never lands, and the
+    // previously verified state is exactly as it was.
+    expect(await db.selectFrom("courses").select("id").where("stable_key", "=", "fr-a1").execute()).toEqual([]);
+    expect(await publishedCounts()).toEqual(before);
+    expect(await validateCanonicalFixtures(db, manifest, loadedAt)).toEqual([]);
+
+    // The refusal itself is still audited, because it is recorded outside the
+    // transaction it rolled back.
+    expect(await db.selectFrom("audit_entries").select(["operation", "outcome", "reason_code"])
+      .where("correlation_id", "=", "canonical-refused").orderBy("occurred_at").execute()).toEqual([
+      { operation: "canonical-fixtures.load-started", outcome: "SUCCEEDED", reason_code: "CANONICAL_FIXTURE_LOAD_STARTED" },
+      { operation: "canonical-fixtures.load-failed", outcome: "FAILED", reason_code: "CANONICAL_FIXTURE_VALIDATION_FAILED" },
+    ]);
   });
 
   it("names every rule it refused on", async () => {
