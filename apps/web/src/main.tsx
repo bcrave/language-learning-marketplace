@@ -10,6 +10,7 @@ import { FormattedMessage, IntlProvider } from "react-intl";
 import { App } from "./app.js";
 import { parseClientConfig, type ClientConfig } from "./client-config.js";
 import { suggestedInterfaceLocale } from "./interface-locale.js";
+import { productionAuth0Options } from "./production-auth.js";
 import "./styles.css";
 
 function AuthenticationStatus({
@@ -92,16 +93,12 @@ if (import.meta.env.DEV || import.meta.env.MODE === "test") {
   }
   const application = (
     <Auth0Provider
-      authorizationParams={{
-        audience: config.auth0Audience,
-        redirect_uri: `${window.location.origin}/student`,
-      }}
-      cacheLocation="memory"
-      clientId={config.auth0ClientId}
-      domain={config.auth0Domain}
-      useRefreshTokens
-      useRefreshTokensFallback={false}
-      workerUrl={auth0WorkerUrl}
+      {...productionAuth0Options({
+        config,
+        origin: window.location.origin,
+        workerUrl: auth0WorkerUrl,
+        onAuthenticated: (path) => window.history.replaceState({}, "", path),
+      })}
     >
       <AuthenticatedApp config={config} />
     </Auth0Provider>

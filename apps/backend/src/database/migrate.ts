@@ -14,6 +14,22 @@ const migrationsDirectory = existsSync(bundledMigrationsDirectory)
   ? bundledMigrationsDirectory
   : resolve(moduleDirectory, "../../migrations");
 
+async function migrationNames() {
+  return (await readdir(migrationsDirectory)).filter((name) => name.endsWith(".sql")).sort();
+}
+
+/**
+ * The schema this build expects. Readiness compares it against what the
+ * database has applied, so deriving it from the migrations this build ships
+ * keeps the two from drifting the way a hand-written constant does.
+ */
+export async function latestMigrationName() {
+  const names = await migrationNames();
+  const latest = names.at(-1);
+  if (!latest) throw new Error("The build ships no database migrations");
+  return latest;
+}
+
 export async function migrateDatabase(db: Database) {
   await sql`
     create table if not exists schema_migrations (
@@ -22,11 +38,7 @@ export async function migrateDatabase(db: Database) {
     )
   `.execute(db);
 
-  const migrationNames = (await readdir(migrationsDirectory))
-    .filter((name) => name.endsWith(".sql"))
-    .sort();
-
-  for (const name of migrationNames) {
+  for (const name of await migrationNames()) {
     const applied = await db
       .selectFrom("schema_migrations")
       .select(sql<number>`1`.as("present"))

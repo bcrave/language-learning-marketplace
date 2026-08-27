@@ -5,14 +5,18 @@ import { sql } from "kysely";
 import type { Logger } from "pino";
 
 import type { Database } from "../database/database.js";
+import {
+  readWorkerHeartbeat,
+  workerHeartbeatIsFresh,
+} from "../worker/worker-heartbeat.js";
 import type { createApi } from "./app.js";
 import { connectionSourceFor, createVerifiedSourceReader } from "./verified-source.js";
 
 const GRAPHQL_BODY_LIMIT_BYTES = 1_000_000;
 const RATE_LIMIT_WINDOW_MILLISECONDS = 60_000;
-const CURRENT_SCHEMA_MIGRATION = "0005_curriculum_administration.sql";
 const LIVENESS_PATH = "/health/live";
 const READINESS_PATH = "/health/ready";
+const WORKER_READINESS_PATH = "/health/worker";
 
 class SourceRateLimiter {
   readonly #counters = new Map<string, { count: number; startedAt: number }>();
@@ -46,11 +50,15 @@ function sendJson(
 
 export function createMarketplaceServer(options: {
   api: ReturnType<typeof createApi>;
+  /** The schema this build expects, from `latestMigrationName()`. */
+  currentSchemaMigration: string;
   db: Database;
   logger: Logger;
+  now?: () => Date;
   sourceRequestLimit: number;
   trustedProxySecret?: string;
 }) {
+  const now = options.now ?? (() => new Date());
   const rateLimiter = new SourceRateLimiter(options.sourceRequestLimit);
   const verifiedSourceFor = createVerifiedSourceReader(options.trustedProxySecret);
 
@@ -62,7 +70,10 @@ export function createMarketplaceServer(options: {
     // public origin is deployed at all, so probes key on the connection they
     // arrive on. Everything else must carry context Caddy verified.
     const probesHealth =
-      request.method === "GET" && (path === LIVENESS_PATH || path === READINESS_PATH);
+      request.method === "GET" &&
+      (path === LIVENESS_PATH ||
+        path === READINESS_PATH ||
+        path === WORKER_READINESS_PATH);
     const source = probesHealth
       ? connectionSourceFor(request)
       : verifiedSourceFor(request);
@@ -91,11 +102,30 @@ export function createMarketplaceServer(options: {
         await options.db
           .selectFrom("schema_migrations")
           .select("name")
-          .where("name", "=", CURRENT_SCHEMA_MIGRATION)
+          .where("name", "=", options.currentSchemaMigration)
           .executeTakeFirstOrThrow();
         sendJson(response, 200, { status: "ready" });
       } catch {
         options.logger.warn({ event: "readiness.failed" });
+        sendJson(response, 503, { status: "unavailable" });
+      }
+      return;
+    }
+
+    // ADR 0038 requires the worker live before the browser client moves to the
+    // new release, and the worker speaks no HTTP. It writes a heartbeat to
+    // PostgreSQL instead, and this probe is where a release gate reads it.
+    if (request.method === "GET" && path === WORKER_READINESS_PATH) {
+      try {
+        const heartbeat = await readWorkerHeartbeat(options.db);
+        if (!workerHeartbeatIsFresh(heartbeat, now())) {
+          options.logger.warn({ event: "worker.heartbeat.stale" });
+          sendJson(response, 503, { status: "unavailable" });
+          return;
+        }
+        sendJson(response, 200, { status: "ready", release: heartbeat.release });
+      } catch {
+        options.logger.warn({ event: "worker.heartbeat.unreadable" });
         sendJson(response, 503, { status: "unavailable" });
       }
       return;

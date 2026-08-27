@@ -20,6 +20,10 @@ await build({
         "src/api/main.ts",
         "src/database/migrate.ts",
         "src/database/seed.ts",
+        // The release job's own entry points: the worker gate between the API
+        // and the browser client, and the deployed smoke journey after it.
+        "src/operations/deployed-smoke-main.ts",
+        "src/operations/release-gate-main.ts",
         "src/worker/main.ts",
       ],
   format: "esm",

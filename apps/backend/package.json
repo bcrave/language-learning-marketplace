@@ -10,6 +10,8 @@
     "dev:api": "tsx watch src/api/main.ts",
     "dev:test-api": "tsx src/api/test-main.ts",
     "dev:worker": "tsx watch src/worker/main.ts",
+    "release:smoke": "node dist/operations/deployed-smoke-main.js",
+    "release:worker-gate": "node dist/operations/release-gate-main.js",
     "start:api": "node dist/api/main.js",
     "start:test-api": "node dist/api/test-main.js",
     "start:worker": "node dist/worker/main.js",

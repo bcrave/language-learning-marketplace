@@ -32,6 +32,7 @@ async function startServer(options: {
 }) {
   const server = createMarketplaceServer({
     api: answeringApi,
+    currentSchemaMigration: "0031_worker_heartbeat.sql",
     db: unusedDatabase,
     logger: silentLogger,
     sourceRequestLimit: options.sourceRequestLimit,

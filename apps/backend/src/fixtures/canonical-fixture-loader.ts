@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
 
+import {
+  bindDemonstrationIdentities,
+  type DemonstrationIdentityBinding,
+} from "../auth/demonstration-identities.js";
 import type { Database } from "../database/database.js";
 import type { CurriculumLevel } from "../database/types.js";
 import { CURRENT_SPONSORSHIP_DISCLOSURE_VERSION } from "../sponsorship/sponsorship-service.js";
@@ -558,6 +562,12 @@ export async function loadCanonicalFixtures(db: Database, options: {
   now?: Date;
   correlationId?: string;
   manifest?: CanonicalFixtureManifest;
+  /**
+   * ADR 0019's shared reviewer identities. Binding runs inside the load's own
+   * transaction, so a demonstration is never published with its people still
+   * pointing at the local fake issuer.
+   */
+  identityBinding?: DemonstrationIdentityBinding;
 } = {}) {
   const now = options.now ?? new Date();
   const manifest = options.manifest ?? canonicalFixtureManifest;
@@ -582,8 +592,15 @@ export async function loadCanonicalFixtures(db: Database, options: {
       await applyCanonicalOrganizations(transaction, step);
       await applyCanonicalPendingInvitation(transaction, step);
       await applyCanonicalShowcase(transaction, step);
+      if (options.identityBinding) {
+        await bindDemonstrationIdentities(transaction, options.identityBinding, manifest);
+      }
 
-      violations = await validateCanonicalFixtures(transaction, manifest, now);
+      violations = await validateCanonicalFixtures(transaction, manifest, now, {
+        ...(options.identityBinding
+          ? { identityIssuer: options.identityBinding.issuer }
+          : {}),
+      });
       if (violations.length > 0) throw new CanonicalFixtureValidationError(violations);
     });
   } catch (error) {

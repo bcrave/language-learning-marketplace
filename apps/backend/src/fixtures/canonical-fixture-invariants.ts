@@ -34,7 +34,15 @@ export async function validateCanonicalFixtures(
   db: Database,
   manifest: CanonicalFixtureManifest,
   now: Date,
+  /**
+   * The issuer these synthetic people authenticate through. A deployment binds
+   * them to its demonstration Auth0 tenant (ADR 0019); everything else keeps
+   * the local fake issuer. The people stay synthetic either way, which is what
+   * `identities.synthetic` is protecting.
+   */
+  options: { identityIssuer?: string } = {},
 ): Promise<FixtureInvariantViolation[]> {
+  const identityIssuer = options.identityIssuer ?? CANONICAL_IDENTITY_ISSUER;
   const violations: FixtureInvariantViolation[] = [];
   const fail = (invariant: string, detail: string) => violations.push({ invariant, detail });
   const expect = (invariant: string, actual: number, expected: number, subject: string) => {
@@ -116,7 +124,7 @@ export async function validateCanonicalFixtures(
     }
   }
   for (const user of users) {
-    if (user.identity_issuer !== null && user.identity_issuer !== CANONICAL_IDENTITY_ISSUER) {
+    if (user.identity_issuer !== null && user.identity_issuer !== identityIssuer) {
       fail("identities.synthetic", `a User maps to the non-synthetic issuer ${user.identity_issuer}`);
     }
   }

@@ -4,6 +4,7 @@ import { createApi } from "./app.js";
 import { createMarketplaceServer } from "./server.js";
 import { parseAppConfig } from "../config.js";
 import { createDatabase } from "../database/database.js";
+import { latestMigrationName } from "../database/migrate.js";
 
 const config = parseAppConfig(process.env);
 const logger = pino({
@@ -23,6 +24,7 @@ const api = createApi({
 });
 const server = createMarketplaceServer({
   api,
+  currentSchemaMigration: await latestMigrationName(),
   db,
   logger,
   sourceRequestLimit: config.API_SOURCE_REQUEST_LIMIT,

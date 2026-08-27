@@ -33,6 +33,19 @@ const baseConfigSchema = z.object({
   AUTH0_AUDIENCE: z.string().min(1).optional(),
   AUTH0_MANAGEMENT_CLIENT_ID: z.string().min(1).optional(),
   AUTH0_MANAGEMENT_CLIENT_SECRET: z.string().min(1).optional(),
+  /**
+   * The build this process is running. It names the worker heartbeat so a
+   * release gate can tell a live new worker from the previous one still
+   * writing, and it never reaches the browser bundle.
+   */
+  APP_RELEASE: z.string().min(1).max(255).default("development"),
+  /**
+   * ADR 0019's shared reviewer identities, as a JSON map from canonical fixture
+   * User identifier to Auth0 `sub`. The subjects are public identifiers rather
+   * than credentials, and the map grants nothing: roles stay with the manifest.
+   * `parseDemonstrationIdentityBinding` owns its shape.
+   */
+  DEMONSTRATION_IDENTITY_SUBJECTS: z.string().min(1).optional(),
 });
 
 export type AppConfig = z.infer<typeof baseConfigSchema>;
