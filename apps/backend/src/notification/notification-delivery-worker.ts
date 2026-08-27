@@ -182,7 +182,7 @@ export async function processNotificationDeliveries(
           transaction.selectFrom("users").select("access_status").where("id", "=", intent.recipient_user_id).executeTakeFirst(),
         ]);
         if (!pendingIntent) return false;
-        if (!recipient || recipient.access_status === "ANONYMIZATION_PENDING" || recipient.access_status === "ANONYMIZED") {
+        if (!recipient || recipient.access_status === "ANONYMIZATION_PENDING" || recipient.access_status === "ANONYMIZED" || recipient.access_status === "FIXTURE_REMOVED") {
           await transaction.deleteFrom("email_notification_intents").where("id", "=", intent.id).execute();
           await transaction.insertInto("delivery_receipts").values({ source_reference: sourceReference, recipient_user_id: intent.recipient_user_id, channel: "EMAIL", outcome: "SUPPRESSED", completed_at: now, provider_message_id: null }).onConflict((conflict) => conflict.columns(["source_reference", "recipient_user_id", "channel"]).doNothing()).execute();
           await transaction.insertInto("audit_entries").values({ actor_user_id: null, system_identity: "NOTIFICATION_DELIVERY_WORKER", acting_role: null, operation: "notification.delivery-processed", target_type: "NotificationIntent", target_id: intent.id, outcome: "SUCCEEDED", reason_code: "USER_ANONYMIZATION_SUPPRESSED", correlation_id: correlationId }).execute();

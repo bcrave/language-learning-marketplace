@@ -24,7 +24,10 @@ await build({
         // readiness gates run inside Railway as pre-deploy steps, and the
         // deployed smoke journey runs from the release job after them.
         "src/operations/bind-identities-main.ts",
+        "src/operations/canonical-data-rebuild-main.ts",
+        "src/operations/canonical-data-recovery-main.ts",
         "src/operations/deployed-smoke-main.ts",
+        "src/operations/deployed-maintenance-smoke-main.ts",
         "src/operations/release-gate-main.ts",
         "src/worker/main.ts",
       ],

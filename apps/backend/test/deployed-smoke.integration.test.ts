@@ -42,8 +42,8 @@ describe("deployed smoke journey", () => {
     db = createDatabase(
       await clonePostgreSqlTemplate(postgres, `smoke_${randomUUID().replaceAll("-", "")}`),
     );
-    // Loaded against the real clock so the showcase's one still-actionable
-    // Class Session really is in the future when the journey looks for a seat.
+    // Loaded against the real clock so the touching current/upcoming showcase
+    // Class Sessions include an actionable future seat for the journey.
     await loadCanonicalFixtures(db, { correlationId: "deployed-smoke-fixtures" });
 
     const server = createMarketplaceServer({

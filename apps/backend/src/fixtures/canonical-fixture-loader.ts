@@ -42,6 +42,14 @@ function atOffsetDays(now: Date, offsetDays: number) {
   return instant;
 }
 
+function classSessionStart(now: Date, session: CanonicalFixtureManifest["showcase"]["classSessions"][number]) {
+  if (session.rollingOffsetHours === undefined) return atOffsetDays(now, session.offsetDays);
+  const instant = new Date(now);
+  instant.setUTCMinutes(0, 0, 0);
+  instant.setUTCHours(instant.getUTCHours() + session.rollingOffsetHours);
+  return instant;
+}
+
 /**
  * Every step defaults to the accepted manifest at the current instant; a test or a
  * rebuild drill overrides one or both without depending on argument order.
@@ -331,9 +339,11 @@ export async function applyCanonicalShowcase(db: Database, options: CanonicalLoa
         id: session.id,
         lesson_unit_id: unitByKey.get(session.unitKey)!.id,
         teacher_user_id: session.teacherUserId,
-        starts_at: atOffsetDays(now, session.offsetDays),
+        starts_at: classSessionStart(now, session),
         scheduling_time_zone: session.schedulingTimeZone,
         seat_capacity: session.seatCapacity,
+        is_rolling_fixture: session.rollingOffsetHours !== undefined,
+        rolling_offset_hours: session.rollingOffsetHours ?? null,
         state: "PUBLISHED",
       // A published start instant is immutable, so an already-loaded Class Session
       // keeps the one it was published with.

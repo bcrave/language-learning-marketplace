@@ -43,6 +43,7 @@ export async function anonymizeUser(
   await sql`select pg_advisory_xact_lock(hashtextextended(${input.userId}, 28))`.execute(transaction);
   const user = await transaction.selectFrom("users").select(["id", "identity_issuer", "identity_subject", "access_status"]).where("id", "=", input.userId).forUpdate().executeTakeFirst();
   if (!user) return deny(transaction, administrator, input, correlationId, "USER_NOT_FOUND", "Choose an existing User.");
+  if (user.access_status === "FIXTURE_REMOVED") return deny(transaction, administrator, input, correlationId, "USER_NOT_FOUND", "Choose an existing User.");
   if (user.access_status === "ANONYMIZED") return deny(transaction, administrator, input, correlationId, "USER_ALREADY_ANONYMIZED", "The User is already anonymized.");
   if (user.access_status === "ANONYMIZATION_PENDING") return deny(transaction, administrator, input, correlationId, "USER_ANONYMIZATION_PENDING", "The User's anonymization is already pending identity deletion.");
 
@@ -85,7 +86,7 @@ export async function anonymizeUser(
   await transaction.deleteFrom("teacher_availability_settings").where("teacher_user_id", "=", input.userId).execute();
   await transaction.deleteFrom("role_assignments").where("user_id", "=", input.userId).execute();
   await transaction.insertInto("user_anonymization_requests").values({ user_id: input.userId, identity_issuer: user.identity_issuer, identity_subject: user.identity_subject, reason, requested_by_user_id: administrator.id, state: "PENDING", redacted_learning_feedback_count: feedback.length, redacted_session_rating_count: ratings.length, correlation_id: correlationId, requested_at: now, completed_at: null }).execute();
-  await transaction.updateTable("users").set({ display_name: "Former User", interface_locale: null, display_time_zone: null, access_status: "ANONYMIZATION_PENDING", suspension_reason: null, suspended_at: null, suspended_by_user_id: null, anonymized_at: now, anonymized_by_user_id: administrator.id }).where("id", "=", input.userId).executeTakeFirstOrThrow();
+  await transaction.updateTable("users").set({ display_name: "Former User", interface_locale: null, display_time_zone: null, access_status: "ANONYMIZATION_PENDING", fixture_removed_at: null, suspension_reason: null, suspended_at: null, suspended_by_user_id: null, anonymized_at: now, anonymized_by_user_id: administrator.id }).where("id", "=", input.userId).executeTakeFirstOrThrow();
   await recordAdministrationAudit(transaction, { administratorId: administrator.id, correlationId, operation: "user.anonymization-requested", targetType: "User", targetId: input.userId, reasonCode: "USER_ANONYMIZATION_REQUESTED" });
 
   return { __typename: "AnonymizeUserSuccess" as const, state: "PENDING" as const, user: await projectAdministrationUser(transaction, input.userId), redactedLearningFeedbackCount: feedback.length, redactedSessionRatingCount: ratings.length };

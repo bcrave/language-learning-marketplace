@@ -2572,6 +2572,7 @@ export enum UserAccessStatus {
   Active = 'ACTIVE',
   AnonymizationPending = 'ANONYMIZATION_PENDING',
   Anonymized = 'ANONYMIZED',
+  FixtureRemoved = 'FIXTURE_REMOVED',
   Suspended = 'SUSPENDED'
 }
 

@@ -81,7 +81,29 @@ Canonical Data Rebuild returns mutable synthetic marketplace state to its versio
 
 Routine scheduled/manual rebuild and indeterminate-state recovery are separate protected GitHub Actions workflows. A manual run fixes `production`, takes a non-secret reason and explicit acknowledgement that maintenance begins and reviewer mutations are discarded, then requires protected-environment approval. Shared identities and Platform Administrators have no access.
 
-Routine rebuild has one automatic retry and verified rollback. After verified rollback, reopen the demo and send owner attention; any later attempt is a fresh dispatch with a new reason and correlation, never GitHub job rerun. An indeterminate state blocks routine rebuild. Cancellation before lease acquisition is safe; after quiescence, cleanup must verify prior state or keep readiness false as indeterminate. Force-cancel after quiescence only to contain a greater threat.
+Use the repository's **Canonical Data Rebuild** workflow for both the nightly run
+and a manual restoration. The release and rebuild workflows share the
+`production-maintenance` queue. During the operation `/health/ready`,
+`/health/worker`, and `/graphql` return only `{ "status": "maintenance" }` with HTTP
+503; holder, reason, correlation, fixture generation, and failure evidence remain
+private. The database write barrier drains admitted transactions and rejects later
+API or worker writes before replacement starts.
+
+Use **Canonical Data Recovery** for an indeterminate state. Dispatch `ASSESS`
+first; it changes no state and reports only sanitized schema, fixture-generation,
+heartbeat, invariant-count, aggregate, and recommendation evidence. In a later
+protected dispatch, authorize only the recommended `VERIFY_AND_REOPEN` or
+`CLEAN_REBUILD` action and cite the incident correlation. A failed post-rebuild
+deployed role smoke automatically restores indeterminate maintenance before its
+workflow fails.
+
+Routine rebuild has one automatic retry and verified rollback. The workflow refuses
+GitHub job reruns (`run_attempt` greater than one); dispatch it again to obtain fresh
+attempt and correlation identifiers. After verified rollback, reopen the demo and
+send owner attention. An indeterminate state blocks routine rebuild. Cancellation
+before lease acquisition is safe; after quiescence, the operation finishes its
+current transaction to a validated commit or rollback before honoring SIGINT or
+SIGTERM. Force-cancel after quiescence only to contain a greater threat.
 
 Recovery is diagnosis-first. A protected assessment keeps maintenance active and classifies database reachability, schema compatibility, lease ownership, fixture generation, Audit Entries, and aggregate invariants. It may recommend only: verify and reopen current state; perform a clean Canonical Data Rebuild; or invoke established backup restoration. A separate protected dispatch authorizes state change and references the incident correlation. Direct provider access is break glass only when approved workflows cannot restore safety.
 

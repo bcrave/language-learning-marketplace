@@ -46,4 +46,19 @@ Railway service autodeploys stay disabled. The serialized `Release` workflow orc
 
 A failed stage stops every later one, and a failed job is the owner-attention route for deployment incidents.
 
+The worker advances only manifest-designated rolling Class Sessions on the hour.
+The protected `Canonical Data Rebuild` workflow also runs nightly and can be
+dispatched manually with a non-secret reason and explicit maintenance
+acknowledgement. It shares the release queue, returns GraphQL and readiness probes
+as reviewer-safe maintenance while PostgreSQL drains admitted writes, replaces
+mutable business data transactionally, validates and reconciles the new fixture
+generation, and retains privacy-safe start and terminal Audit Entries. A failed
+attempt rolls back and retries once inside that dispatch; a later attempt must be a
+fresh protected dispatch, not a workflow rerun.
+
+An indeterminate attempt is handled only through the separate protected
+`Canonical Data Recovery` workflow: assess first, then use a new approved dispatch
+for verify-and-reopen or a clean canonical rebuild. Failed post-rebuild role smokes
+immediately restore fail-closed maintenance and require the same recovery path.
+
 The database work and both readiness gates run as Railway pre-deploy commands rather than workflow steps ([`deploy/railway/`](deploy/railway/)). That is deliberate: the API has no public address ([ADR 0028](docs/adr/0028-use-a-single-public-origin.md)), its health probes are internal, and GitHub holds no database credential ([ADR 0039](docs/adr/0039-separate-public-client-configuration-from-secrets.md)). The smoke journey's own Auth0 principal is the one documented exception, recorded in [ADR 0060](docs/adr/0060-automate-the-deployed-smoke-journey.md). `.env.example` lists the safe placeholders.

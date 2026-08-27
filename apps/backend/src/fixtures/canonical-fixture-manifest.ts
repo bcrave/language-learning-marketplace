@@ -85,6 +85,8 @@ const classSessionSchema = z.object({
   offsetDays: z.number().int(),
   schedulingTimeZone: timeZone,
   seatCapacity: z.number().int().min(2).max(8),
+  /** Position in the touching real-clock sequence, beginning at the current hour. */
+  rollingOffsetHours: z.number().int().min(0).max(23).optional(),
 });
 
 const bookingSchema = z.object({
@@ -321,9 +323,12 @@ export const canonicalFixtureManifest: CanonicalFixtureManifest = manifestSchema
       // The smallest accepted Seat Capacity, so the range's lower bound is exercised.
       session("59", "es-a1-03", -20, 2),
       session("5a", "en-a1-05", -10),
-      // The one still-actionable Class Session: the future Booking and the Teacher's
-      // relationship-scoped Lesson Material access both hang off it.
+      // Touching real-clock Class Sessions keep both shared identities associated
+      // with a current or immediately upcoming simulated classroom.
       session("5b", "en-a1-05", 3),
+      { ...session("5c", "en-a1-05", 0), rollingOffsetHours: 0 },
+      { ...session("5d", "en-a1-05", 0), rollingOffsetHours: 1 },
+      { ...session("5e", "en-a1-05", 0), rollingOffsetHours: 2 },
     ],
     bookings: [
       attendedBooking("61", "51", ALEX),
@@ -351,6 +356,9 @@ export const canonicalFixtureManifest: CanonicalFixtureManifest = manifestSchema
         },
       },
       { id: showcaseId("6b"), classSessionId: showcaseId("5b"), studentUserId: ALEX, state: "ACTIVE" },
+      { id: showcaseId("6c"), classSessionId: showcaseId("5c"), studentUserId: ALEX, state: "ACTIVE" },
+      { id: showcaseId("6d"), classSessionId: showcaseId("5d"), studentUserId: ALEX, state: "ACTIVE" },
+      { id: showcaseId("6e"), classSessionId: showcaseId("5e"), studentUserId: ALEX, state: "ACTIVE" },
     ],
     creditEntries: [
       { studentUserId: ALEX, amount: 8, source: "ORGANIZATION_CREDIT_GRANT", sourceReference: `${CANONICAL_SPONSORSHIP_ID}:1`, reason: null },
@@ -389,11 +397,11 @@ export const canonicalFixtureManifest: CanonicalFixtureManifest = manifestSchema
       { studentUserId: ALEX, courseKey: "es-b1", completedActiveLessonUnitCount: 0, activeLessonUnitCount: 2 },
     ],
     // Eight subscription credits for Sofía; eight sponsored plus four adjusted less
-    // nine Bookings for Alex; three adjusted less one refunded Booking for Casey;
+    // twelve Bookings for Alex; three adjusted less one refunded Booking for Casey;
     // two adjusted less one forfeited Booking for Priya.
     creditBalances: [
       { studentUserId: SOFIA, availableBalance: 8 },
-      { studentUserId: ALEX, availableBalance: 3 },
+      { studentUserId: ALEX, availableBalance: 0 },
       { studentUserId: CASEY, availableBalance: 3 },
       { studentUserId: PRIYA, availableBalance: 1 },
     ],

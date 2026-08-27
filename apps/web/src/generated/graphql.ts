@@ -673,6 +673,7 @@ export type UserAccessStatus =
   | 'ACTIVE'
   | 'ANONYMIZATION_PENDING'
   | 'ANONYMIZED'
+  | 'FIXTURE_REMOVED'
   | 'SUSPENDED';
 
 export type UserAnonymizationState =

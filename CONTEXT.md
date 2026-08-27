@@ -22,6 +22,10 @@ _Avoid_: User Suspension, active role context, Teacher Qualification
 An irreversible Platform Administrator operation performed only after future commitments are resolved. It destroys the Auth0 identity and identifying profile data, removes public identity, redacts the anonymized Student's private feedback content, and leaves an opaque Former User identity for bookings, attendance, credits, progress, reports, and immutable audits. A returning person receives a new User.
 _Avoid_: User Suspension, role removal, hard deletion
 
+**Fixture-Removed User**:
+A noncanonical synthetic User retained only for immutable history after a Canonical Data Rebuild. The Project Owner removes its public profile and all marketplace access while preserving its external identity binding for explicit later cleanup.
+_Avoid_: User Suspension, User Anonymization, hard deletion
+
 **Display Time Zone**:
 A User's saved named regional time zone for presenting Class Session times and interpreting calendar-date filters, initially suggested from their browser and changed only with their consent. It affects display and discovery boundaries, not the scheduled session itself.
 _Avoid_: UTC offset, Teacher Availability time zone, browser time zone

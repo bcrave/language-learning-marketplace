@@ -5,6 +5,7 @@ import { classSessionReminderTasks } from "../class-session/class-session-remind
 import { parseAppConfig } from "../config.js";
 import { createDatabase } from "../database/database.js";
 import { migrateDatabase } from "../database/migrate.js";
+import { fixtureMaintenanceTasks } from "../fixtures/fixture-maintenance.js";
 import { notificationDeliveryTasks } from "../notification/notification-delivery-worker.js";
 import { reportExportTasks } from "../reporting/report-export-worker.js";
 import { sponsorshipTasks } from "../sponsorship/sponsorship-worker.js";
@@ -28,7 +29,7 @@ const runner = await run({
   concurrency: 1,
   noHandleSignals: true,
   pollInterval: 10_000,
-  crontab: "* * * * * deliver_class_session_reminders\n* * * * * process_waitlist_entries\n* * * * * deliver_notification_intents\n0 3 * * * compact_terminal_notifications\n* * * * * expire_sponsorship_invitations\n* * * * * grant_sponsorship_credits\n* * * * * generate_report_exports\n*/5 * * * * expire_report_exports\n* * * * * anonymize_users\n0 4 * * * maintain_audit_partitions",
+  crontab: "* * * * * deliver_class_session_reminders\n* * * * * process_waitlist_entries\n* * * * * deliver_notification_intents\n0 3 * * * compact_terminal_notifications\n* * * * * expire_sponsorship_invitations\n* * * * * grant_sponsorship_credits\n* * * * * generate_report_exports\n*/5 * * * * expire_report_exports\n* * * * * anonymize_users\n0 * * * * reconcile_rolling_fixtures\n0 4 * * * maintain_audit_partitions",
   taskList: {
     ...classSessionReminderTasks(db),
     ...waitlistTasks(db),
@@ -36,6 +37,7 @@ const runner = await run({
     ...sponsorshipTasks(db),
     ...reportExportTasks(db),
     ...userAnonymizationTasks(db, identityAdministration),
+    ...fixtureMaintenanceTasks(db),
     ...auditRetentionTasks(db),
   },
 });

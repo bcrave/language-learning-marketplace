@@ -9,7 +9,8 @@ export interface UsersTable {
   display_name: string;
   interface_locale: "en" | "es" | null;
   display_time_zone: string | null;
-  access_status: Generated<"ACTIVE" | "SUSPENDED" | "ANONYMIZATION_PENDING" | "ANONYMIZED">;
+  access_status: Generated<"ACTIVE" | "SUSPENDED" | "ANONYMIZATION_PENDING" | "ANONYMIZED" | "FIXTURE_REMOVED">;
+  fixture_removed_at: Generated<Date | null>;
   suspension_reason: Generated<string | null>;
   suspended_at: Generated<Date | null>;
   suspended_by_user_id: Generated<string | null>;
@@ -79,7 +80,7 @@ export interface RoleWorkspacePlacesTable {
 export interface AuditEntriesTable {
   id: Generated<string>;
   actor_user_id: string | null;
-  system_identity: "CLASS_SESSION_REMINDER_WORKER" | "WAITLIST_WORKER" | "NOTIFICATION_DELIVERY_WORKER" | "NOTIFICATION_MAINTENANCE_WORKER" | "SPONSORSHIP_INVITATION_WORKER" | "SPONSORSHIP_CREDIT_WORKER" | "REPORT_EXPORT_WORKER" | "USER_ANONYMIZATION_WORKER" | "AUDIT_RETENTION_WORKER" | "CANONICAL_FIXTURE_LOADER" | null;
+  system_identity: "CLASS_SESSION_REMINDER_WORKER" | "WAITLIST_WORKER" | "NOTIFICATION_DELIVERY_WORKER" | "NOTIFICATION_MAINTENANCE_WORKER" | "SPONSORSHIP_INVITATION_WORKER" | "SPONSORSHIP_CREDIT_WORKER" | "REPORT_EXPORT_WORKER" | "USER_ANONYMIZATION_WORKER" | "AUDIT_RETENTION_WORKER" | "CANONICAL_FIXTURE_LOADER" | "FIXTURE_MAINTENANCE_WORKER" | "CANONICAL_DATA_REBUILD" | null;
   acting_role: UserRole | null;
   operation: string;
   target_type: string;
@@ -88,12 +89,45 @@ export interface AuditEntriesTable {
   reason_code: string;
   correlation_id: string;
   occurred_at: Generated<Date>;
+  evidence: ColumnType<Record<string, unknown>, string | undefined, string>;
 }
 
 export interface WorkerHeartbeatsTable {
   worker_name: string;
   release: string;
   observed_at: Generated<Date>;
+}
+
+export interface MaintenanceStateTable {
+  singleton: boolean;
+  state: "AVAILABLE" | "REBUILDING" | "INDETERMINATE";
+  holder_id: string | null;
+  correlation_id: string | null;
+  fixture_manifest_version: string | null;
+  fixture_generation: Generated<number>;
+  changed_at: Generated<Date>;
+}
+
+export interface CanonicalDataRebuildsTable {
+  dispatch_id: string;
+  correlation_id: string;
+  fixture_manifest_version: string;
+  fixture_generation: number;
+  schema_version: string;
+  initiator: "PROJECT_OWNER" | "SCHEDULED_SYSTEM";
+  owner_reason: string;
+  validation_evidence: ColumnType<Record<string, unknown>, string, string>;
+  state: "STARTED" | "COMPLETED" | "ROLLED_BACK" | "INDETERMINATE";
+  safe_failure_code: string | null;
+  started_at: Date;
+  completed_at: Date | null;
+}
+
+export interface RollingFixtureReconciliationsTable {
+  correlation_id: string;
+  reconciled_for: Date;
+  advanced_fixture_count: number;
+  completed_at: Date;
 }
 
 export interface SchemaMigrationsTable {
@@ -114,7 +148,7 @@ export interface LessonMaterialsTable { id: Generated<string>; lesson_unit_id: s
 export interface TeacherProfilesTable { teacher_user_id: string; pronouns: string | null; profile_image_url: string | null; professional_bio: string; updated_at: Generated<Date> }
 export interface TeacherProfileTopicsTable { teacher_user_id: string; topic_key: string }
 export interface TeacherQualificationsTable { id: Generated<string>; teacher_user_id: string; target_language: string; curriculum_level: CurriculumLevel; granted_by_user_id: string; granted_at: Generated<Date> }
-export interface ClassSessionsTable { id: Generated<string>; lesson_unit_id: string; teacher_user_id: string; starts_at: Date; scheduling_time_zone: string; seat_capacity: Generated<number>; occupied_seats: Generated<number>; state: "PUBLISHED" | "CANCELLED"; cancellation_reason: Generated<string | null>; cancelled_at: Generated<Date | null> }
+export interface ClassSessionsTable { id: Generated<string>; lesson_unit_id: string; teacher_user_id: string; starts_at: Date; scheduling_time_zone: string; seat_capacity: Generated<number>; occupied_seats: Generated<number>; state: "PUBLISHED" | "CANCELLED"; cancellation_reason: Generated<string | null>; cancelled_at: Generated<Date | null>; is_rolling_fixture: Generated<boolean>; rolling_offset_hours: Generated<number | null> }
 export interface ScheduleCommitmentsTable { id: Generated<string>; user_id: string; class_session_id: string; commitment_role: "STUDENT" | "TEACHER"; starts_at: Date; ends_at: Date; active: Generated<boolean> }
 export interface BookingsTable { id: Generated<string>; student_user_id: string; class_session_id: string; teacher_user_id_at_booking: string; state: Generated<"ACTIVE" | "ENDED">; terminal_reason: "STUDENT_CANCELLATION" | "RESCHEDULED" | "CLASS_SESSION_CANCELLATION" | "ROLE_ASSIGNMENT_REMOVAL" | "USER_SUSPENSION" | null; class_credit_refunded: Generated<boolean>; late_cancellation_refund_until: Date | null; rescheduled_from_booking_id: Generated<string | null>; booked_at: Generated<Date>; ended_at: Date | null }
 export type WaitlistTerminalReason = "WITHDRAWN" | "PROMOTED" | "EXPIRED" | "CLASS_SESSION_UNAVAILABLE" | "INSUFFICIENT_CLASS_CREDITS" | "SCHEDULE_CONFLICT" | "ALREADY_BOOKED" | "ROLE_ASSIGNMENT_REMOVAL" | "USER_SUSPENSION";
@@ -196,6 +230,9 @@ export interface DatabaseSchema {
   role_workspace_places: RoleWorkspacePlacesTable;
   audit_entries: AuditEntriesTable;
   worker_heartbeats: WorkerHeartbeatsTable;
+  maintenance_state: MaintenanceStateTable;
+  canonical_data_rebuilds: CanonicalDataRebuildsTable;
+  rolling_fixture_reconciliations: RollingFixtureReconciliationsTable;
   schema_migrations: SchemaMigrationsTable;
   curriculum_levels: CurriculumLevelsTable;
   student_placements: StudentPlacementsTable;
