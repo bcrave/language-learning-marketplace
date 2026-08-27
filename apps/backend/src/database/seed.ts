@@ -1,5 +1,6 @@
 import { pathToFileURL } from "node:url";
 
+import { parseDemonstrationIdentityBinding } from "../auth/demonstration-identities.js";
 import { parseAppConfig } from "../config.js";
 import { loadCanonicalFixtures } from "../fixtures/canonical-fixture-loader.js";
 import { createDatabase } from "./database.js";
@@ -15,7 +16,10 @@ async function main() {
   const db = createDatabase(config.DATABASE_URL);
   try {
     await migrateDatabase(db);
-    const { manifestVersion } = await loadCanonicalFixtures(db);
+    const identityBinding = parseDemonstrationIdentityBinding(process.env);
+    const { manifestVersion } = await loadCanonicalFixtures(db, {
+      ...(identityBinding ? { identityBinding } : {}),
+    });
     process.stdout.write(`Loaded canonical fixture manifest ${manifestVersion}\n`);
   } finally {
     await db.destroy();

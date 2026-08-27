@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { UserIdentity } from "@marketplace/core";
 
 import type { IdentityAdministration } from "./identity-administration.js";
+import { normalizedIssuer } from "./issuer.js";
 
 const tokenResponseSchema = z.object({ access_token: z.string().min(1), expires_in: z.number().positive() });
 
@@ -14,7 +15,7 @@ export class Auth0IdentityAdministration implements IdentityAdministration {
   #token: { value: string; expiresAt: number } | null = null;
 
   constructor(options: { issuer: string; clientId: string; clientSecret: string; fetch?: typeof fetch }) {
-    this.#issuer = options.issuer.endsWith("/") ? options.issuer : `${options.issuer}/`;
+    this.#issuer = normalizedIssuer(options.issuer);
     this.#clientId = options.clientId;
     this.#clientSecret = options.clientSecret;
     this.#fetch = options.fetch ?? globalThis.fetch;

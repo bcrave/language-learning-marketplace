@@ -20,6 +20,12 @@ await build({
         "src/api/main.ts",
         "src/database/migrate.ts",
         "src/database/seed.ts",
+        // The release's own entry points: the shared identity binding and the
+        // readiness gates run inside Railway as pre-deploy steps, and the
+        // deployed smoke journey runs from the release job after them.
+        "src/operations/bind-identities-main.ts",
+        "src/operations/deployed-smoke-main.ts",
+        "src/operations/release-gate-main.ts",
         "src/worker/main.ts",
       ],
   format: "esm",

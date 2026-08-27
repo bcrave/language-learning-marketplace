@@ -10,6 +10,7 @@ import { reportExportTasks } from "../reporting/report-export-worker.js";
 import { sponsorshipTasks } from "../sponsorship/sponsorship-worker.js";
 import { waitlistTasks } from "../waitlist/waitlist-worker.js";
 import { userAnonymizationTasks } from "../authorization/user-anonymization-worker.js";
+import { startWorkerHeartbeat } from "./worker-heartbeat.js";
 import { Auth0IdentityAdministration } from "../auth/auth0-identity-administration.js";
 import { createSimulatedIdentityAdministration, createUnavailableIdentityAdministration } from "../auth/identity-administration.js";
 
@@ -39,9 +40,21 @@ const runner = await run({
   },
 });
 
-console.log(JSON.stringify({ event: "worker.started" }));
+// ADR 0038 holds the browser client back until the worker is observably live,
+// and the worker answers no HTTP probe. The heartbeat starts before the
+// release is announced so the gate reads a value written by this release.
+const heartbeat = startWorkerHeartbeat({
+  db,
+  release: config.APP_RELEASE,
+  onFailure: () =>
+    console.log(JSON.stringify({ event: "worker.heartbeat.failed" })),
+});
+await heartbeat.written;
+
+console.log(JSON.stringify({ event: "worker.started", release: config.APP_RELEASE }));
 
 async function shutdown() {
+  heartbeat.stop();
   await runner.stop();
   await db.destroy();
 }

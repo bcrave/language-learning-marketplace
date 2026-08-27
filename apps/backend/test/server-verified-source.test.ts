@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createMarketplaceServer } from "../src/api/server.js";
+import { latestMigrationName } from "../src/database/migrate.js";
 
 const TRUSTED_PROXY_SECRET = "caddy-shared-secret-for-verified-source-context";
 
@@ -32,6 +33,7 @@ async function startServer(options: {
 }) {
   const server = createMarketplaceServer({
     api: answeringApi,
+    currentSchemaMigration: await latestMigrationName(),
     db: unusedDatabase,
     logger: silentLogger,
     sourceRequestLimit: options.sourceRequestLimit,

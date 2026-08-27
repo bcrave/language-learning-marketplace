@@ -2,6 +2,8 @@ import type { Authenticator } from "@marketplace/core";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { z } from "zod";
 
+import { normalizedIssuer } from "./issuer.js";
+
 const auth0IdentitySchema = z.object({
   iss: z.url(),
   sub: z.string().min(1).max(255),
@@ -14,7 +16,7 @@ export class Auth0Authenticator implements Authenticator {
 
   constructor(options: { audience: string; issuer: string }) {
     this.#audience = options.audience;
-    this.#issuer = options.issuer.endsWith("/") ? options.issuer : `${options.issuer}/`;
+    this.#issuer = normalizedIssuer(options.issuer);
     this.#jwks = createRemoteJWKSet(new URL(".well-known/jwks.json", this.#issuer));
   }
 

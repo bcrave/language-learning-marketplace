@@ -90,6 +90,12 @@ export interface AuditEntriesTable {
   occurred_at: Generated<Date>;
 }
 
+export interface WorkerHeartbeatsTable {
+  worker_name: string;
+  release: string;
+  observed_at: Generated<Date>;
+}
+
 export interface SchemaMigrationsTable {
   name: string;
   applied_at: Generated<Date>;
@@ -189,6 +195,7 @@ export interface DatabaseSchema {
   role_assignment_changes: RoleAssignmentChangesTable;
   role_workspace_places: RoleWorkspacePlacesTable;
   audit_entries: AuditEntriesTable;
+  worker_heartbeats: WorkerHeartbeatsTable;
   schema_migrations: SchemaMigrationsTable;
   curriculum_levels: CurriculumLevelsTable;
   student_placements: StudentPlacementsTable;

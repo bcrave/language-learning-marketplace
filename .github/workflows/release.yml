@@ -1,0 +1,106 @@
+name: Release
+
+# ADR 0020 makes GitHub Actions the deployment control plane: Railway service
+# autodeploys stay disabled, and this serialized job orchestrates the release
+# after Quality passes on `main`. It runs in the protected `production`
+# environment, whose Project Owner approval releases its least-privilege
+# secrets for that run only. No credential is returned to the owner session.
+#
+# ADR 0038 fixes the order: database, then API, then the worker heartbeat, then
+# the Caddy-hosted browser client, then the deployed smoke journey. A failed
+# stage stops every later one, and a failed job is the owner-attention route
+# the operator guide names for deployment incidents.
+#
+# The database steps and the readiness gates are deliberately *not* here. They
+# run as Railway pre-deploy commands inside the project's private network
+# (`deploy/railway/*.json`), because ADR 0028 gives the API no public address
+# and ADR 0039 holds only the deployment token in GitHub. The smoke journey's
+# own credentials are the one documented exception, recorded in ADR 0060.
+
+on:
+  workflow_run:
+    workflows: [Quality]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# The current release finishes without preemption; the next one waits.
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 24.15.0
+  PNPM_VERSION: 11.0.0
+
+jobs:
+  release:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 45
+    env:
+      APP_RELEASE: ${{ github.event.workflow_run.head_sha || github.sha }}
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_DEPLOYMENT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @marketplace/backend build
+      - run: npm install --global @railway/cli
+
+      # The API first, holding the previous client contract during rollout. Its
+      # pre-deploy applies the expand-and-contract migrations (ADR 0021, never
+      # automatically reversed) and binds ADR 0019's shared reviewer identities
+      # to the Auth0 tenant. Railway then holds the deployment until
+      # `/health/ready` proves PostgreSQL access and schema compatibility.
+      - name: Deploy the API
+        timeout-minutes: 10
+        run: |
+          railway variables --service api --set "APP_RELEASE=$APP_RELEASE" --skip-deploys
+          railway up --service api --ci
+
+      # Then the worker, which writes its heartbeat as it starts.
+      - name: Deploy the worker
+        timeout-minutes: 10
+        run: |
+          railway variables --service worker --set "APP_RELEASE=$APP_RELEASE" --skip-deploys
+          railway up --service worker --ci
+
+      # The browser client last, behind the single public origin of ADR 0028.
+      # Its pre-deploy is the gate between the API and the client: three
+      # consecutive readiness successes from the API, then a worker heartbeat
+      # that is fresh, on this release, and observably still advancing.
+      - name: Deploy the browser client
+        timeout-minutes: 10
+        run: |
+          railway variables --service web --set "APP_RELEASE=$APP_RELEASE" --skip-deploys
+          railway up --service web --ci
+
+      # The deployed smoke journey: authentication, Interface Locale, Class
+      # Session Discovery, Booking, Student Cancellation, and the Audit
+      # Entries those mutations leave behind, as shared reviewer identities.
+      - name: Run the deployed smoke journey
+        timeout-minutes: 10
+        env:
+          PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
+          AUTH0_ISSUER: ${{ vars.AUTH0_ISSUER }}
+          AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
+          SMOKE_CLIENT_ID: ${{ secrets.SMOKE_CLIENT_ID }}
+          SMOKE_CLIENT_SECRET: ${{ secrets.SMOKE_CLIENT_SECRET }}
+          SMOKE_STUDENT_USERNAME: ${{ secrets.SMOKE_STUDENT_USERNAME }}
+          SMOKE_STUDENT_PASSWORD: ${{ secrets.SMOKE_STUDENT_PASSWORD }}
+          SMOKE_ADMINISTRATOR_USERNAME: ${{ secrets.SMOKE_ADMINISTRATOR_USERNAME }}
+          SMOKE_ADMINISTRATOR_PASSWORD: ${{ secrets.SMOKE_ADMINISTRATOR_PASSWORD }}
+        run: pnpm --filter @marketplace/backend release:smoke
