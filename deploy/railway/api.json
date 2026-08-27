@@ -5,6 +5,7 @@
     "buildCommand": "pnpm install --frozen-lockfile && pnpm --filter @marketplace/backend build"
   },
   "deploy": {
+    "preDeployCommand": "pnpm db:migrate && node apps/backend/dist/operations/bind-identities-main.js",
     "startCommand": "pnpm --filter @marketplace/backend start:api",
     "healthcheckPath": "/health/ready",
     "healthcheckTimeout": 600,

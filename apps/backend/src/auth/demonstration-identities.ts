@@ -1,7 +1,8 @@
-import { USER_ROLES, type UserRole } from "@marketplace/core";
+import { USER_ROLES } from "@marketplace/core";
 import { z } from "zod";
 
 import type { Database } from "../database/database.js";
+import { normalizedIssuer } from "./issuer.js";
 import {
   canonicalFixtureManifest,
   type CanonicalFixtureManifest,
@@ -62,7 +63,7 @@ export function parseDemonstrationIdentityBinding(
   }
 
   return validateDemonstrationIdentityBinding(
-    { issuer: issuer.endsWith("/") ? issuer : `${issuer}/`, subjects: subjects.data },
+    { issuer: normalizedIssuer(issuer), subjects: subjects.data },
     manifest,
   );
 }
@@ -123,13 +124,4 @@ export async function bindDemonstrationIdentities(
       .where("id", "=", userId)
       .execute();
   }
-}
-
-/** The roles a bound identity may act in, taken only from the manifest. */
-export function rolesForDemonstrationIdentity(
-  userId: string,
-  manifest: CanonicalFixtureManifest = canonicalFixtureManifest,
-): UserRole[] {
-  const identity = manifest.identities.find((candidate) => candidate.id === userId);
-  return identity ? [...identity.roles] : [];
 }

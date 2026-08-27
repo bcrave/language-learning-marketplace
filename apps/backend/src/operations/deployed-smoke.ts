@@ -133,9 +133,7 @@ export async function runDeployedSmoke(
         `the Student workspace opened as ${workspace.actingRole}/${workspace.relationshipScope}`,
       );
     }
-    const savedLocale = workspace.user.interfaceLocale;
-    const savedTimeZone = workspace.user.displayTimeZone;
-    if (!savedLocale || !savedTimeZone) {
+    if (!workspace.user.interfaceLocale || !workspace.user.displayTimeZone) {
       fail(
         "authentication.studentIdentified",
         "the shared Student identity has no saved Interface Locale and Display Time Zone",
@@ -143,75 +141,35 @@ export async function runDeployedSmoke(
     }
     record("authentication.studentIdentified", "the shared Student reached its own workspace");
 
-    // Localization. The same Topics come back in the saved Interface Locale,
-    // which is what a reviewer switching languages actually observes.
-    async function topicsIn(locale: "EN" | "ES") {
-      const saved = await graphql(
-        "student",
-        `mutation SmokePreferences($input: SaveUserPreferencesInput!) {
-          saveUserPreferences(input: $input) { user { interfaceLocale } }
-        }`,
-        {
-          input: {
-            actingRole: "STUDENT",
-            interfaceLocale: locale,
-            displayTimeZone: savedTimeZone,
-          },
-        },
-      );
-      fieldOf("localization.topicsLocalized", saved, "saveUserPreferences");
-      return fieldOf<{
-        targetLanguages: string[];
-        topics: { key: string; label: string; labelEn: string; labelEs: string }[];
-      }>(
-        "localization.topicsLocalized",
-        await graphql(
-          "student",
-          `query SmokeDiscoveryOptions {
-            classSessionDiscoveryOptions {
-              targetLanguages
-              topics { key label labelEn labelEs }
-            }
-          }`,
-        ),
-        "classSessionDiscoveryOptions",
-      );
-    }
-
-    const spanish = await topicsIn("ES");
-    // A catalog whose two languages happen to be identical would pass a
-    // label comparison without localizing anything.
-    if (!spanish.topics.some((topic) => topic.labelEs !== topic.labelEn)) {
-      fail("localization.topicsLocalized", "no Topic distinguishes its two locales");
-    }
-    if (!spanish.topics.every((topic) => topic.label === topic.labelEs)) {
-      fail("localization.topicsLocalized", "a Topic did not answer in Spanish");
-    }
-    const english = await topicsIn("EN");
-    if (!english.topics.every((topic) => topic.label === topic.labelEn)) {
-      fail("localization.topicsLocalized", "a Topic did not answer in English");
-    }
-    // A smoke run is not allowed to leave a shared identity changed behind it.
-    if (savedLocale !== "EN") await topicsIn(savedLocale);
-    record(
-      "localization.topicsLocalized",
-      `${spanish.topics.length} Topics answered in both Interface Locales`,
-    );
-
     // Discovery. The journey needs a still-actionable Class Session with a free
     // seat far enough ahead that its Student Cancellation refunds, so it looks
     // for one rather than assuming a fixture identifier.
+    const discoveryOptions = fieldOf<{ targetLanguages: string[] }>(
+      "discovery.results",
+      await graphql(
+        "student",
+        "query SmokeDiscoveryOptions { classSessionDiscoveryOptions { targetLanguages } }",
+      ),
+      "classSessionDiscoveryOptions",
+    );
     const bookableFrom = new Date(now().getTime() + REFUNDABLE_CANCELLATION_MILLISECONDS);
     let bookable:
-      | { id: string; startsAt: string; seatCapacity: number; occupiedSeats: number }
+      | {
+          id: string;
+          startsAt: string;
+          seatCapacity: number;
+          occupiedSeats: number;
+          teacherProfile: { id: string };
+        }
       | undefined;
-    for (const targetLanguage of english.targetLanguages) {
+    for (const targetLanguage of discoveryOptions.targetLanguages) {
       const connection = fieldOf<{
         nodes: {
           id: string;
           startsAt: string;
           seatCapacity: number;
           occupiedSeats: number;
+          teacherProfile: { id: string };
         }[];
       }>(
         "discovery.results",
@@ -219,7 +177,13 @@ export async function runDeployedSmoke(
           "student",
           `query SmokeDiscovery($input: ClassSessionDiscoveryInput!) {
             discoverClassSessions(input: $input) {
-              nodes { id startsAt seatCapacity occupiedSeats }
+              nodes {
+                id
+                startsAt
+                seatCapacity
+                occupiedSeats
+                teacherProfile { id }
+              }
             }
           }`,
           { input: { targetLanguage } },
@@ -236,7 +200,49 @@ export async function runDeployedSmoke(
     if (!bookable) {
       fail("discovery.results", "no discoverable Class Session had a refundable free seat");
     }
+    const bookableSession = bookable;
     record("discovery.results", "Class Session Discovery offered a bookable seat");
+
+    // Localization. The discovered Teacher Profile answers in whichever
+    // Interface Locale is asked for. It is read with an explicit locale rather
+    // than by changing anyone's saved preference: CONTEXT.md lets a User's
+    // Interface Locale be "changed only by the User", and a release is not a
+    // User.
+    async function teachingTopicsIn(locale: "EN" | "ES") {
+      return fieldOf<{
+        teachingTopics: { key: string; label: string; labelEn: string; labelEs: string }[];
+      }>(
+        "localization.teacherProfileLocalized",
+        await graphql(
+          "student",
+          `query SmokeTeacherProfile($teacherUserId: ID!, $locale: InterfaceLocale!) {
+            publicTeacherProfile(teacherUserId: $teacherUserId, locale: $locale) {
+              teachingTopics { key label labelEn labelEs }
+            }
+          }`,
+          { teacherUserId: bookableSession.teacherProfile.id, locale },
+        ),
+        "publicTeacherProfile",
+      ).teachingTopics;
+    }
+
+    const spanish = await teachingTopicsIn("ES");
+    // A catalog whose two languages happen to be identical would pass a label
+    // comparison without localizing anything.
+    if (!spanish.some((topic) => topic.labelEs !== topic.labelEn)) {
+      fail("localization.teacherProfileLocalized", "no Topic distinguishes its two locales");
+    }
+    if (!spanish.every((topic) => topic.label === topic.labelEs)) {
+      fail("localization.teacherProfileLocalized", "a Topic did not answer in Spanish");
+    }
+    const english = await teachingTopicsIn("EN");
+    if (!english.every((topic) => topic.label === topic.labelEn)) {
+      fail("localization.teacherProfileLocalized", "a Topic did not answer in English");
+    }
+    record(
+      "localization.teacherProfileLocalized",
+      `${spanish.length} Topics answered in both Interface Locales`,
+    );
 
     const balanceBefore = fieldOf<{ availableBalance: number }>(
       "booking.created",
@@ -267,7 +273,7 @@ export async function runDeployedSmoke(
             ... on BookingError { code }
           }
         }`,
-        { input: { idempotencyKey: randomUUID(), classSessionId: bookable.id } },
+        { input: { idempotencyKey: randomUUID(), classSessionId: bookableSession.id } },
       ),
       "bookClassSession",
     );

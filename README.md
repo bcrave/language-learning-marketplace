@@ -39,10 +39,11 @@ The integration project creates an unprivileged, disposable PostgreSQL container
 
 Railway service autodeploys stay disabled. The serialized `Release` workflow orchestrates a deployment from the protected `production` environment after `Quality` passes on `main`, in the order [ADR 0038](docs/adr/0038-deploy-api-first-and-frontend-last.md) requires:
 
-1. **Database** — `pnpm db:migrate` applies the expand-and-contract migrations this release ships.
-2. **API** — Railway holds the deployment until `/health/ready` proves PostgreSQL access and that the newest migration this build ships is applied.
-3. **Worker** — `pnpm --filter @marketplace/backend release:worker-gate` waits for a fresh PostgreSQL heartbeat carrying this release. The worker speaks no HTTP; `/health/worker` on the API serves the same fact to internal probing.
-4. **Browser client** — the Caddy service, the deployment's only public origin.
-5. **Deployed smoke journey** — `pnpm --filter @marketplace/backend release:smoke` signs in as [ADR 0019](docs/adr/0019-use-resettable-role-specific-demo-accounts.md)'s shared identities and walks authentication, Interface Locale, Class Session Discovery, Booking, Student Cancellation, and the Audit Entries those mutations leave behind.
+1. **API, with the database ahead of it** — its Railway pre-deploy applies the expand-and-contract migrations this release ships and binds [ADR 0019](docs/adr/0019-use-resettable-role-specific-demo-accounts.md)'s shared reviewer identities to the Auth0 tenant. Railway then holds the deployment until `/health/ready` proves PostgreSQL access and that the newest migration this build ships is applied.
+2. **Worker** — it writes a PostgreSQL heartbeat naming its release as it starts.
+3. **Browser client** — the Caddy service, the deployment's only public origin. Its pre-deploy is the gate between the API and the client: three consecutive `/health/ready` successes, then a `/health/worker` heartbeat that is fresh, on this release, and observably still advancing — a heartbeat written once by a worker that then died is refused.
+4. **Deployed smoke journey** — `pnpm --filter @marketplace/backend release:smoke` signs in as the shared identities and walks authentication, Interface Locale, Class Session Discovery, Booking, Student Cancellation, and the Audit Entries those mutations leave behind.
 
-A failed stage stops every later one. Service variables, deployment tokens, and the smoke journey's credentials live in their least-privilege stores and never reach the browser build or a workflow log; `.env.example` lists the safe placeholders.
+A failed stage stops every later one, and a failed job is the owner-attention route for deployment incidents.
+
+The database work and both readiness gates run as Railway pre-deploy commands rather than workflow steps ([`deploy/railway/`](deploy/railway/)). That is deliberate: the API has no public address ([ADR 0028](docs/adr/0028-use-a-single-public-origin.md)), its health probes are internal, and GitHub holds no database credential ([ADR 0039](docs/adr/0039-separate-public-client-configuration-from-secrets.md)). The smoke journey's own Auth0 principal is the one documented exception, recorded in [ADR 0060](docs/adr/0060-automate-the-deployed-smoke-journey.md). `.env.example` lists the safe placeholders.

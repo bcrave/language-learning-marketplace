@@ -123,7 +123,14 @@ export function createMarketplaceServer(options: {
           sendJson(response, 503, { status: "unavailable" });
           return;
         }
-        sendJson(response, 200, { status: "ready", release: heartbeat.release });
+        // The heartbeat's own instant travels with it: a release gate needs to
+        // watch it advance, because a single write from a minute ago satisfies
+        // any number of probes inside the three-minute staleness window.
+        sendJson(response, 200, {
+          status: "ready",
+          release: heartbeat.release,
+          observedAt: heartbeat.observedAt.toISOString(),
+        });
       } catch {
         options.logger.warn({ event: "worker.heartbeat.unreadable" });
         sendJson(response, 503, { status: "unavailable" });

@@ -31,10 +31,10 @@ export interface WorkerHeartbeat {
 
 export async function writeWorkerHeartbeat(
   db: Database,
-  heartbeat: { workerName?: string; release: string; observedAt: Date },
+  heartbeat: { release: string; observedAt: Date },
 ): Promise<void> {
   const row = {
-    worker_name: heartbeat.workerName ?? MARKETPLACE_WORKER_NAME,
+    worker_name: MARKETPLACE_WORKER_NAME,
     release: heartbeat.release,
     observed_at: heartbeat.observedAt,
   };
@@ -50,14 +50,11 @@ export async function writeWorkerHeartbeat(
     .execute();
 }
 
-export async function readWorkerHeartbeat(
-  db: Database,
-  workerName = MARKETPLACE_WORKER_NAME,
-): Promise<WorkerHeartbeat | null> {
+export async function readWorkerHeartbeat(db: Database): Promise<WorkerHeartbeat | null> {
   const row = await db
     .selectFrom("worker_heartbeats")
     .select(["worker_name", "release", "observed_at"])
-    .where("worker_name", "=", workerName)
+    .where("worker_name", "=", MARKETPLACE_WORKER_NAME)
     .executeTakeFirst();
   return row
     ? { workerName: row.worker_name, release: row.release, observedAt: row.observed_at }

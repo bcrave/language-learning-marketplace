@@ -123,12 +123,18 @@ describe("deployment readiness probes", () => {
     });
   });
 
-  it("reports the release a fresh worker heartbeat names", async () => {
+  it("reports the release and instant a fresh worker heartbeat names", async () => {
     await writeWorkerHeartbeat(db, { release: "release-a", observedAt: now });
 
+    // The instant travels with it so a release gate can watch it advance: one
+    // write satisfies any number of probes inside the staleness window.
     expect(await probe("/health/worker")).toEqual({
       status: 200,
-      body: { status: "ready", release: "release-a" },
+      body: {
+        status: "ready",
+        release: "release-a",
+        observedAt: now.toISOString(),
+      },
     });
   });
 
@@ -166,7 +172,11 @@ describe("deployment readiness probes", () => {
 
     expect(await probe("/health/worker")).toEqual({
       status: 200,
-      body: { status: "ready", release: "release-c" },
+      body: {
+        status: "ready",
+        release: "release-c",
+        observedAt: now.toISOString(),
+      },
     });
   });
 

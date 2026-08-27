@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { normalizedIssuer } from "../auth/issuer.js";
+
 /**
  * Obtains an access token for one shared demonstration identity so the release
  * job can drive the deployed smoke journey (ADR 0038) as a real reviewer would.
@@ -27,7 +29,7 @@ export async function requestDemonstrationAccessToken(options: {
   credential: DemonstrationCredential;
   fetch?: typeof fetch;
 }): Promise<string> {
-  const issuer = options.issuer.endsWith("/") ? options.issuer : `${options.issuer}/`;
+  const issuer = normalizedIssuer(options.issuer);
   const call = options.fetch ?? fetch;
   const response = await call(`${issuer}oauth/token`, {
     method: "POST",

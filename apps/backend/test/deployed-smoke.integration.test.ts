@@ -80,8 +80,8 @@ describe("deployed smoke journey", () => {
     expect(report.checks.map(({ name }) => name)).toEqual([
       "authentication.anonymousDenied",
       "authentication.studentIdentified",
-      "localization.topicsLocalized",
       "discovery.results",
+      "localization.teacherProfileLocalized",
       "booking.created",
       "booking.cancelled",
       "audit.entriesRecorded",
@@ -89,7 +89,7 @@ describe("deployed smoke journey", () => {
     expect(report.passed).toBe(true);
   });
 
-  it("leaves the shared Student's Class Credits and Interface Locale as it found them", async () => {
+  it("leaves the shared Student's Class Credits and saved preferences untouched", async () => {
     const before = await db
       .selectFrom("class_credit_accounts")
       .select("available_balance")
