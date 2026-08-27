@@ -8,6 +8,7 @@ import { validateCanonicalFixtures, type FixtureInvariantViolation } from "./can
 import {
   CANONICAL_IDENTITY_ISSUER,
   canonicalFixtureManifest,
+  lessonGuideTitle,
   type CanonicalFixtureManifest,
 } from "./canonical-fixture-manifest.js";
 
@@ -109,9 +110,9 @@ export async function applyCanonicalIdentities(db: Database, options: CanonicalL
   }
 }
 
-function lessonGuide(title: string, objectives: string[], authoredInSpanish: boolean) {
+function lessonGuide(guideTitle: string, title: string, objectives: string[], authoredInSpanish: boolean) {
   return [
-    { type: "heading", level: 2, text: authoredInSpanish ? `Guía de la unidad: ${title}` : `Lesson guide: ${title}` },
+    { type: "heading", level: 2, text: guideTitle },
     { type: "paragraph", text: authoredInSpanish ? "Guía original para una sesión de clase de 60 minutos." : "Original guide for a teacher-led 60-minute Class Session." },
     { type: "list", items: objectives },
     { type: "heading", level: 3, text: authoredInSpanish ? "Lenguaje clave" : "Key language" },
@@ -166,8 +167,8 @@ export async function applyCanonicalCurriculum(db: Database, options: CanonicalL
         await transaction.insertInto("lesson_unit_topics")
           .values(topicKeys.map((topic_key) => ({ lesson_unit_id: unit.id, topic_key }))).execute();
 
-        const guideTitle = authoredInSpanish ? `Guía de la unidad: ${title}` : `Lesson guide: ${title}`;
-        const structured_content = JSON.stringify(lessonGuide(title, objectives, authoredInSpanish));
+        const guideTitle = lessonGuideTitle(stable_key, title);
+        const structured_content = JSON.stringify(lessonGuide(guideTitle, title, objectives, authoredInSpanish));
         // Materials are read in `created_at` order, and a transaction's `now()` is one
         // instant for every row it writes. Stamping the original guide ahead of its
         // supplemental reference keeps the reading order stable across reloads

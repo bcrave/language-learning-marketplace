@@ -5,6 +5,7 @@ import type { Database } from "../database/database.js";
 import { accessibleLessonUnits } from "../learning-access/learning-access-service.js";
 import {
   CANONICAL_IDENTITY_ISSUER,
+  lessonGuideTitle,
   type CanonicalFixtureManifest,
 } from "./canonical-fixture-manifest.js";
 
@@ -85,8 +86,7 @@ export async function validateCanonicalFixtures(
       fail("provenance.guide", `${unit.stable_key} has no original structured guide`);
       continue;
     }
-    const expectedPrefix = unit.stable_key.startsWith("es-") ? "Guía de la unidad: " : "Lesson guide: ";
-    if (guide.title !== `${expectedPrefix}${unit.title}`) {
+    if (guide.title !== lessonGuideTitle(unit.stable_key, unit.title)) {
       fail("provenance.guide", `${unit.stable_key} guide title is not authored in its target language`);
     }
   }

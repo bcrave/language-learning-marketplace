@@ -34,6 +34,15 @@ export const CANONICAL_COHORT_MEMBERSHIP_ID = "00000000-0000-4000-8000-000000000
 /** Synthetic issuer: no demonstration identity maps to a real external account. */
 export const CANONICAL_IDENTITY_ISSUER = "https://fake.local/";
 
+/**
+ * A Lesson Unit's original guide is titled in the unit's own target language, which
+ * is how the fixture keeps authored content out of Interface Locale's reach. The
+ * loader writes this title and the invariants read it back, so both ask one function.
+ */
+export function lessonGuideTitle(unitStableKey: string, unitTitle: string) {
+  return unitStableKey.startsWith("es-") ? `Guía de la unidad: ${unitTitle}` : `Lesson guide: ${unitTitle}`;
+}
+
 const curriculumLevel = z.enum(["A1", "A2", "B1", "B2", "C1", "C2"]);
 const userRole = z.enum(["STUDENT", "TEACHER", "ORGANIZATION_MANAGER", "PLATFORM_ADMINISTRATOR"]);
 const uuid = z.uuid();
