@@ -208,6 +208,18 @@ _Avoid_: Learning Feedback, public review, teacher testimonial
 The scheduled-system or Project Owner operation that returns the public demonstration's mutable synthetic marketplace state to its versioned canonical fixture baseline while leaving the deployed application, infrastructure, and provider identities in place.
 _Avoid_: Demo rebuild, application rebuild, deployment, backup restoration
 
+**Canonical Data Recovery**:
+The separate protected Project Owner workflow that resolves a Canonical Data Rebuild left in an unverified terminal state. It assesses first without changing anything, then in a later dispatch either verifies and reopens the current state or authorizes a clean Canonical Data Rebuild against the named incident.
+_Avoid_: Retry, rerun, rollback, backup restoration
+
+**Fixture Generation**:
+The monotonic count of completed Canonical Data Rebuilds. It names which canonical baseline the mutable synthetic state currently descends from, so recovery evidence can say whether a replacement ever committed.
+_Avoid_: Schema version, fixture manifest version, release
+
+**Rolling Fixture**:
+A manifest-designated Class Session whose start instant is advanced to a fixed whole-hour position relative to the real clock, so public synthetic journeys stay time-relevant. Hourly maintenance moves only these, and carries forward whether each Schedule Commitment was still active.
+_Avoid_: Recurring Class Session, Teacher Availability, seeded session
+
 **Security Release Gate**:
 The fail-closed body of required evidence that must pass before public launch and after a security-relevant change. A failed, missing, flaky, or unexplained result blocks release; only a finding wholly within an already accepted residual risk may proceed with dated Project Owner sign-off.
 _Avoid_: Security checklist, best-effort scan, optional hardening

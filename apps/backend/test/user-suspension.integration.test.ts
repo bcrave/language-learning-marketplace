@@ -210,6 +210,43 @@ describe("User Suspension GraphQL API", () => {
     expect(await db.selectFrom("audit_entries").select(["outcome", "reason_code"]).where("correlation_id", "=", cancellationCorrelationId).executeTakeFirstOrThrow()).toEqual({ outcome: "DENIED", reason_code: "USER_SUSPENDED" });
   });
 
+  it("treats a Fixture-Removed User as one that does not exist", async () => {
+    // A Canonical Data Rebuild retains noncanonical synthetic Users only for
+    // immutable history. Administration must not be able to reach back into one.
+    const removedUserId = randomUUID();
+    await db.insertInto("users").values({
+      id: removedUserId,
+      identity_issuer: "https://fake.local/",
+      identity_subject: randomUUID(),
+      display_name: "Former User",
+      interface_locale: null,
+      display_time_zone: null,
+      access_status: "FIXTURE_REMOVED",
+      fixture_removed_at: now,
+    }).execute();
+
+    for (const [field, inputType, input] of [
+      ["suspendUser", "ChangeUserAccessInput", { idempotencyKey: randomUUID(), userId: removedUserId, reason: "Reach a Fixture-Removed User" }],
+      ["reactivateUser", "ReactivateUserInput", { idempotencyKey: randomUUID(), userId: removedUserId }],
+    ] as const) {
+      const correlationId = randomUUID();
+      const denied = await graphql(`
+        mutation ChangeAccess($input: ${inputType}!) {
+          ${field}(input: $input) { __typename ... on UserAccessError { code } }
+        }
+      `, { input }, administratorSubject, correlationId);
+
+      expect(denied.data?.[field]).toMatchObject({ code: "USER_NOT_FOUND" });
+      expect(await db.selectFrom("audit_entries").select(["outcome", "reason_code"])
+        .where("correlation_id", "=", correlationId).executeTakeFirstOrThrow())
+        .toEqual({ outcome: "DENIED", reason_code: "USER_NOT_FOUND" });
+    }
+
+    expect(await db.selectFrom("users").select("access_status")
+      .where("id", "=", removedUserId).executeTakeFirstOrThrow())
+      .toEqual({ access_status: "FIXTURE_REMOVED" });
+  });
+
   async function graphql(
     query: string,
     variables: Record<string, unknown> | undefined,

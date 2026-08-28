@@ -125,6 +125,20 @@ async function reconcileRollingFixturesInTransaction(transaction: Database, opti
       .forUpdate()
       .execute();
     const rollingIds = rolling.map((session) => session.id);
+    // Every rolling commitment is parked before any of them moves, because the
+    // overlap constraint covers only active rows and an intermediate hour would
+    // otherwise collide with a commitment still sitting on it. Which rows earned
+    // their way back is remembered here: a Student Cancellation, a User Suspension,
+    // and a role removal each deactivate the commitment in place rather than
+    // deleting it, and reactivating those would rebuild a settled Schedule Conflict
+    // and hand the reminder worker a cancelled Booking.
+    const parked = rollingIds.length > 0
+      ? await transaction.selectFrom("schedule_commitments")
+        .select(["id", "active"])
+        .where("class_session_id", "in", rollingIds)
+        .forUpdate()
+        .execute()
+      : [];
     if (rollingIds.length > 0) {
       await transaction.updateTable("schedule_commitments").set({ active: false })
         .where("class_session_id", "in", rollingIds).execute();
@@ -144,10 +158,14 @@ async function reconcileRollingFixturesInTransaction(transaction: Database, opti
         .set({
           starts_at: target,
           ends_at: new Date(target.getTime() + CLASS_SESSION_MILLISECONDS),
-          active: true,
         })
         .where("class_session_id", "=", session.id)
         .execute();
+    }
+    const restored = parked.filter(({ active }) => active).map(({ id }) => id);
+    if (restored.length > 0) {
+      await transaction.updateTable("schedule_commitments").set({ active: true })
+        .where("id", "in", restored).execute();
     }
 
     await transaction.updateTable("rolling_fixture_reconciliations")
@@ -674,12 +692,16 @@ export async function runCanonicalDataRebuild(db: Database, options: {
         // either cannot be established, maintenance must remain fail-closed.
       }
     }
+    const failureCode = error instanceof CanonicalFixtureValidationError
+      ? "CANONICAL_FIXTURE_VALIDATION_FAILED"
+      : "CANONICAL_DATA_REBUILD_FAILED";
+    // An unverified rollback says nothing about what failed, only that the prior
+    // state could not be established, so that is what the terminal evidence records.
+    const terminalCode = safeRollback ? failureCode : "CANONICAL_DATA_REBUILD_INDETERMINATE";
     await db.transaction().execute(async (transaction) => {
       await transaction.updateTable("canonical_data_rebuilds").set({
         state: safeRollback ? "ROLLED_BACK" : "INDETERMINATE",
-        safe_failure_code: error instanceof CanonicalFixtureValidationError
-          ? "CANONICAL_FIXTURE_VALIDATION_FAILED"
-          : "CANONICAL_DATA_REBUILD_FAILED",
+        safe_failure_code: failureCode,
         completed_at: terminalAt,
       }).where("dispatch_id", "=", options.dispatchId).execute();
       await transaction.updateTable("maintenance_state").set({
@@ -694,11 +716,7 @@ export async function runCanonicalDataRebuild(db: Database, options: {
           ? "canonical-data-rebuild.rolled-back"
           : "canonical-data-rebuild.indeterminate",
         outcome: "FAILED",
-        reasonCode: safeRollback
-          ? error instanceof CanonicalFixtureValidationError
-            ? "CANONICAL_FIXTURE_VALIDATION_FAILED"
-            : "CANONICAL_DATA_REBUILD_FAILED"
-          : "CANONICAL_DATA_REBUILD_INDETERMINATE",
+        reasonCode: terminalCode,
         correlationId: options.correlationId,
         targetId: options.dispatchId,
         occurredAt: terminalAt,
@@ -709,11 +727,7 @@ export async function runCanonicalDataRebuild(db: Database, options: {
           schemaVersion,
           completedAt: terminalAt.toISOString(),
           durationMilliseconds: terminalAt.getTime() - now.getTime(),
-          safeFailureCode: safeRollback
-            ? error instanceof CanonicalFixtureValidationError
-              ? "CANONICAL_FIXTURE_VALIDATION_FAILED"
-              : "CANONICAL_DATA_REBUILD_FAILED"
-            : "CANONICAL_DATA_REBUILD_INDETERMINATE",
+          safeFailureCode: terminalCode,
           rollbackSafety: safeRollback ? "PASSED" : "UNVERIFIED",
         },
       });

@@ -1,4 +1,5 @@
 import { cleanup, render, screen } from "@testing-library/react";
+import axe from "axe-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -22,11 +23,12 @@ describe("reviewer maintenance behavior", () => {
     expect(onMaintenance).toHaveBeenCalledOnce();
   });
 
-  it("presents an accessible localized refresh action", () => {
-    render(<MaintenanceStatus locale="es" onRefresh={() => undefined} />);
+  it("presents an accessible localized refresh action", async () => {
+    const { container } = render(<MaintenanceStatus locale="es" onRefresh={() => undefined} />);
 
     expect(screen.getByRole("heading", { name: "Mantenimiento en curso" })).toBeVisible();
     expect(screen.getByRole("status")).toHaveTextContent("Vuelve a intentarlo");
     expect(screen.getByRole("button", { name: "Actualizar" })).toBeVisible();
+    expect((await axe.run(container)).violations.filter(({ impact }) => impact === "serious" || impact === "critical")).toEqual([]);
   });
 });

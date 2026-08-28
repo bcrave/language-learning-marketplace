@@ -15,6 +15,7 @@ import { loadCanonicalFixtures } from "../src/fixtures/canonical-fixture-loader.
 import { canonicalFixtureManifest } from "../src/fixtures/canonical-fixture-manifest.js";
 import {
   assessCanonicalDataRecovery,
+  fixtureMaintenanceTasks,
   reconcileRollingFixtures,
   runCanonicalDataRebuild,
   verifyAndReopenCanonicalData,
@@ -383,6 +384,110 @@ describe("fixture maintenance", () => {
       recoverIndeterminate: true,
       incidentCorrelationId: "rebuild-indeterminate",
     })).resolves.toMatchObject({ outcome: "COMPLETED" });
+  });
+
+  it("keeps a cancelled rebuild closed and refuses to resume the ambiguous run", async () => {
+    await expect(runCanonicalDataRebuild(db, {
+      correlationId: "rebuild-cancelled",
+      dispatchId: "dispatch-cancelled",
+      reason: "Cancel the protected dispatch before reviewer access returns.",
+      now: new Date("2026-08-31T05:00:00.000Z"),
+      shouldAbortBeforeReopen: () => true,
+    })).rejects.toThrow("cancelled before reopen");
+
+    // The replacement is already committed when cancellation is observed, so the
+    // prior state cannot be restored and reviewer access must stay closed.
+    expect(await db.selectFrom("maintenance_state").select(["state", "holder_id"])
+      .where("singleton", "=", true).executeTakeFirstOrThrow()).toEqual({
+      state: "INDETERMINATE",
+      holder_id: "dispatch-cancelled",
+    });
+    expect(await db.selectFrom("canonical_data_rebuilds")
+      .select(["state", "safe_failure_code"])
+      .where("dispatch_id", "=", "dispatch-cancelled").executeTakeFirstOrThrow()).toEqual({
+      state: "INDETERMINATE",
+      safe_failure_code: "CANONICAL_DATA_REBUILD_FAILED",
+    });
+    expect(await db.selectFrom("audit_entries").select(["operation", "outcome", "reason_code"])
+      .where("correlation_id", "=", "rebuild-cancelled").orderBy("occurred_at").execute())
+      .toContainEqual({
+        operation: "canonical-data-rebuild.indeterminate",
+        outcome: "FAILED",
+        reason_code: "CANONICAL_DATA_REBUILD_INDETERMINATE",
+      });
+
+    // A retry is a fresh protected dispatch, and one that does not name the incident
+    // is refused rather than allowed to resume the cancelled run.
+    await expect(runCanonicalDataRebuild(db, {
+      correlationId: "rebuild-cancelled-retry",
+      dispatchId: "dispatch-cancelled-retry",
+      reason: "Retry the cancelled rebuild without acknowledging the incident.",
+    })).rejects.toThrow("unavailable while maintenance is active");
+
+    await expect(runCanonicalDataRebuild(db, {
+      correlationId: "rebuild-cancelled-recovery",
+      dispatchId: "dispatch-cancelled-recovery",
+      reason: "Replace the cancelled generation with a clean canonical rebuild.",
+      now: new Date("2026-08-31T06:00:00.000Z"),
+      recoverIndeterminate: true,
+      incidentCorrelationId: "rebuild-cancelled",
+    })).resolves.toMatchObject({ outcome: "COMPLETED" });
+  });
+
+  it("moves rolling commitments without reactivating ones a cancellation deactivated", async () => {
+    const [settled, untouched] = await db.selectFrom("class_sessions").select("id")
+      .where("is_rolling_fixture", "=", true).where("state", "=", "PUBLISHED")
+      .orderBy("id").execute();
+    if (!settled || !untouched) throw new Error("expected two rolling Class Sessions");
+
+    // Student Cancellation, User Suspension, and role removal all deactivate the
+    // Schedule Commitment in place rather than deleting it, so the hourly run has to
+    // carry that decision forward instead of resurrecting a settled commitment.
+    await db.updateTable("schedule_commitments").set({ active: false })
+      .where("class_session_id", "=", settled.id).execute();
+
+    await reconcileRollingFixtures(db, {
+      now: new Date("2026-08-31T09:08:00.000Z"),
+      correlationId: "hourly-2026-08-31T09",
+    });
+
+    const advanced = await db.selectFrom("class_sessions").select("starts_at")
+      .where("id", "=", settled.id).executeTakeFirstOrThrow();
+    const settledCommitments = await db.selectFrom("schedule_commitments")
+      .select(["active", "starts_at"]).where("class_session_id", "=", settled.id).execute();
+    expect(settledCommitments.length).toBeGreaterThan(0);
+    expect(settledCommitments.map(({ active }) => active)).not.toContain(true);
+    // The times still advance, so a later reactivation lands on the current hour.
+    expect(settledCommitments.map(({ starts_at }) => starts_at.getTime()))
+      .toEqual(settledCommitments.map(() => advanced.starts_at.getTime()));
+
+    expect((await db.selectFrom("schedule_commitments").select("active")
+      .where("class_session_id", "=", untouched.id).execute())
+      .map(({ active }) => active)).not.toContain(false);
+  });
+
+  it("derives one reconciliation per hour from the worker task the crontab names", async () => {
+    // The hourly crontab entry reaches reconciliation only through this task, and
+    // Graphile Worker may run a job more than once, so the correlation the task
+    // derives is what actually makes an hourly run replay-safe in production.
+    const now = new Date("2026-08-31T11:20:00.000Z");
+    const task = fixtureMaintenanceTasks(db, { now: () => now }).reconcile_rolling_fixtures;
+    if (typeof task !== "function") throw new Error("expected a reconcile_rolling_fixtures task");
+
+    await task(null, undefined as never);
+    await task(null, undefined as never);
+
+    expect(await db.selectFrom("rolling_fixture_reconciliations").select("correlation_id")
+      .where("correlation_id", "like", "rolling-fixtures-2026-08-31T11%").execute())
+      .toEqual([{ correlation_id: "rolling-fixtures-2026-08-31T11" }]);
+    expect(await db.selectFrom("class_sessions").select("starts_at")
+      .where("is_rolling_fixture", "=", true).where("state", "=", "PUBLISHED")
+      .orderBy("rolling_offset_hours").execute())
+      .toEqual([
+        { starts_at: new Date("2026-08-31T11:00:00.000Z") },
+        { starts_at: new Date("2026-08-31T12:00:00.000Z") },
+        { starts_at: new Date("2026-08-31T13:00:00.000Z") },
+      ]);
   });
 
   async function waitForMaintenance() {

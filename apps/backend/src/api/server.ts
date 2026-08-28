@@ -57,8 +57,6 @@ export function createMarketplaceServer(options: {
   now?: () => Date;
   sourceRequestLimit: number;
   trustedProxySecret?: string;
-  /** Protected loopback verification may exercise the API while this holder owns maintenance. */
-  maintenanceHolderId?: string;
   /** Deployed loopback-only API backed by the verification database pool. */
   maintenanceApi?: ReturnType<typeof createApi>;
 }) {
@@ -78,10 +76,8 @@ export function createMarketplaceServer(options: {
       (path === LIVENESS_PATH ||
         path === READINESS_PATH ||
         path === WORKER_READINESS_PATH);
-    const source = probesHealth
-      ? connectionSourceFor(request)
-      : verifiedSourceFor(request);
     const connectionSource = connectionSourceFor(request);
+    const source = probesHealth ? connectionSource : verifiedSourceFor(request);
     const loopbackVerification = options.maintenanceApi !== undefined
       && (connectionSource === "127.0.0.1"
         || connectionSource === "::1"
@@ -90,7 +86,7 @@ export function createMarketplaceServer(options: {
     // Refusals stay inside a budget too. A misconfigured origin would
     // otherwise buy an unbounded path through the API and an unbounded run of
     // log lines by simply presenting nothing.
-    if (!rateLimiter.accepts(source ?? connectionSourceFor(request) ?? "unattributable")) {
+    if (!rateLimiter.accepts(source ?? connectionSource ?? "unattributable")) {
       response.setHeader("retry-after", "60");
       sendJson(response, 429, { error: "Request limit exceeded" });
       return;
@@ -116,14 +112,10 @@ export function createMarketplaceServer(options: {
     ) {
       try {
         const maintenance = await options.db.selectFrom("maintenance_state")
-          .select(["state", "holder_id"])
+          .select("state")
           .where("singleton", "=", true)
           .executeTakeFirstOrThrow();
-        if (
-          maintenance.state !== "AVAILABLE"
-          && maintenance.holder_id !== options.maintenanceHolderId
-          && !loopbackVerification
-        ) {
+        if (maintenance.state !== "AVAILABLE" && !loopbackVerification) {
           response.setHeader("retry-after", "60");
           sendJson(response, 503, { status: "maintenance" });
           return;

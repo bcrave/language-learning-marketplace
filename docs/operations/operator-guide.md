@@ -99,7 +99,7 @@ workflow fails.
 
 Routine rebuild has one automatic retry and verified rollback. The workflow refuses
 GitHub job reruns (`run_attempt` greater than one); dispatch it again to obtain fresh
-attempt and correlation identifiers. After verified rollback, reopen the demo and
+attempt and correlation identifiers. After verified rollback, reopen the public demonstration and
 send owner attention. An indeterminate state blocks routine rebuild. Cancellation
 before lease acquisition is safe; after quiescence, the operation finishes its
 current transaction to a validated commit or rollback before honoring SIGINT or
