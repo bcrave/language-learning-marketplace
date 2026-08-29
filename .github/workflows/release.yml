@@ -29,7 +29,9 @@ permissions:
 
 # The current release finishes without preemption; the next one waits.
 concurrency:
-  group: production-release
+  # Releases and Canonical Data Rebuilds are the two holders of ADR 0030's
+  # global maintenance lease. GitHub queues either kind behind the current holder.
+  group: production-maintenance
   cancel-in-progress: false
 
 env:

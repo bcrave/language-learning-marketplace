@@ -86,7 +86,14 @@ export function startWorkerHeartbeat(options: {
   onFailure?: (error: unknown) => void;
 }): { stop: () => void; written: Promise<void> } {
   const now = options.now ?? (() => new Date());
+  // A write that outlives its own interval must not start another. Every pending
+  // write holds a pooled connection, so stacking them starves the pool the rest of
+  // the process needs — including the readiness verification that reads this very
+  // heartbeat — and a queued write carries nothing newer than the one in flight.
+  let writing = false;
   const write = async () => {
+    if (writing) return;
+    writing = true;
     try {
       await writeWorkerHeartbeat(options.db, {
         release: options.release,
@@ -94,6 +101,8 @@ export function startWorkerHeartbeat(options: {
       });
     } catch (error) {
       options.onFailure?.(error);
+    } finally {
+      writing = false;
     }
   };
   const timer = setInterval(

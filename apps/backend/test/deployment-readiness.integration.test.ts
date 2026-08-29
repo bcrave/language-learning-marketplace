@@ -25,6 +25,7 @@ import {
 // exercised over HTTP exactly as the release gate reaches them.
 describe("deployment readiness probes", () => {
   let db: Database;
+  let databaseUrl: string;
   let postgres: StartedPostgreSqlContainer;
   let baseUrl: string;
   let currentSchemaMigration: string;
@@ -36,7 +37,7 @@ describe("deployment readiness probes", () => {
     const templateDb = createDatabase(postgres.getConnectionUri());
     await migrateDatabase(templateDb);
     await templateDb.destroy();
-    const databaseUrl = await clonePostgreSqlTemplate(
+    databaseUrl = await clonePostgreSqlTemplate(
       postgres,
       `readiness_${randomUUID().replaceAll("-", "")}`,
     );
@@ -198,4 +199,40 @@ describe("deployment readiness probes", () => {
     heartbeat.stop();
     expect(failures).toHaveLength(1);
   });
+
+  it("leaves the connection pool usable while a heartbeat write is blocked", async () => {
+    await writeWorkerHeartbeat(db, { release: "release-e", observedAt: now });
+    // A second pool, so holding the row does not itself consume the pool under test.
+    const blocker = createDatabase(databaseUrl);
+    let releaseRow!: () => void;
+    const held = new Promise<void>((resolve) => {
+      releaseRow = resolve;
+    });
+    let announceLocked!: () => void;
+    const rowLocked = new Promise<void>((resolve) => {
+      announceLocked = resolve;
+    });
+    const blocking = blocker.transaction().execute(async (transaction) => {
+      await transaction.selectFrom("worker_heartbeats").select("worker_name")
+        .where("worker_name", "=", MARKETPLACE_WORKER_NAME).forUpdate().executeTakeFirstOrThrow();
+      announceLocked();
+      await held;
+    });
+    await rowLocked;
+
+    // Every tick now blocks on that row. Without a re-entrancy guard they pile up,
+    // one pooled connection each, until nothing else in the process can get one.
+    const heartbeat = startWorkerHeartbeat({ db, release: "release-e", intervalMilliseconds: 5 });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const reachable = await Promise.race([
+      db.selectFrom("schema_migrations").select("name").execute().then(() => true),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 3_000)),
+    ]);
+
+    heartbeat.stop();
+    releaseRow();
+    await blocking;
+    await blocker.destroy();
+    expect(reachable).toBe(true);
+  }, 20_000);
 });

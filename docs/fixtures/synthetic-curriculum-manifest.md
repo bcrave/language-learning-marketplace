@@ -2,7 +2,7 @@
 
 This manifest is the canonical specification for the public demonstration's sample curriculum. Stable keys are fixture identities, not a database-schema decision. Full guide copy remains implementation and editorial work.
 
-The loaded manifest is versioned (currently `2026-08-26.1`). A Canonical Data Rebuild records the version it published, and the version changes whenever the accepted catalog or showcase states below change.
+The loaded manifest is versioned (currently `2026-08-28.1`). A Canonical Data Rebuild records the version it published, and the version changes whenever the accepted catalog or showcase states below change.
 
 ## Catalog rules
 

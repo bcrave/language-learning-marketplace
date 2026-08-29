@@ -57,6 +57,8 @@ export function createMarketplaceServer(options: {
   now?: () => Date;
   sourceRequestLimit: number;
   trustedProxySecret?: string;
+  /** Deployed loopback-only API backed by the verification database pool. */
+  maintenanceApi?: ReturnType<typeof createApi>;
 }) {
   const now = options.now ?? (() => new Date());
   const rateLimiter = new SourceRateLimiter(options.sourceRequestLimit);
@@ -74,14 +76,17 @@ export function createMarketplaceServer(options: {
       (path === LIVENESS_PATH ||
         path === READINESS_PATH ||
         path === WORKER_READINESS_PATH);
-    const source = probesHealth
-      ? connectionSourceFor(request)
-      : verifiedSourceFor(request);
+    const connectionSource = connectionSourceFor(request);
+    const source = probesHealth ? connectionSource : verifiedSourceFor(request);
+    const loopbackVerification = options.maintenanceApi !== undefined
+      && (connectionSource === "127.0.0.1"
+        || connectionSource === "::1"
+        || connectionSource === "::ffff:127.0.0.1");
 
     // Refusals stay inside a budget too. A misconfigured origin would
     // otherwise buy an unbounded path through the API and an unbounded run of
     // log lines by simply presenting nothing.
-    if (!rateLimiter.accepts(source ?? connectionSourceFor(request) ?? "unattributable")) {
+    if (!rateLimiter.accepts(source ?? connectionSource ?? "unattributable")) {
       response.setHeader("retry-after", "60");
       sendJson(response, 429, { error: "Request limit exceeded" });
       return;
@@ -95,6 +100,31 @@ export function createMarketplaceServer(options: {
     if (request.method === "GET" && path === LIVENESS_PATH) {
       sendJson(response, 200, { status: "live" });
       return;
+    }
+
+    // A Canonical Data Rebuild is controlled outside the public application.
+    // Reviewers see only a stable maintenance response; holder, correlation,
+    // reason, and recovery evidence remain in the protected owner workflow.
+    if (
+      (request.method === "GET" &&
+        (path === READINESS_PATH || path === WORKER_READINESS_PATH)) ||
+      (request.method === "POST" && path === "/graphql")
+    ) {
+      try {
+        const maintenance = await options.db.selectFrom("maintenance_state")
+          .select("state")
+          .where("singleton", "=", true)
+          .executeTakeFirstOrThrow();
+        if (maintenance.state !== "AVAILABLE" && !loopbackVerification) {
+          response.setHeader("retry-after", "60");
+          sendJson(response, 503, { status: "maintenance" });
+          return;
+        }
+      } catch {
+        options.logger.warn({ event: "maintenance.state.unreadable" });
+        sendJson(response, 503, { status: "unavailable" });
+        return;
+      }
     }
     if (request.method === "GET" && path === READINESS_PATH) {
       try {
@@ -150,6 +180,6 @@ export function createMarketplaceServer(options: {
       }
     }
 
-    await options.api(request, response);
+    await (loopbackVerification && path === "/graphql" ? options.maintenanceApi! : options.api)(request, response);
   });
 }

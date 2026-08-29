@@ -3,13 +3,14 @@ import { setContext } from "@apollo/client/link/context";
 import { useAuth0, Auth0Provider } from "@auth0/auth0-react";
 import auth0WorkerUrl from "@auth0/auth0-spa-js/dist/auth0-spa-js.worker.production.js?url";
 import { interfaceMessages } from "@marketplace/core";
-import { StrictMode, useMemo } from "react";
+import { StrictMode, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { FormattedMessage, IntlProvider } from "react-intl";
 
 import { App } from "./app.js";
 import { parseClientConfig, type ClientConfig } from "./client-config.js";
 import { suggestedInterfaceLocale } from "./interface-locale.js";
+import { MaintenanceStatus, maintenanceAwareFetch } from "./maintenance-status.js";
 import { productionAuth0Options } from "./production-auth.js";
 import "./styles.css";
 
@@ -43,6 +44,7 @@ function AuthenticatedApp({
 }: {
   config: Extract<ClientConfig, { authMode: "auth0" }>;
 }) {
+  const [maintenance, setMaintenance] = useState(false);
   const {
     error,
     getAccessTokenSilently,
@@ -62,7 +64,13 @@ function AuthenticatedApp({
     });
     return new ApolloClient({
       cache: new InMemoryCache(),
-      link: authorizationLink.concat(new HttpLink({ uri: config.graphqlUrl })),
+      link: authorizationLink.concat(new HttpLink({
+        uri: config.graphqlUrl,
+        fetch: maintenanceAwareFetch(
+          window.fetch.bind(window),
+          () => setMaintenance(true),
+        ),
+      })),
     });
   }, [config.graphqlUrl, getAccessTokenSilently]);
 
@@ -76,6 +84,7 @@ function AuthenticatedApp({
       />
     );
   }
+  if (maintenance) return <MaintenanceStatus />;
   return <App client={client} />;
 }
 

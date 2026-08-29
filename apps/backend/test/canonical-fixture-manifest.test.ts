@@ -58,6 +58,16 @@ describe("Canonical synthetic fixture manifest", () => {
     for (const snapshot of sponsorship.snapshots) expect(courseKeys).toContain(snapshot.courseKey);
   });
 
+  it("designates only the real-clock showcase fixture for hourly advancement", () => {
+    const rolling = manifest.showcase.classSessions.filter(
+      (session) => session.rollingOffsetHours !== undefined,
+    );
+    expect(rolling.map((session) => session.rollingOffsetHours)).toEqual([0, 1, 2]);
+    expect(rolling.every((session) => manifest.showcase.bookings.some(
+      (booking) => booking.classSessionId === session.id,
+    ))).toBe(true);
+  });
+
   it("expects only Course Progress, Completions, and access it can produce", () => {
     for (const expected of manifest.expectations.courseProgress) {
       expect(identityIds).toContain(expected.studentUserId);

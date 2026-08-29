@@ -2055,6 +2055,10 @@ export function createApi(options: {
             await options.db.insertInto("audit_entries").values({ actor_user_id: user.id, acting_role: null, operation: "authenticated-operation.blocked", target_type: "User", target_id: user.id, outcome: "DENIED", reason_code: "USER_ANONYMIZATION_PENDING", correlation_id: correlationId }).execute();
             throw createGraphQLError("Your User Anonymization is pending identity deletion", { extensions: { code: "USER_ANONYMIZATION_PENDING" } });
           }
+          if (user?.access_status === "FIXTURE_REMOVED") {
+            await options.db.insertInto("audit_entries").values({ actor_user_id: user.id, acting_role: null, operation: "authenticated-operation.blocked", target_type: "User", target_id: user.id, outcome: "DENIED", reason_code: "USER_FIXTURE_REMOVED", correlation_id: correlationId }).execute();
+            throw createGraphQLError("This synthetic User is no longer part of the canonical demonstration", { extensions: { code: "USER_FIXTURE_REMOVED" } });
+          }
           return identity;
         },
       };

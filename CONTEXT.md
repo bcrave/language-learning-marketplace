@@ -22,6 +22,10 @@ _Avoid_: User Suspension, active role context, Teacher Qualification
 An irreversible Platform Administrator operation performed only after future commitments are resolved. It destroys the Auth0 identity and identifying profile data, removes public identity, redacts the anonymized Student's private feedback content, and leaves an opaque Former User identity for bookings, attendance, credits, progress, reports, and immutable audits. A returning person receives a new User.
 _Avoid_: User Suspension, role removal, hard deletion
 
+**Fixture-Removed User**:
+A noncanonical synthetic User retained only for immutable history after a Canonical Data Rebuild. The Project Owner removes its public profile and all marketplace access while preserving its external identity binding for explicit later cleanup.
+_Avoid_: User Suspension, User Anonymization, hard deletion
+
 **Display Time Zone**:
 A User's saved named regional time zone for presenting Class Session times and interpreting calendar-date filters, initially suggested from their browser and changed only with their consent. It affects display and discovery boundaries, not the scheduled session itself.
 _Avoid_: UTC offset, Teacher Availability time zone, browser time zone
@@ -203,6 +207,18 @@ _Avoid_: Learning Feedback, public review, teacher testimonial
 **Canonical Data Rebuild**:
 The scheduled-system or Project Owner operation that returns the public demonstration's mutable synthetic marketplace state to its versioned canonical fixture baseline while leaving the deployed application, infrastructure, and provider identities in place.
 _Avoid_: Demo rebuild, application rebuild, deployment, backup restoration
+
+**Canonical Data Recovery**:
+The separate protected Project Owner workflow that resolves a Canonical Data Rebuild left in an unverified terminal state. It assesses first without changing anything, then in a later dispatch either verifies and reopens the current state or authorizes a clean Canonical Data Rebuild against the named incident.
+_Avoid_: Retry, rerun, rollback, backup restoration
+
+**Fixture Generation**:
+The monotonic count of completed Canonical Data Rebuilds. It names which canonical baseline the mutable synthetic state currently descends from, so recovery evidence can say whether a replacement ever committed.
+_Avoid_: Schema version, fixture manifest version, release
+
+**Rolling Fixture**:
+A manifest-designated Class Session whose start instant is advanced to a fixed whole-hour position relative to the real clock, so public synthetic journeys stay time-relevant. Hourly maintenance moves only these, and carries forward whether each Schedule Commitment was still active.
+_Avoid_: Recurring Class Session, Teacher Availability, seeded session
 
 **Security Release Gate**:
 The fail-closed body of required evidence that must pass before public launch and after a security-relevant change. A failed, missing, flaky, or unexplained result blocks release; only a finding wholly within an already accepted residual risk may proceed with dated Project Owner sign-off.

@@ -97,7 +97,7 @@ const initialWorkspacePaths: Record<UserRole, string> = {
 
 export async function roleAssignmentAdministration(db: Database) {
   const [userIds, organizations] = await Promise.all([
-    db.selectFrom("users").select("id").orderBy("display_name").orderBy("id").execute(),
+    db.selectFrom("users").select("id").where("fixture_removed_at", "is", null).orderBy("display_name").orderBy("id").execute(),
     db.selectFrom("organizations").select(["id", "name"]).orderBy("name").orderBy("id").execute(),
   ]);
   return {
@@ -122,6 +122,9 @@ export async function grantRoleAssignment(
     .forUpdate()
     .executeTakeFirst();
   if (!user) {
+    return deniedChange(transaction, administrator, input, correlationId, "USER_NOT_FOUND", "Choose an existing User.");
+  }
+  if (user.access_status === "FIXTURE_REMOVED") {
     return deniedChange(transaction, administrator, input, correlationId, "USER_NOT_FOUND", "Choose an existing User.");
   }
   if (user.access_status === "ANONYMIZATION_PENDING") {
@@ -211,8 +214,8 @@ export async function removeRoleAssignment(
     // this same per-User lock. No new future commitment can cross the cleanup.
     await sql`select pg_advisory_xact_lock(hashtextextended(${input.userId}, 28))`.execute(transaction);
   }
-  const user = await transaction.selectFrom("users").select(["id", "interface_locale", "display_time_zone"]).where("id", "=", input.userId).forUpdate().executeTakeFirst();
-  if (!user) return deny("USER_NOT_FOUND", "Choose an existing User.");
+  const user = await transaction.selectFrom("users").select(["id", "interface_locale", "display_time_zone", "access_status"]).where("id", "=", input.userId).forUpdate().executeTakeFirst();
+  if (!user || user.access_status === "FIXTURE_REMOVED") return deny("USER_NOT_FOUND", "Choose an existing User.");
   const assignmentQuery = transaction.selectFrom("role_assignments").select("role").where("user_id", "=", input.userId).where("role", "=", input.role);
   const assignment = input.role === "PLATFORM_ADMINISTRATOR"
     ? await assignmentQuery.executeTakeFirst()

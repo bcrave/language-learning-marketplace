@@ -1,0 +1,130 @@
+name: Canonical Data Recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Assess first; authorize a repair only in a later dispatch
+        required: true
+        type: choice
+        options: [ASSESS, VERIFY_AND_REOPEN, CLEAN_REBUILD]
+      incident_correlation_id:
+        description: Required for a clean recovery rebuild
+        required: false
+        type: string
+      reason:
+        description: Non-secret assessment or recovery reason
+        required: true
+        type: string
+      acknowledge_recovery:
+        description: I authorize the selected state-changing recovery
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-maintenance
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 24.15.0
+  PNPM_VERSION: 11.0.0
+
+jobs:
+  recovery:
+    if: inputs.mode == 'ASSESS' || inputs.acknowledge_recovery == true
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_DEPLOYMENT_TOKEN }}
+      RAILWAY_DATABASE_SERVICE: ${{ vars.RAILWAY_DATABASE_SERVICE || 'Postgres' }}
+      RAILWAY_API_SERVICE: ${{ vars.RAILWAY_API_SERVICE || 'API' }}
+      CANONICAL_RECOVERY_MODE: ${{ inputs.mode }}
+      CANONICAL_RECOVERY_REASON: ${{ inputs.reason }}
+      CANONICAL_RECOVERY_DISPATCH_ID: github-recovery:${{ github.run_id }}
+      CANONICAL_RECOVERY_INCIDENT_CORRELATION_ID: ${{ inputs.incident_correlation_id }}
+    steps:
+      - name: Refuse ambiguous workflow reruns
+        if: github.run_attempt != 1
+        run: exit 1
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @marketplace/backend build
+      - run: npm install --global @railway/cli
+      - name: Open protected database tunnel
+        run: |
+          railway connect "$RAILWAY_DATABASE_SERVICE" --tunnel-only --port 15432 > "$RUNNER_TEMP/railway-tunnel.log" 2>&1 &
+          echo "RAILWAY_TUNNEL_PID=$!" >> "$GITHUB_ENV"
+          railway variable list --service "$RAILWAY_DATABASE_SERVICE" --json > "$RUNNER_TEMP/railway-database-variables.json"
+          node --input-type=module -e '
+            import { appendFileSync, readFileSync } from "node:fs";
+            const variables = JSON.parse(readFileSync(process.env.RUNNER_TEMP + "/railway-database-variables.json", "utf8"));
+            const url = new URL(variables.DATABASE_URL);
+            url.hostname = "127.0.0.1";
+            url.port = "15432";
+            appendFileSync(process.env.GITHUB_ENV, `DATABASE_URL=${url.toString()}\n`);
+          '
+          node --input-type=module -e '
+            import net from "node:net";
+            for (let attempt = 0; attempt < 60; attempt += 1) {
+              const ready = await new Promise((resolve) => {
+                const socket = net.connect(15432, "127.0.0.1", () => { socket.destroy(); resolve(true); });
+                socket.once("error", () => resolve(false));
+              });
+              if (ready) process.exit(0);
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+            process.exit(1);
+          '
+      - name: Assess or perform the authorized recovery
+        env:
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          DEMONSTRATION_IDENTITY_SUBJECTS: ${{ secrets.DEMONSTRATION_IDENTITY_SUBJECTS }}
+          AUTH0_ISSUER: ${{ vars.AUTH0_ISSUER }}
+          AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
+          SMOKE_CLIENT_ID: ${{ secrets.SMOKE_CLIENT_ID }}
+          SMOKE_CLIENT_SECRET: ${{ secrets.SMOKE_CLIENT_SECRET }}
+          SMOKE_STUDENT_USERNAME: ${{ secrets.SMOKE_STUDENT_USERNAME }}
+          SMOKE_STUDENT_PASSWORD: ${{ secrets.SMOKE_STUDENT_PASSWORD }}
+          SMOKE_ADMINISTRATOR_USERNAME: ${{ secrets.SMOKE_ADMINISTRATOR_USERNAME }}
+          SMOKE_ADMINISTRATOR_PASSWORD: ${{ secrets.SMOKE_ADMINISTRATOR_PASSWORD }}
+        run: pnpm --filter @marketplace/backend release:recover-fixtures
+      - name: Run the deployed role smoke after state-changing recovery
+        if: inputs.mode != 'ASSESS'
+        id: deployed-smoke
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
+          AUTH0_ISSUER: ${{ vars.AUTH0_ISSUER }}
+          AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
+          SMOKE_CLIENT_ID: ${{ secrets.SMOKE_CLIENT_ID }}
+          SMOKE_CLIENT_SECRET: ${{ secrets.SMOKE_CLIENT_SECRET }}
+          SMOKE_STUDENT_USERNAME: ${{ secrets.SMOKE_STUDENT_USERNAME }}
+          SMOKE_STUDENT_PASSWORD: ${{ secrets.SMOKE_STUDENT_PASSWORD }}
+          SMOKE_ADMINISTRATOR_USERNAME: ${{ secrets.SMOKE_ADMINISTRATOR_USERNAME }}
+          SMOKE_ADMINISTRATOR_PASSWORD: ${{ secrets.SMOKE_ADMINISTRATOR_PASSWORD }}
+        run: pnpm --filter @marketplace/backend release:smoke
+      - name: Fail closed after a recovery smoke failure
+        if: inputs.mode != 'ASSESS' && steps.deployed-smoke.outcome == 'failure'
+        env:
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          CANONICAL_RECOVERY_MODE: CONTAIN_FAILED_SMOKE
+          CANONICAL_RECOVERY_REASON: Contain the failed post-recovery deployed role smoke journey.
+        run: pnpm --filter @marketplace/backend release:recover-fixtures
+      - name: Report a recovery smoke failure
+        if: inputs.mode != 'ASSESS' && steps.deployed-smoke.outcome == 'failure'
+        run: exit 1
+      - name: Close protected database tunnel
+        if: always()
+        run: kill "$RAILWAY_TUNNEL_PID" 2>/dev/null || true

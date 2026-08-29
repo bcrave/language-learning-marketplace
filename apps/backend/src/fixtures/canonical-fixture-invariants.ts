@@ -115,7 +115,7 @@ export async function validateCanonicalFixtures(
 
   // Identities: every application role is exercised, and every identity is synthetic.
   const [users, roleAssignments] = await Promise.all([
-    db.selectFrom("users").select(["id", "identity_issuer", "access_status", "suspension_reason"]).execute(),
+    db.selectFrom("users").select(["id", "identity_issuer", "access_status", "suspension_reason", "fixture_removed_at"]).execute(),
     db.selectFrom("role_assignments").select(["user_id", "role"]).execute(),
   ]);
   for (const role of ALL_ROLES) {
@@ -124,7 +124,7 @@ export async function validateCanonicalFixtures(
     }
   }
   for (const user of users) {
-    if (user.identity_issuer !== null && user.identity_issuer !== identityIssuer) {
+    if (user.fixture_removed_at === null && user.identity_issuer !== null && user.identity_issuer !== identityIssuer) {
       fail("identities.synthetic", `a User maps to the non-synthetic issuer ${user.identity_issuer}`);
     }
   }

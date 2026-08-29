@@ -679,7 +679,7 @@ type RoleWorkspace {
 
 enum RoleAssignmentChangeAction { GRANTED REMOVED }
 type RoleAssignmentChange { id: ID!, role: UserRole!, action: RoleAssignmentChangeAction!, reason: String!, changedAt: String! }
-enum UserAccessStatus { ACTIVE SUSPENDED ANONYMIZATION_PENDING ANONYMIZED }
+enum UserAccessStatus { ACTIVE SUSPENDED ANONYMIZATION_PENDING ANONYMIZED FIXTURE_REMOVED }
 type RoleAssignmentAdministrationUser { id: ID!, displayName: String!, accessStatus: UserAccessStatus!, suspensionReason: String, roles: [UserRole!]!, roleAssignmentHistory: [RoleAssignmentChange!]! }
 type RoleAssignmentAdministration { users: [RoleAssignmentAdministrationUser!]!, organizations: [Organization!]! }
 input ChangeRoleAssignmentInput { idempotencyKey: ID!, userId: ID!, role: UserRole!, reason: String!, organizationId: ID }
