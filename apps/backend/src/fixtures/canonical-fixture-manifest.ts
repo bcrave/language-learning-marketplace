@@ -12,7 +12,7 @@ import { canonicalCurriculumFixtures } from "../database/canonical-curriculum-fi
  * The version changes whenever the accepted showcase changes, so a Canonical Data
  * Rebuild can record which baseline it published.
  */
-export const CANONICAL_FIXTURE_MANIFEST_VERSION = "2026-08-26.1";
+export const CANONICAL_FIXTURE_MANIFEST_VERSION = "2026-08-28.1";
 
 /** Demonstration identities. Every one is synthetic and shared with reviewers. */
 export const CANONICAL_STUDENT_ID = "00000000-0000-4000-8000-000000000001";
@@ -363,6 +363,10 @@ export const canonicalFixtureManifest: CanonicalFixtureManifest = manifestSchema
     creditEntries: [
       { studentUserId: ALEX, amount: 8, source: "ORGANIZATION_CREDIT_GRANT", sourceReference: `${CANONICAL_SPONSORSHIP_ID}:1`, reason: null },
       { studentUserId: ALEX, amount: 4, source: "CREDIT_ADJUSTMENT", sourceReference: "canonical-fixtures:alex-welcome", reason: "Welcome credits for the sample marketplace." },
+      // The rolling Class Sessions are booked on Alex's behalf, so they are funded
+      // separately. Without this a shared reviewer identity reaches zero and can
+      // neither book nor join a Waitlist, and the deployed smoke's Booking fails.
+      { studentUserId: ALEX, amount: 3, source: "CREDIT_ADJUSTMENT", sourceReference: "canonical-fixtures:alex-rolling", reason: "Credits for the rolling real-clock Class Sessions." },
       { studentUserId: CASEY, amount: 3, source: "CREDIT_ADJUSTMENT", sourceReference: "canonical-fixtures:casey-welcome", reason: "Welcome credits for the sample marketplace." },
       { studentUserId: PRIYA, amount: 2, source: "CREDIT_ADJUSTMENT", sourceReference: "canonical-fixtures:priya-welcome", reason: "Welcome credits for the sample marketplace." },
     ],
@@ -396,12 +400,12 @@ export const canonicalFixtureManifest: CanonicalFixtureManifest = manifestSchema
       { studentUserId: ALEX, courseKey: "es-a1", completedActiveLessonUnitCount: 2, activeLessonUnitCount: 6 },
       { studentUserId: ALEX, courseKey: "es-b1", completedActiveLessonUnitCount: 0, activeLessonUnitCount: 2 },
     ],
-    // Eight subscription credits for Sofía; eight sponsored plus four adjusted less
+    // Eight subscription credits for Sofía; eight sponsored plus seven adjusted less
     // twelve Bookings for Alex; three adjusted less one refunded Booking for Casey;
     // two adjusted less one forfeited Booking for Priya.
     creditBalances: [
       { studentUserId: SOFIA, availableBalance: 8 },
-      { studentUserId: ALEX, availableBalance: 0 },
+      { studentUserId: ALEX, availableBalance: 3 },
       { studentUserId: CASEY, availableBalance: 3 },
       { studentUserId: PRIYA, availableBalance: 1 },
     ],
