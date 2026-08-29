@@ -2,6 +2,8 @@
 
 The first walking slice opens a localized Student workspace from a persisted User through PostgreSQL and a task-oriented GraphQL API. Local authentication uses an isolated fake identity adapter; production configuration rejects that adapter before startup.
 
+The deployed API executes only the GraphQL documents the build produced ([ADR 0024](docs/adr/0024-restrict-production-to-persisted-graphql-operations.md)): `pnpm codegen` writes every client operation into `apps/web/src/generated/persisted-documents.json`, the browser sends the identifier instead of a document, and arbitrary documents, GraphiQL, and a cross-origin CORS policy are absent from production. Local development keeps all three.
+
 ## Requirements
 
 - Node.js 24.15.0
@@ -29,6 +31,7 @@ corepack pnpm codegen
 corepack pnpm typecheck
 corepack pnpm test:unit
 corepack pnpm test:component
+corepack pnpm build && corepack pnpm verify:public-artifacts
 corepack pnpm test:integration
 TEST_DATABASE_URL=postgres://marketplace:marketplace@127.0.0.1:5433/marketplace corepack pnpm test:e2e
 ```
@@ -42,7 +45,8 @@ Railway service autodeploys stay disabled. The serialized `Release` workflow orc
 1. **API, with the database ahead of it** — its Railway pre-deploy applies the expand-and-contract migrations this release ships and binds [ADR 0019](docs/adr/0019-use-resettable-role-specific-demo-accounts.md)'s shared reviewer identities to the Auth0 tenant. Railway then holds the deployment until `/health/ready` proves PostgreSQL access and that the newest migration this build ships is applied.
 2. **Worker** — it writes a PostgreSQL heartbeat naming its release as it starts.
 3. **Browser client** — the Caddy service, the deployment's only public origin. Its pre-deploy is the gate between the API and the client: three consecutive `/health/ready` successes, then a `/health/worker` heartbeat that is fresh, on this release, and observably still advancing — a heartbeat written once by a worker that then died is refused.
-4. **Deployed smoke journey** — `pnpm --filter @marketplace/backend release:smoke` signs in as the shared identities and walks authentication, Interface Locale, Class Session Discovery, Booking, Student Cancellation, and the Audit Entries those mutations leave behind.
+4. **Browser policy** — `pnpm --filter @marketplace/backend release:browser-policy` reads the deployed public origin as a browser does and compares every header with the versioned policy of [ADR 0028](docs/adr/0028-use-a-single-public-origin.md). Drift blocks the release.
+5. **Deployed smoke journey** — `pnpm --filter @marketplace/backend release:smoke` signs in as the shared identities and walks authentication, Interface Locale, Class Session Discovery, Booking, Student Cancellation, and the Audit Entries those mutations leave behind. It speaks the public boundary's own dialect: a persisted operation identifier and the single public origin, exactly as the browser client does.
 
 A failed stage stops every later one, and a failed job is the owner-attention route for deployment incidents.
 

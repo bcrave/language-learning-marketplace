@@ -8,7 +8,7 @@ import {
   type UserRole,
 } from "@marketplace/core";
 import { makeExecutableSchema } from "@graphql-tools/schema";
-import { createGraphQLError, createYoga } from "graphql-yoga";
+import { createGraphQLError, createYoga, type Plugin } from "graphql-yoga";
 import { sql } from "kysely";
 import { z } from "zod";
 
@@ -122,7 +122,15 @@ import {
   WorkspacePlace as GraphQLWorkspacePlace,
   WorkspaceRelationshipScope,
 } from "./generated/resolvers.js";
+import { loadPersistedOperationManifest } from "./persisted-operations.js";
 import { correlationIdForRequest } from "./request-context.js";
+import {
+  createResourceBudgets,
+  GRAPHQL_VARIABLES_LIMIT_BYTES,
+  RETRY_AFTER_SECONDS,
+  type ResourceBudgets,
+} from "./resource-budget.js";
+import { VERIFIED_SOURCE_CONTEXT_HEADER } from "./verified-source.js";
 
 const typeDefs = readFileSync(
   resolve(dirname(fileURLToPath(import.meta.url)), "schema.graphql"),
@@ -195,6 +203,19 @@ const withdrawWaitlistInputSchema = z.object({
   idempotencyKey: z.string().min(1).max(200),
   waitlistEntryId: z.uuid(),
 });
+
+/**
+ * A Topic's identity and its two labels, bounded here rather than only by the
+ * database check behind them: an administrator-supplied key that reached
+ * PostgreSQL malformed would come back as an unexplained internal failure
+ * instead of a statement of what the input has to be (ADR 0016).
+ */
+const localizedTopicInputSchema = z.object({
+  key: z.string().regex(/^[A-Z]{2,8}$/),
+  labelEn: z.string().trim().min(1).max(80),
+  labelEs: z.string().trim().min(1).max(80),
+});
+
 const cohortNameSchema = z.string().trim().min(1).max(120);
 const createCohortInputSchema = z.object({
   idempotencyKey: z.string().min(1).max(200),
@@ -263,6 +284,16 @@ export function createApi(options: {
   auth0Issuer?: string;
   now?: () => Date;
   classroomProvider?: ClassroomProvider;
+  /**
+   * Whether this API is the public boundary of ADR 0024, ADR 0025, and ADR
+   * 0028: only build-produced persisted operations execute, ADR 0025's per-User
+   * budgets are charged, and no cross-origin CORS policy is offered. Production
+   * always is; a suite proving the boundary asks for it explicitly, because
+   * production also refuses the fake authenticator those suites depend on.
+   */
+  enforcesPublicBoundary?: boolean;
+  /** ADR 0025's thresholds, which a suite narrows to reach them deliberately. */
+  resourceBudgets?: ResourceBudgets;
 }) {
   const authenticatorPromise = createAuthenticator({
     AUTH_MODE: options.authMode,
@@ -271,6 +302,14 @@ export function createApi(options: {
     NODE_ENV: options.nodeEnv,
   });
   const classroomProvider = options.classroomProvider ?? createSimulatedClassroomProvider();
+  const clock = options.now ?? (() => new Date());
+  const enforcesPublicBoundary =
+    options.enforcesPublicBoundary ?? options.nodeEnv === "production";
+  const budgets = options.resourceBudgets ?? createResourceBudgets();
+  // Loaded regardless of enforcement so a persisted identifier resolves the same
+  // way everywhere: the deployed release journey sends one against every
+  // environment it runs in, including a local server.
+  const persistedOperations = loadPersistedOperationManifest();
 
   const resolvers: Resolvers<ApiContext> = {
       CreateCourseResult: { __resolveType: (value) => value.__typename! },
@@ -1388,6 +1427,12 @@ export function createApi(options: {
         },
         saveLocalizedTopic: async (_parent, { input }, context) => {
           const administrator = await authenticateAdministrator(context, "topic.saved");
+          if (!localizedTopicInputSchema.safeParse(input).success) {
+            throw createGraphQLError(
+              "Provide a Topic key of 2 to 8 capital letters and labels of 1 to 80 characters",
+              { extensions: { code: "BAD_USER_INPUT" } },
+            );
+          }
           return graphQLResult(await idempotentAdministrationMutation(context, administrator, "topic.saved", input.idempotencyKey, input, (transaction) => saveLocalizedTopic(transaction, administrator, input, context.correlationId)));
         },
         addLessonMaterial: async (_parent, { input }, context) => {
@@ -2022,13 +2067,117 @@ export function createApi(options: {
     resolvers,
   });
 
+  /**
+   * The codes a resolver uses to refuse a caller. Identifier enumeration is
+   * deliberately answered as `NOT_FOUND` so a denial does not disclose that the
+   * record exists, which makes all three the same abuse signal from outside.
+   */
+  const denialCodes = new Set(["UNAUTHENTICATED", "FORBIDDEN", "NOT_FOUND"]);
+
+  /** The source Caddy verified, as `createMarketplaceServer` established it. */
+  function sourceOf(request: Request) {
+    return request.headers.get(VERIFIED_SOURCE_CONTEXT_HEADER) ?? "unattributable";
+  }
+
+  /**
+   * A refusal is thrown rather than returned as a result: Yoga's own parameter
+   * check runs after this plugin and throws when no document is present, which
+   * would replace a returned result with its own message. Throwing ends the
+   * request here, with this status and this privacy-safe message.
+   */
+  function refusal(status: number, code: string, message: string) {
+    return createGraphQLError(message, {
+      extensions: {
+        code,
+        http: {
+          status,
+          ...(status === 429
+            ? { headers: { "retry-after": String(RETRY_AFTER_SECONDS) } }
+            : {}),
+        },
+      },
+    });
+  }
+
+  /**
+   * The request-shaped half of the public boundary, before a document is parsed
+   * or a resolver runs: ADR 0024's persisted-operation manifest, ADR 0025's
+   * variables bound, and the denied-authorization budget that bounds identifier
+   * enumeration under a shared credential.
+   */
+  const publicBoundaryPlugin: Plugin<ApiContext> = {
+    onParams({ params, request, setParams }) {
+      if (
+        enforcesPublicBoundary &&
+        !budgets.acceptsFromSource(sourceOf(request), clock().getTime())
+      ) {
+        throw refusal(
+          429,
+          "REQUEST_LIMIT_EXCEEDED",
+          "Too many refused requests. Try again shortly.",
+        );
+      }
+
+      if (
+        params.variables &&
+        JSON.stringify(params.variables).length > GRAPHQL_VARIABLES_LIMIT_BYTES
+      ) {
+        throw refusal(413, "VARIABLES_TOO_LARGE", "The operation variables are too large.");
+      }
+
+      const documentId = params.extensions?.["documentId"];
+      if (typeof documentId === "string") {
+        const document = persistedOperations.documentFor(documentId);
+        if (!document) {
+          throw refusal(
+            400,
+            "UNKNOWN_PERSISTED_OPERATION",
+            "This deployment does not know that persisted GraphQL operation.",
+          );
+        }
+        setParams({ ...params, query: document });
+        return;
+      }
+
+      if (enforcesPublicBoundary) {
+        throw refusal(
+          400,
+          "PERSISTED_OPERATION_REQUIRED",
+          "This deployment executes only persisted GraphQL operations.",
+        );
+      }
+    },
+    onExecutionResult({ request, result }) {
+      if (!enforcesPublicBoundary || !result || Symbol.asyncIterator in result) return;
+      const denied = result.errors?.some((error) =>
+        denialCodes.has(String(error.extensions?.["code"] ?? "")),
+      );
+      if (denied) budgets.recordDeniedAuthorization(sourceOf(request), clock().getTime());
+    },
+  };
+
   return createYoga<ApiContext>({
     schema,
     graphqlEndpoint: "/graphql",
     logging: false,
-    context: async ({ request }) => {
+    plugins: [publicBoundaryPlugin],
+    // ADR 0028 gives the deployment one public origin, so a cross-origin policy
+    // would only describe callers the browser client never is. Yoga's default
+    // reflects the requesting origin, which is exactly what must not ship.
+    ...(enforcesPublicBoundary ? { cors: false as const } : {}),
+    // The query language stays explorable where documents are arbitrary anyway.
+    graphiql: options.nodeEnv === "development",
+    landingPage: options.nodeEnv === "development",
+    context: async ({ params, request }) => {
       const baseAuthenticator = await authenticatorPromise;
       const correlationId = correlationIdForRequest(request.headers);
+      const budgetClass = persistedOperations.budgetClassFor(
+        params.query ?? "",
+        params.operationName,
+      );
+      // One request charges its budget once, however many resolvers ask who is
+      // calling.
+      let charged = false;
       const authenticator: Authenticator = {
         authenticate: async (authenticatedRequest) => {
           const identity = await baseAuthenticator.authenticate(authenticatedRequest);
@@ -2058,6 +2207,31 @@ export function createApi(options: {
           if (user?.access_status === "FIXTURE_REMOVED") {
             await options.db.insertInto("audit_entries").values({ actor_user_id: user.id, acting_role: null, operation: "authenticated-operation.blocked", target_type: "User", target_id: user.id, outcome: "DENIED", reason_code: "USER_FIXTURE_REMOVED", correlation_id: correlationId }).execute();
             throw createGraphQLError("This synthetic User is no longer part of the canonical demonstration", { extensions: { code: "USER_FIXTURE_REMOVED" } });
+          }
+
+          // ADR 0025's per-User budget. It is charged here rather than at the
+          // transport, because a shared credential is only a person once the
+          // token has been validated and resolved to a User.
+          if (enforcesPublicBoundary && !charged) {
+            charged = true;
+            const outcome = budgets.chargeUserOperation(
+              user?.id ?? `${identity.issuer}|${identity.subject}`,
+              budgetClass,
+              clock().getTime(),
+            );
+            if (outcome !== "ACCEPTED") {
+              // Only the request that exhausted the budget is audited: every
+              // later refusal would otherwise let a refused caller drive
+              // unbounded Audit writes.
+              if (user && outcome === "FIRST_REFUSAL") {
+                await options.db.insertInto("audit_entries").values({ actor_user_id: user.id, acting_role: null, operation: "authenticated-operation.rate-limited", target_type: "User", target_id: user.id, outcome: "DENIED", reason_code: "RESOURCE_LIMIT_EXCEEDED", correlation_id: correlationId }).execute();
+              }
+              throw refusal(
+                429,
+                "REQUEST_LIMIT_EXCEEDED",
+                "Too many requests. Try again in a minute.",
+              );
+            }
           }
           return identity;
         },

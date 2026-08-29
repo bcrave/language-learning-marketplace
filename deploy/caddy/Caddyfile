@@ -1,14 +1,26 @@
-# Caddy is the deployment's only public application origin (ADR-0028). This
-# file covers the source-address half of that role: it discards attacker-
-# supplied forwarding headers and passes the address it verified over Railway
-# private networking, so the API can key ADR-0025's per-source request limits
-# on the person making the request rather than on Caddy. The deterministic
-# global browser-security headers the threat model requires land with #53.
+# Caddy is the deployment's only public application origin (ADR-0028). It owns
+# two halves of that role.
+#
+# The source-address half: it discards attacker-supplied forwarding headers and
+# passes the address it verified over Railway private networking, so the API can
+# key ADR-0025's per-source request limits on the person making the request
+# rather than on Caddy.
+#
+# The browser half: it writes the deterministic global browser policy the public
+# portfolio threat model defines, overwriting whatever a handler produced. The
+# policy denies everything by default and names exact provider origins; the two
+# `{$...}` substitutions come from validated public deployment configuration and
+# never from a request header. An unset one narrows the policy — the provider
+# simply becomes unreachable — rather than widening it to a wildcard.
+# `apps/backend/src/operations/browser-policy.ts` is the single statement of
+# this policy, asserted against this file and against the deployed response.
 #
 # Environment values, none of which are stored here:
 #   PUBLIC_DOMAIN             the sole public hostname
 #   API_PRIVATE_ORIGIN        the API's Railway private address, e.g. api.railway.internal:4000
 #   API_TRUSTED_PROXY_SECRET  shared with the API as API_TRUSTED_PROXY_SECRET
+#   AUTH0_TENANT_ORIGIN       the Auth0 tenant origin the SPA connects to
+#   SENTRY_INGEST_ORIGIN      the exact Sentry ingestion origin, with no tunnel here
 #   WEB_ROOT                  directory holding the built Vite assets
 {
 	# Nothing sits in front of Caddy, so no proxy is trusted and {client_ip}
@@ -29,6 +41,30 @@
 	request_header -X-Real-IP
 	request_header -X-Verified-Source
 	request_header -X-Proxy-Authorization
+
+	header {
+		Content-Security-Policy "default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; script-src-attr 'none'; style-src 'self'; style-src-attr 'none'; font-src 'self'; img-src 'self'; connect-src 'self' {$AUTH0_TENANT_ORIGIN} {$SENTRY_INGEST_ORIGIN}; manifest-src 'self'; worker-src 'self'; frame-src 'none'; media-src 'none'; upgrade-insecure-requests"
+		Referrer-Policy "no-referrer"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		X-XSS-Protection "0"
+		Permissions-Policy "accelerometer=(), autoplay=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
+		Strict-Transport-Security "max-age=31536000"
+
+		# Authenticated GraphQL and the SPA entry document are never stored.
+		# Content-hashed assets override this below, where the name already
+		# changes whenever the bytes do.
+		Cache-Control "no-store"
+
+		# Nothing needs to know which server or version answered.
+		-Server
+		-X-Powered-By
+	}
+
+	@hashedAssets path /assets/*
+	header @hashedAssets Cache-Control "public, max-age=31536000, immutable"
 
 	handle /graphql {
 		reverse_proxy {$API_PRIVATE_ORIGIN} {

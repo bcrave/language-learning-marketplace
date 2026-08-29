@@ -29,6 +29,12 @@ const baseConfigSchema = z.object({
     .string()
     .min(MINIMUM_TRUSTED_PROXY_SECRET_LENGTH)
     .optional(),
+  /**
+   * ADR-0028's sole public origin, as the browser names it. State-changing
+   * requests must carry it in `Origin`, which is why the API needs to know the
+   * value rather than inferring one from a request it does not control.
+   */
+  PUBLIC_ORIGIN: z.url().optional(),
   AUTH0_ISSUER: z.url().optional(),
   AUTH0_AUDIENCE: z.string().min(1).optional(),
   AUTH0_MANAGEMENT_CLIENT_ID: z.string().min(1).optional(),
@@ -72,6 +78,10 @@ export function parseAppConfig(environment: Record<string, string | undefined>):
     throw new Error(
       "Verified source context requires API_TRUSTED_PROXY_SECRET in production",
     );
+  }
+
+  if (config.NODE_ENV === "production" && !config.PUBLIC_ORIGIN) {
+    throw new Error("The single public origin requires PUBLIC_ORIGIN in production");
   }
 
   if (

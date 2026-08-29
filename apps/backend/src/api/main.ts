@@ -42,6 +42,7 @@ const server = createMarketplaceServer({
   ...(config.API_TRUSTED_PROXY_SECRET
     ? { trustedProxySecret: config.API_TRUSTED_PROXY_SECRET }
     : {}),
+  ...(config.PUBLIC_ORIGIN ? { publicOrigin: config.PUBLIC_ORIGIN } : {}),
 });
 
 server.listen(config.API_PORT, "0.0.0.0", () => {

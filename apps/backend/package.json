@@ -13,6 +13,7 @@
     "release:bind-identities": "node dist/operations/bind-identities-main.js",
     "release:rebuild-fixtures": "node dist/operations/canonical-data-rebuild-main.js",
     "release:recover-fixtures": "node dist/operations/canonical-data-recovery-main.js",
+    "release:browser-policy": "node dist/operations/browser-policy-main.js",
     "release:gate": "node dist/operations/release-gate-main.js",
     "release:smoke": "node dist/operations/deployed-smoke-main.js",
     "start:api": "node dist/api/main.js",

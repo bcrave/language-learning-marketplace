@@ -6,6 +6,7 @@ import {
 } from "../src/config.js";
 
 const TRUSTED_PROXY_SECRET = "caddy-shared-secret-for-verified-source-context";
+const PUBLIC_ORIGIN = "https://marketplace.example.test";
 
 describe("authentication configuration", () => {
   it("refuses fake authentication in production", () => {
@@ -62,6 +63,32 @@ describe("verified source configuration", () => {
   });
 });
 
+describe("single public origin configuration", () => {
+  it("requires the public origin in production", () => {
+    // The origin a state-changing request must name cannot be inferred from a
+    // request the deployment does not control, so production has to be told.
+    expect(() =>
+      parseAppConfig({
+        NODE_ENV: "production",
+        AUTH_MODE: "auth0",
+        AUTH0_ISSUER: "https://example.invalid/",
+        AUTH0_AUDIENCE: "marketplace",
+        DATABASE_URL: "postgres://example.invalid/marketplace",
+        API_TRUSTED_PROXY_SECRET: TRUSTED_PROXY_SECRET,
+      }),
+    ).toThrowError("The single public origin requires PUBLIC_ORIGIN in production");
+  });
+
+  it("leaves the public origin optional outside production", () => {
+    expect(
+      parseAppConfig({
+        NODE_ENV: "test",
+        DATABASE_URL: "postgres://example.invalid/marketplace",
+      }).PUBLIC_ORIGIN,
+    ).toBeUndefined();
+  });
+});
+
 describe("resource consumption configuration", () => {
   it("keeps the documented per-source request limit by default", () => {
     expect(
@@ -91,6 +118,7 @@ describe("resource consumption configuration", () => {
         AUTH0_AUDIENCE: "marketplace",
         DATABASE_URL: "postgres://example.invalid/marketplace",
         API_TRUSTED_PROXY_SECRET: TRUSTED_PROXY_SECRET,
+        PUBLIC_ORIGIN,
         API_SOURCE_REQUEST_LIMIT: String(PRODUCTION_SOURCE_REQUEST_LIMIT + 1),
       }),
     ).toThrowError(
@@ -107,6 +135,7 @@ describe("resource consumption configuration", () => {
         AUTH0_AUDIENCE: "marketplace",
         DATABASE_URL: "postgres://example.invalid/marketplace",
         API_TRUSTED_PROXY_SECRET: TRUSTED_PROXY_SECRET,
+        PUBLIC_ORIGIN,
         API_SOURCE_REQUEST_LIMIT: String(PRODUCTION_SOURCE_REQUEST_LIMIT),
       }).API_SOURCE_REQUEST_LIMIT,
     ).toBe(PRODUCTION_SOURCE_REQUEST_LIMIT);

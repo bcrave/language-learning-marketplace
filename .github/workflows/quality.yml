@@ -30,7 +30,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm build
-      - run: pnpm verify:production-auth
+      - run: pnpm verify:public-artifacts
       - run: pnpm test:unit
 
   component:
