@@ -8,7 +8,7 @@ import {
   type UserRole,
 } from "@marketplace/core";
 import { makeExecutableSchema } from "@graphql-tools/schema";
-import { createGraphQLError, createYoga, type Plugin } from "graphql-yoga";
+import { createGraphQLError, createYoga } from "graphql-yoga";
 import { sql } from "kysely";
 import { z } from "zod";
 
@@ -122,15 +122,13 @@ import {
   WorkspacePlace as GraphQLWorkspacePlace,
   WorkspaceRelationshipScope,
 } from "./generated/resolvers.js";
-import { loadPersistedOperationManifest } from "./persisted-operations.js";
-import { correlationIdForRequest } from "./request-context.js";
 import {
-  createResourceBudgets,
-  GRAPHQL_VARIABLES_LIMIT_BYTES,
-  RETRY_AFTER_SECONDS,
-  type ResourceBudgets,
-} from "./resource-budget.js";
-import { VERIFIED_SOURCE_CONTEXT_HEADER } from "./verified-source.js";
+  loadPersistedOperationManifest,
+  type PersistedOperationManifest,
+} from "./persisted-operations.js";
+import { createPublicBoundaryPlugin, refusal } from "./public-boundary.js";
+import { correlationIdForRequest } from "./request-context.js";
+import { createResourceBudgets, type ResourceBudgets } from "./resource-budget.js";
 
 const typeDefs = readFileSync(
   resolve(dirname(fileURLToPath(import.meta.url)), "schema.graphql"),
@@ -294,6 +292,11 @@ export function createApi(options: {
   enforcesPublicBoundary?: boolean;
   /** ADR 0025's thresholds, which a suite narrows to reach them deliberately. */
   resourceBudgets?: ResourceBudgets;
+  /**
+   * The operations this API executes. A deployment passes the manifest widened
+   * by ADR 0038's rollout window; anything else runs this build's own.
+   */
+  persistedOperations?: PersistedOperationManifest;
 }) {
   const authenticatorPromise = createAuthenticator({
     AUTH_MODE: options.authMode,
@@ -306,10 +309,10 @@ export function createApi(options: {
   const enforcesPublicBoundary =
     options.enforcesPublicBoundary ?? options.nodeEnv === "production";
   const budgets = options.resourceBudgets ?? createResourceBudgets();
-  // Loaded regardless of enforcement so a persisted identifier resolves the same
-  // way everywhere: the deployed release journey sends one against every
+  // Resolved regardless of enforcement so a persisted identifier means the same
+  // thing everywhere: the deployed release journey sends one against every
   // environment it runs in, including a local server.
-  const persistedOperations = loadPersistedOperationManifest();
+  const persistedOperations = options.persistedOperations ?? loadPersistedOperationManifest();
 
   const resolvers: Resolvers<ApiContext> = {
       CreateCourseResult: { __resolveType: (value) => value.__typename! },
@@ -2067,100 +2070,18 @@ export function createApi(options: {
     resolvers,
   });
 
-  /**
-   * The codes a resolver uses to refuse a caller. Identifier enumeration is
-   * deliberately answered as `NOT_FOUND` so a denial does not disclose that the
-   * record exists, which makes all three the same abuse signal from outside.
-   */
-  const denialCodes = new Set(["UNAUTHENTICATED", "FORBIDDEN", "NOT_FOUND"]);
-
-  /** The source Caddy verified, as `createMarketplaceServer` established it. */
-  function sourceOf(request: Request) {
-    return request.headers.get(VERIFIED_SOURCE_CONTEXT_HEADER) ?? "unattributable";
-  }
-
-  /**
-   * A refusal is thrown rather than returned as a result: Yoga's own parameter
-   * check runs after this plugin and throws when no document is present, which
-   * would replace a returned result with its own message. Throwing ends the
-   * request here, with this status and this privacy-safe message.
-   */
-  function refusal(status: number, code: string, message: string) {
-    return createGraphQLError(message, {
-      extensions: {
-        code,
-        http: {
-          status,
-          ...(status === 429
-            ? { headers: { "retry-after": String(RETRY_AFTER_SECONDS) } }
-            : {}),
-        },
-      },
-    });
-  }
-
-  /**
-   * The request-shaped half of the public boundary, before a document is parsed
-   * or a resolver runs: ADR 0024's persisted-operation manifest, ADR 0025's
-   * variables bound, and the denied-authorization budget that bounds identifier
-   * enumeration under a shared credential.
-   */
-  const publicBoundaryPlugin: Plugin<ApiContext> = {
-    onParams({ params, request, setParams }) {
-      if (
-        enforcesPublicBoundary &&
-        !budgets.acceptsFromSource(sourceOf(request), clock().getTime())
-      ) {
-        throw refusal(
-          429,
-          "REQUEST_LIMIT_EXCEEDED",
-          "Too many refused requests. Try again shortly.",
-        );
-      }
-
-      if (
-        params.variables &&
-        JSON.stringify(params.variables).length > GRAPHQL_VARIABLES_LIMIT_BYTES
-      ) {
-        throw refusal(413, "VARIABLES_TOO_LARGE", "The operation variables are too large.");
-      }
-
-      const documentId = params.extensions?.["documentId"];
-      if (typeof documentId === "string") {
-        const document = persistedOperations.documentFor(documentId);
-        if (!document) {
-          throw refusal(
-            400,
-            "UNKNOWN_PERSISTED_OPERATION",
-            "This deployment does not know that persisted GraphQL operation.",
-          );
-        }
-        setParams({ ...params, query: document });
-        return;
-      }
-
-      if (enforcesPublicBoundary) {
-        throw refusal(
-          400,
-          "PERSISTED_OPERATION_REQUIRED",
-          "This deployment executes only persisted GraphQL operations.",
-        );
-      }
-    },
-    onExecutionResult({ request, result }) {
-      if (!enforcesPublicBoundary || !result || Symbol.asyncIterator in result) return;
-      const denied = result.errors?.some((error) =>
-        denialCodes.has(String(error.extensions?.["code"] ?? "")),
-      );
-      if (denied) budgets.recordDeniedAuthorization(sourceOf(request), clock().getTime());
-    },
-  };
-
   return createYoga<ApiContext>({
     schema,
     graphqlEndpoint: "/graphql",
     logging: false,
-    plugins: [publicBoundaryPlugin],
+    plugins: [
+      createPublicBoundaryPlugin({
+        enforced: enforcesPublicBoundary,
+        budgets,
+        persistedOperations,
+        clock,
+      }),
+    ],
     // ADR 0028 gives the deployment one public origin, so a cross-origin policy
     // would only describe callers the browser client never is. Yoga's default
     // reflects the requesting origin, which is exactly what must not ship.
@@ -2212,10 +2133,13 @@ export function createApi(options: {
           // ADR 0025's per-User budget. It is charged here rather than at the
           // transport, because a shared credential is only a person once the
           // token has been validated and resolved to a User.
-          if (enforcesPublicBoundary && !charged) {
+          // A token that resolves to no User is charged nothing: every operation
+          // it attempts is refused by the resolver, and those refusals are what
+          // the per-source denial budget counts.
+          if (enforcesPublicBoundary && user && !charged) {
             charged = true;
             const outcome = budgets.chargeUserOperation(
-              user?.id ?? `${identity.issuer}|${identity.subject}`,
+              user.id,
               budgetClass,
               clock().getTime(),
             );
@@ -2223,7 +2147,7 @@ export function createApi(options: {
               // Only the request that exhausted the budget is audited: every
               // later refusal would otherwise let a refused caller drive
               // unbounded Audit writes.
-              if (user && outcome === "FIRST_REFUSAL") {
+              if (outcome === "FIRST_REFUSAL") {
                 await options.db.insertInto("audit_entries").values({ actor_user_id: user.id, acting_role: null, operation: "authenticated-operation.rate-limited", target_type: "User", target_id: user.id, outcome: "DENIED", reason_code: "RESOURCE_LIMIT_EXCEEDED", correlation_id: correlationId }).execute();
               }
               throw refusal(

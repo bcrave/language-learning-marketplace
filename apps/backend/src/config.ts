@@ -30,11 +30,18 @@ const baseConfigSchema = z.object({
     .min(MINIMUM_TRUSTED_PROXY_SECRET_LENGTH)
     .optional(),
   /**
-   * ADR-0028's sole public origin, as the browser names it. State-changing
-   * requests must carry it in `Origin`, which is why the API needs to know the
-   * value rather than inferring one from a request it does not control.
+   * ADR-0028's sole public origin, as the browser names it. Requests to
+   * `/graphql` must carry it in `Origin`, which is why the API needs to know
+   * the value rather than inferring one from a request it does not control.
+   *
+   * Normalized to a bare origin here so the comparison is against the same
+   * shape a browser sends. A configured value with a trailing slash or a path
+   * would otherwise match nothing and refuse every reviewer.
    */
-  PUBLIC_ORIGIN: z.url().optional(),
+  PUBLIC_ORIGIN: z
+    .url()
+    .transform((value) => new URL(value).origin)
+    .optional(),
   AUTH0_ISSUER: z.url().optional(),
   AUTH0_AUDIENCE: z.string().min(1).optional(),
   AUTH0_MANAGEMENT_CLIENT_ID: z.string().min(1).optional(),

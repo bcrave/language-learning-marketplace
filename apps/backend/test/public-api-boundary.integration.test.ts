@@ -11,7 +11,11 @@ import {
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { createApi } from "../src/api/app.js";
-import { persistedOperationId } from "../src/api/persisted-operations.js";
+import { acceptedPersistedOperations } from "../src/api/persisted-operation-releases.js";
+import {
+  persistedOperationId,
+  type PersistedOperationManifest,
+} from "../src/api/persisted-operations.js";
 import { RELEASE_JOURNEY_OPERATIONS } from "../src/api/release-journey-operations.js";
 import { createResourceBudgets } from "../src/api/resource-budget.js";
 import { createMarketplaceServer } from "../src/api/server.js";
@@ -106,6 +110,7 @@ describe("the public API boundary", () => {
       userReportLimit?: number;
       sourceDeniedAuthorizationLimit?: number;
     } = {},
+    persistedOperations?: PersistedOperationManifest,
   ) {
     const server = createMarketplaceServer({
       api: createApi({
@@ -114,6 +119,7 @@ describe("the public API boundary", () => {
         nodeEnv: "test",
         enforcesPublicBoundary: true,
         resourceBudgets: createResourceBudgets(limits),
+        ...(persistedOperations ? { persistedOperations } : {}),
       }),
       currentSchemaMigration: schemaMigration,
       db,
@@ -154,19 +160,28 @@ describe("the public API boundary", () => {
       };
     }
 
-    /** What a browser gets by simply visiting `/graphql`. */
-    async function visit() {
-      const response = await fetch(`http://127.0.0.1:${port}/graphql`, {
+    async function get(path: string, accept: string) {
+      const response = await fetch(`http://127.0.0.1:${port}${path}`, {
         headers: {
           "x-proxy-authorization": TRUSTED_PROXY_SECRET,
           "x-verified-source": REVIEWER_SOURCE,
-          accept: "text/html",
+          accept,
         },
       });
       return { status: response.status, body: await response.text() };
     }
 
-    return { post, visit };
+    /** What a browser gets by simply visiting `/graphql`. */
+    const visit = () => get("/graphql", "text/html");
+
+    /** The same operation a POST would carry, asked for over GET instead. */
+    const visitOperation = (documentId: string) =>
+      get(
+        `/graphql?extensions=${encodeURIComponent(JSON.stringify({ documentId }))}`,
+        "application/json",
+      );
+
+    return { post, visit, visitOperation };
   }
 
   function codesOf(answer: Answer) {
@@ -245,6 +260,17 @@ describe("the public API boundary", () => {
       expect(visited.body.toLowerCase()).not.toContain("<!doctype html");
     });
 
+    it("accepts an operation only as a POST", async () => {
+      // A GET would carry the identifier and its variables in the query string,
+      // where a proxy, a history entry, or an access log would keep them.
+      const { visitOperation } = await startBoundary();
+
+      const answer = await visitOperation(releaseOperation("SmokeCredits"));
+
+      expect(answer.status).toBe(405);
+      expect(answer.body).toContain("POST");
+    });
+
     it("offers no cross-origin policy for anyone to use", async () => {
       // ADR 0028 gives the deployment one origin, so a cross-origin policy
       // would only ever describe a caller the browser client never is.
@@ -256,6 +282,76 @@ describe("the public API boundary", () => {
 
       expect(answer.headers.get("access-control-allow-origin")).toBeNull();
       expect(answer.headers.get("access-control-allow-credentials")).toBeNull();
+    });
+  });
+
+  describe("ADR 0038's rollout window", () => {
+    /** One release's manifest, named so the generations cannot collide. */
+    function documentsOf(...names: (keyof typeof RELEASE_JOURNEY_OPERATIONS)[]) {
+      return Object.fromEntries(
+        names.map((name) => [
+          persistedOperationId(RELEASE_JOURNEY_OPERATIONS[name]),
+          RELEASE_JOURNEY_OPERATIONS[name],
+        ]),
+      );
+    }
+
+    it("still executes the previous release's operations while the new API answers", async () => {
+      // The release job deploys the API before the browser client, so the
+      // bundle still being served belongs to the release before this one.
+      await acceptedPersistedOperations(db, {
+        release: "rollout-window-1",
+        documents: documentsOf("SmokeCredits"),
+      });
+      const current = await acceptedPersistedOperations(db, {
+        release: "rollout-window-2",
+        documents: documentsOf("SmokeWorkspace"),
+      });
+
+      const { post } = await startBoundary({}, current);
+      const previousReleasesOperation = await post(
+        { extensions: { documentId: releaseOperation("SmokeCredits") } },
+        { userId: STUDENT },
+      );
+
+      expect(previousReleasesOperation.status).toBe(200);
+      expect(previousReleasesOperation.body.data?.["studentClassCredits"]).toBeTruthy();
+    });
+
+    it("stops executing an operation one release after the client stopped sending it", async () => {
+      const current = await acceptedPersistedOperations(db, {
+        release: "rollout-window-3",
+        documents: documentsOf("SmokeDiscoveryOptions"),
+      });
+
+      const { post } = await startBoundary({}, current);
+      const retiredOperation = await post(
+        { extensions: { documentId: releaseOperation("SmokeCredits") } },
+        { userId: STUDENT },
+      );
+
+      expect(retiredOperation.status).toBe(400);
+      expect(codesOf(retiredOperation)).toEqual(["UNKNOWN_PERSISTED_OPERATION"]);
+    });
+
+    it("does not spend a generation on a redeployed release", async () => {
+      // A restart or a repeated deploy re-records the same release. Treating it
+      // as a new generation would evict the client still being served.
+      await acceptedPersistedOperations(db, {
+        release: "rollout-window-4",
+        documents: documentsOf("SmokeCredits"),
+      });
+      await acceptedPersistedOperations(db, {
+        release: "rollout-window-5",
+        documents: documentsOf("SmokeWorkspace"),
+      });
+      const redeployed = await acceptedPersistedOperations(db, {
+        release: "rollout-window-5",
+        documents: documentsOf("SmokeWorkspace"),
+      });
+
+      expect(redeployed.documentFor(releaseOperation("SmokeCredits"))).toBeTruthy();
+      expect(redeployed.documentFor(releaseOperation("SmokeWorkspace"))).toBeTruthy();
     });
   });
 

@@ -13,6 +13,7 @@ import { createWindowedBudget, RETRY_AFTER_SECONDS } from "./resource-budget.js"
 import {
   connectionSourceFor,
   createVerifiedSourceReader,
+  UNATTRIBUTED_SOURCE,
   VERIFIED_SOURCE_CONTEXT_HEADER,
 } from "./verified-source.js";
 
@@ -40,10 +41,17 @@ export function createMarketplaceServer(options: {
   sourceRequestLimit: number;
   trustedProxySecret?: string;
   /**
-   * The sole public origin of ADR 0028. When it is configured, a state-changing
-   * request must name it in `Origin`: the threat model keeps that check as
-   * defence in depth behind the absent CORS policy, so a cross-site page cannot
-   * spend a reviewer's session even if a browser were to send the request.
+   * The sole public origin of ADR 0028, already normalized to a bare origin.
+   * When it is configured, every request to `/graphql` must name it in
+   * `Origin`: the threat model keeps that check as defence in depth behind the
+   * absent CORS policy, so a cross-site page cannot spend a reviewer's session
+   * even if a browser were to send the request.
+   *
+   * The threat model scopes the check to state-changing requests. This is
+   * deliberately the stricter superset, because the transport has not resolved
+   * a persisted identifier into a document yet and so cannot tell a read from
+   * a write — and because every operation the browser client sends is a POST
+   * from this one origin, so the wider rule costs a legitimate caller nothing.
    */
   publicOrigin?: string;
   /** Deployed loopback-only API backed by the verification database pool. */
@@ -79,7 +87,7 @@ export function createMarketplaceServer(options: {
     // log lines by simply presenting nothing.
     if (
       sourceRequests.consume(
-        source ?? connectionSource ?? "unattributable",
+        source ?? connectionSource ?? UNATTRIBUTED_SOURCE,
         now().getTime(),
       ) !== "ACCEPTED"
     ) {

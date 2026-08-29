@@ -120,10 +120,7 @@ export async function runDeployedSmoke(
   try {
     // Authentication. An unauthenticated caller reaches nothing, and a shared
     // identity reaches its own workspace.
-    const anonymous = await graphql(
-      null,
-      "SmokeAnonymous",
-    );
+    const anonymous = await graphql(null, "SmokeCredits");
     if (!anonymous.errors?.length || anonymous.data?.studentClassCredits) {
       fail("authentication.anonymousDenied", "an unauthenticated request was answered");
     }

@@ -12,7 +12,10 @@ import { sponsorshipTasks } from "../sponsorship/sponsorship-worker.js";
 import { waitlistTasks } from "../waitlist/waitlist-worker.js";
 import { userAnonymizationTasks } from "../authorization/user-anonymization-worker.js";
 import { startWorkerHeartbeat } from "./worker-heartbeat.js";
-import { workerRuntimeLimits } from "./worker-limits.js";
+import {
+  WORKER_CONCURRENCY,
+  WORKER_POLL_INTERVAL_MILLISECONDS,
+} from "./worker-limits.js";
 import { Auth0IdentityAdministration } from "../auth/auth0-identity-administration.js";
 import { createSimulatedIdentityAdministration, createUnavailableIdentityAdministration } from "../auth/identity-administration.js";
 
@@ -27,7 +30,8 @@ const identityAdministration = config.AUTH_MODE === "fake"
 
 const runner = await run({
   connectionString: config.DATABASE_URL,
-  ...workerRuntimeLimits(),
+  concurrency: WORKER_CONCURRENCY,
+  pollInterval: WORKER_POLL_INTERVAL_MILLISECONDS,
   noHandleSignals: true,
   crontab: "* * * * * deliver_class_session_reminders\n* * * * * process_waitlist_entries\n* * * * * deliver_notification_intents\n0 3 * * * compact_terminal_notifications\n* * * * * expire_sponsorship_invitations\n* * * * * grant_sponsorship_credits\n* * * * * generate_report_exports\n*/5 * * * * expire_report_exports\n* * * * * anonymize_users\n0 * * * * reconcile_rolling_fixtures\n0 4 * * * maintain_audit_partitions",
   taskList: {

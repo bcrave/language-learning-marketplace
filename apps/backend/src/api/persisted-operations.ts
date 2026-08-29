@@ -85,7 +85,6 @@ export interface PersistedOperationManifest {
    * operations, which the Security Gate Record names for a release candidate.
    */
   version: string;
-  size: number;
   /** The document a client identifier stands for, or `undefined` when unknown. */
   documentFor(id: string): string | undefined;
   /**
@@ -121,7 +120,6 @@ export function persistedOperationManifest(
 
   return {
     version,
-    size: byId.size,
     documentFor: (id) => byId.get(id),
     budgetClassFor: (document, operationName) =>
       budgetByDocument.get(document) ?? classifyOperationBudget(document, operationName),
@@ -135,19 +133,19 @@ const CLIENT_MANIFEST_PATHS = [
   "../../../web/src/generated/persisted-documents.json",
 ];
 
-let loaded: PersistedOperationManifest | undefined;
+let loadedDocuments: Record<string, string> | undefined;
+let loadedManifest: PersistedOperationManifest | undefined;
 
 /**
- * The manifest this build serves: the browser client's generated documents plus
- * the release journey's own. Both halves are produced by the build and neither
+ * The documents this build produced: the browser client's generated operations
+ * plus the release journey's own. Both halves come from the build and neither
  * can be extended by a request.
  *
  * The result is memoized because it describes build output, which cannot change
- * while the process runs, and every API instance in a suite would otherwise
- * reparse the same hundred documents.
+ * while the process runs.
  */
-export function loadPersistedOperationManifest(): PersistedOperationManifest {
-  if (loaded) return loaded;
+export function loadPersistedOperationDocuments(): Record<string, string> {
+  if (loadedDocuments) return loadedDocuments;
   const here = dirname(fileURLToPath(import.meta.url));
   const manifestPath = CLIENT_MANIFEST_PATHS.map((candidate) =>
     resolve(here, candidate),
@@ -166,6 +164,17 @@ export function loadPersistedOperationManifest(): PersistedOperationManifest {
       document,
     ]),
   );
-  loaded = persistedOperationManifest({ ...clientDocuments, ...releaseDocuments });
-  return loaded;
+  loadedDocuments = { ...clientDocuments, ...releaseDocuments };
+  return loadedDocuments;
+}
+
+/**
+ * This build's own manifest, which is what an API executes when it has no
+ * release history to widen it — local development, and every suite that builds
+ * an API directly. A deployed API accepts the previous release's manifest as
+ * well; `acceptedPersistedOperations` is where that widening happens.
+ */
+export function loadPersistedOperationManifest(): PersistedOperationManifest {
+  loadedManifest ??= persistedOperationManifest(loadPersistedOperationDocuments());
+  return loadedManifest;
 }

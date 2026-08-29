@@ -7,7 +7,10 @@ import {
   browserSecurityHeaders,
   caddyBrowserPolicyDirectives,
   contentSecurityPolicy,
+  ENFORCED_POLICY_HEADER,
   evaluateBrowserPolicy,
+  FORBIDDEN_RESPONSE_HEADERS,
+  REPORT_ONLY_POLICY_HEADER,
   verifyDeployedBrowserPolicy,
 } from "../src/operations/browser-policy.js";
 
@@ -63,6 +66,62 @@ describe("the single public origin's browser policy", () => {
 
   it("serves the Auth0 token worker from this origin rather than a blob URL", () => {
     expect(contentSecurityPolicy(ORIGINS)).toContain("worker-src 'self'");
+  });
+
+  it("runs the identical policy in report-only mode before enforcing it", () => {
+    // The threat model rolls the complete policy out report-only first. Only
+    // the header's name is switchable, so the two modes cannot become two
+    // different policies, and an unset switch enforces.
+    expect(caddyBrowserPolicyDirectives()[0]).toContain(
+      `{$CSP_HEADER_NAME:${ENFORCED_POLICY_HEADER}}`,
+    );
+    expect(CADDYFILE).toContain(`{$CSP_HEADER_NAME:${ENFORCED_POLICY_HEADER}}`);
+  });
+
+  it("refuses a deployment serving no policy at all", () => {
+    // Caddy accepts an empty `CSP_HEADER_NAME`, which names no header and
+    // removes the policy while leaving every companion header in place. Only
+    // reading the deployed response catches that.
+    const unprotected = policyResponse({ [ENFORCED_POLICY_HEADER]: "" });
+
+    expect(
+      evaluateBrowserPolicy(unprotected, ORIGINS).find(
+        (finding) => finding.header === ENFORCED_POLICY_HEADER,
+      ),
+    ).toEqual({
+      header: ENFORCED_POLICY_HEADER,
+      outcome: "FAILED",
+      detail: `${ENFORCED_POLICY_HEADER} was absent`,
+    });
+  });
+
+  it("refuses a public candidate still in report-only mode", () => {
+    const stillRollingOut = policyResponse({
+      [REPORT_ONLY_POLICY_HEADER]: contentSecurityPolicy(ORIGINS),
+    });
+
+    expect(
+      evaluateBrowserPolicy(stillRollingOut, ORIGINS).find(
+        (finding) => finding.header === REPORT_ONLY_POLICY_HEADER,
+      ),
+    ).toEqual({
+      header: REPORT_ONLY_POLICY_HEADER,
+      outcome: "FAILED",
+      detail: `${REPORT_ONLY_POLICY_HEADER} is present`,
+    });
+  });
+
+  it("refuses a response that names the software answering it", () => {
+    for (const header of ["Server", "X-Powered-By"]) {
+      const disclosing = policyResponse({ [header]: "caddy" });
+
+      expect(
+        evaluateBrowserPolicy(disclosing, ORIGINS).find(
+          (finding) => finding.header === header,
+        )?.outcome,
+      ).toBe("FAILED");
+    }
+    expect(FORBIDDEN_RESPONSE_HEADERS).toContain("Server");
   });
 
   it("accepts a deployment that emits exactly the policy", () => {

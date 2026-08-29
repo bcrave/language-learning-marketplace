@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { inspectPublicArtifacts } from "../src/operations/public-artifact-evidence.js";
+import {
+  inspectPublicArtifacts,
+  probeDeployedSourceMaps,
+} from "../src/operations/public-artifact-evidence.js";
 
 /**
  * The checks match the *shape* of a credential, so proving they work means
@@ -214,6 +217,84 @@ describe("evidence that a release's artifacts are safe to publish", () => {
 
     expect(findings.map((finding) => finding.check)).toEqual([
       "artifact.fakeAuthenticationAbsent",
+    ]);
+  });
+});
+
+describe("proving the deployment does not serve its source maps", () => {
+  const ENTRY_DOCUMENT =
+    '<!doctype html><script type="module" src="/assets/index-abc123.js"></script>' +
+    '<link rel="stylesheet" href="/assets/index-abc123.css">';
+
+  function deployment(responses: Record<string, Response>) {
+    const requested: string[] = [];
+    const call = (async (input: string | URL) => {
+      const path = new URL(String(input)).pathname;
+      requested.push(path);
+      return responses[path] ?? new Response("", { status: 404 });
+    }) as unknown as typeof fetch;
+    return { call, requested };
+  }
+
+  it("requests the path each first-party asset's map would occupy", async () => {
+    const { call, requested } = deployment({ "/": new Response(ENTRY_DOCUMENT) });
+
+    const findings = await probeDeployedSourceMaps({
+      origin: "https://example.test",
+      fetch: call,
+    });
+
+    expect(findings).toEqual([]);
+    expect(requested).toEqual([
+      "/",
+      "/assets/index-abc123.js.map",
+      "/assets/index-abc123.css.map",
+    ]);
+  });
+
+  it("refuses a deployment that still serves a map", async () => {
+    const { call } = deployment({
+      "/": new Response(ENTRY_DOCUMENT),
+      "/assets/index-abc123.js.map": new Response("{}"),
+    });
+
+    const findings = await probeDeployedSourceMaps({
+      origin: "https://example.test",
+      fetch: call,
+    });
+
+    expect(findings).toEqual([
+      {
+        check: "artifact.sourceMapsNotServed",
+        path: "/assets/index-abc123.js.map",
+        detail: "a publicly served source map",
+      },
+    ]);
+  });
+
+  it("fails closed when there was nothing to probe", async () => {
+    // A probe that quietly examined no asset would pass every release while
+    // proving nothing about any of them.
+    const { call } = deployment({ "/": new Response("<!doctype html><body></body>") });
+
+    const findings = await probeDeployedSourceMaps({
+      origin: "https://example.test",
+      fetch: call,
+    });
+
+    expect(findings.map((finding) => finding.detail)).toEqual([
+      "the entry document referenced no first-party asset",
+    ]);
+  });
+
+  it("fails closed when the public origin does not answer", async () => {
+    const findings = await probeDeployedSourceMaps({
+      origin: "https://example.test",
+      fetch: (() => Promise.reject(new Error("connection refused"))) as unknown as typeof fetch,
+    });
+
+    expect(findings.map((finding) => finding.detail)).toEqual([
+      "the public origin did not answer an asset probe",
     ]);
   });
 });

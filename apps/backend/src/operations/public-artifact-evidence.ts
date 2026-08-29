@@ -150,3 +150,57 @@ export function inspectPublicArtifacts(artifacts: {
     }),
   ];
 }
+
+/** Where the entry document's first-party assets are served from. */
+const FIRST_PARTY_ASSET = /["'](\/assets\/[A-Za-z0-9._-]+\.(?:js|css))["']/g;
+
+/**
+ * Proves the deployment does not serve the source maps its build produced.
+ *
+ * Scanning the local artifact proves the maps are not *in* the build. This
+ * proves the other half the release gate asks for: that requesting the path a
+ * map would occupy returns nothing. A map uploaded privately to Sentry and
+ * discarded from the deployment is the intended state; one still reachable at
+ * its expected path is a disclosure of the whole source tree.
+ *
+ * Finding no asset to probe is itself a finding. A check that silently probed
+ * nothing would pass every release while proving nothing.
+ */
+export async function probeDeployedSourceMaps(options: {
+  origin: string;
+  fetch?: typeof fetch;
+}): Promise<ArtifactFinding[]> {
+  const call = options.fetch ?? fetch;
+  const check = "artifact.sourceMapsNotServed";
+
+  let entryDocument: string;
+  try {
+    const response = await call(new URL("/", options.origin));
+    entryDocument = await response.text();
+  } catch {
+    return [
+      { check, path: "/", detail: "the public origin did not answer an asset probe" },
+    ];
+  }
+
+  const assets = [...entryDocument.matchAll(FIRST_PARTY_ASSET)].map((match) => match[1]!);
+  if (assets.length === 0) {
+    return [
+      { check, path: "/", detail: "the entry document referenced no first-party asset" },
+    ];
+  }
+
+  const probes = await Promise.all(
+    [...new Set(assets)].map(async (asset) => {
+      const mapPath = `${asset}.map`;
+      try {
+        const response = await call(new URL(mapPath, options.origin));
+        return response.ok ? { check, path: mapPath, detail: "a publicly served source map" } : null;
+      } catch {
+        // A request that cannot complete is not evidence that a map is served.
+        return null;
+      }
+    }),
+  );
+  return probes.filter((finding) => finding !== null);
+}

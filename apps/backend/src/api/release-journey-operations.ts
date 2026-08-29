@@ -14,7 +14,6 @@
  * under the same authentication, authorization, and Audit paths.
  */
 export const RELEASE_JOURNEY_OPERATIONS = {
-  SmokeAnonymous: "query SmokeAnonymous { studentClassCredits { availableBalance } }",
   SmokeWorkspace: `query SmokeWorkspace {
   roleWorkspace(actingRole: STUDENT) {
     actingRole

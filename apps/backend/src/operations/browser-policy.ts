@@ -15,8 +15,19 @@
  */
 
 /** The Caddy environment names carrying each provider origin into the policy. */
-export const AUTH0_ORIGIN_PLACEHOLDER = "{$AUTH0_TENANT_ORIGIN}";
-export const SENTRY_ORIGIN_PLACEHOLDER = "{$SENTRY_INGEST_ORIGIN}";
+const AUTH0_ORIGIN_PLACEHOLDER = "{$AUTH0_TENANT_ORIGIN}";
+const SENTRY_ORIGIN_PLACEHOLDER = "{$SENTRY_INGEST_ORIGIN}";
+
+/**
+ * The threat model runs the complete policy in report-only mode against the
+ * private deployment first, then enforces the identical policy for the public
+ * release. One environment name selects the header, so the two modes cannot
+ * drift into two different policies, and it defaults to enforcement: a
+ * deployment that says nothing enforces.
+ */
+export const ENFORCED_POLICY_HEADER = "Content-Security-Policy";
+export const REPORT_ONLY_POLICY_HEADER = "Content-Security-Policy-Report-Only";
+const POLICY_HEADER_PLACEHOLDER = `{$CSP_HEADER_NAME:${ENFORCED_POLICY_HEADER}}`;
 
 export interface BrowserPolicyOrigins {
   /** The Auth0 tenant the SPA redirects to and exchanges tokens with. */
@@ -62,7 +73,7 @@ export function contentSecurityPolicy(origins: BrowserPolicyOrigins) {
  * permanently HTTPS. `X-XSS-Protection: 0` disables the legacy auditor rather
  * than enabling it, because its heuristics introduce their own vulnerabilities.
  */
-export const COMPANION_BROWSER_HEADERS: ReadonlyArray<readonly [string, string]> = [
+const COMPANION_BROWSER_HEADERS: ReadonlyArray<readonly [string, string]> = [
   ["Referrer-Policy", "no-referrer"],
   ["X-Content-Type-Options", "nosniff"],
   ["X-Frame-Options", "DENY"],
@@ -76,15 +87,31 @@ export const COMPANION_BROWSER_HEADERS: ReadonlyArray<readonly [string, string]>
   ["Strict-Transport-Security", "max-age=31536000"],
 ];
 
-/** Every header the single public origin must emit, as name/value pairs. */
+/**
+ * The global browser policy the single public origin must emit, as name/value
+ * pairs. Response-specific concerns the threat model leaves to the application
+ * — content type, content disposition, and caching — are deliberately not here;
+ * the Caddyfile's own caching rules are asserted separately.
+ */
 export function browserSecurityHeaders(
   origins: BrowserPolicyOrigins,
 ): ReadonlyArray<readonly [string, string]> {
   return [
-    ["Content-Security-Policy", contentSecurityPolicy(origins)],
+    [ENFORCED_POLICY_HEADER, contentSecurityPolicy(origins)],
     ...COMPANION_BROWSER_HEADERS,
   ];
 }
+
+/**
+ * Headers a public release must not carry: the two that name the software
+ * answering, and the report-only policy, whose presence means the deployment is
+ * still in the rollout phase rather than enforcing.
+ */
+export const FORBIDDEN_RESPONSE_HEADERS: readonly string[] = [
+  "Server",
+  "X-Powered-By",
+  REPORT_ONLY_POLICY_HEADER,
+];
 
 /**
  * The policy as Caddy writes it: the body of one `header` block, with the
@@ -93,10 +120,14 @@ export function browserSecurityHeaders(
  * header.
  */
 export function caddyBrowserPolicyDirectives() {
-  return browserSecurityHeaders({
+  const placeholders = {
     auth0Origin: AUTH0_ORIGIN_PLACEHOLDER,
     sentryOrigin: SENTRY_ORIGIN_PLACEHOLDER,
-  }).map(([name, value]) => `${name} "${value}"`);
+  };
+  return [
+    `${POLICY_HEADER_PLACEHOLDER} "${contentSecurityPolicy(placeholders)}"`,
+    ...COMPANION_BROWSER_HEADERS.map(([name, value]) => `${name} "${value}"`),
+  ];
 }
 
 export interface BrowserPolicyFinding {
@@ -115,7 +146,7 @@ export function evaluateBrowserPolicy(
   headers: Headers,
   origins: BrowserPolicyOrigins,
 ): BrowserPolicyFinding[] {
-  return browserSecurityHeaders(origins).map(([header, expected]) => {
+  const required = browserSecurityHeaders(origins).map(([header, expected]) => {
     const observed = headers.get(header);
     if (observed === null) {
       return { header, outcome: "FAILED" as const, detail: `${header} was absent` };
@@ -125,6 +156,14 @@ export function evaluateBrowserPolicy(
     }
     return { header, outcome: "PASSED" as const, detail: `${header} matches the policy` };
   });
+
+  const forbidden = FORBIDDEN_RESPONSE_HEADERS.map((header) =>
+    headers.has(header)
+      ? { header, outcome: "FAILED" as const, detail: `${header} is present` }
+      : { header, outcome: "PASSED" as const, detail: `${header} is absent` },
+  );
+
+  return [...required, ...forbidden];
 }
 
 /**

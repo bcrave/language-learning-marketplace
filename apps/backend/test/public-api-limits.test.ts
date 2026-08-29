@@ -8,7 +8,10 @@ import {
   USER_MUTATION_LIMIT_PER_MINUTE,
   USER_REPORT_LIMIT_PER_MINUTE,
 } from "../src/api/resource-budget.js";
-import { workerRuntimeLimits } from "../src/worker/worker-limits.js";
+import {
+  WORKER_CONCURRENCY,
+  WORKER_POLL_INTERVAL_MILLISECONDS,
+} from "../src/worker/worker-limits.js";
 
 const START = 1_700_000_000_000;
 
@@ -101,7 +104,7 @@ describe("the worker's bounded runtime", () => {
   it("runs one background job at a time", () => {
     // The worker shares one PostgreSQL instance and one deployment budget with
     // the API, so background work is bounded rather than elastic.
-    expect(workerRuntimeLimits().concurrency).toBe(1);
-    expect(workerRuntimeLimits().pollInterval).toBeGreaterThan(0);
+    expect(WORKER_CONCURRENCY).toBe(1);
+    expect(WORKER_POLL_INTERVAL_MILLISECONDS).toBeGreaterThan(0);
   });
 });

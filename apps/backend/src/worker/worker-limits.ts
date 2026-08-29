@@ -17,11 +17,3 @@ export const WORKER_CONCURRENCY = 1;
 
 /** How long the worker waits before asking for work again when the queue is empty. */
 export const WORKER_POLL_INTERVAL_MILLISECONDS = 10_000;
-
-/** The runtime bounds every worker process starts with. */
-export function workerRuntimeLimits() {
-  return {
-    concurrency: WORKER_CONCURRENCY,
-    pollInterval: WORKER_POLL_INTERVAL_MILLISECONDS,
-  } as const;
-}

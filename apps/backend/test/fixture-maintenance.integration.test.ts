@@ -11,6 +11,13 @@ import { createApi } from "../src/api/app.js";
 import { createMarketplaceServer } from "../src/api/server.js";
 import { createDatabase, type Database } from "../src/database/database.js";
 import { latestMigrationName, migrateDatabase } from "../src/database/migrate.js";
+
+/**
+ * A Canonical Data Rebuild records the schema it replaced fixtures against, so
+ * the expectation is the schema this build ships rather than a name that has to
+ * be edited into three places every time a migration lands.
+ */
+const SCHEMA_VERSION = await latestMigrationName();
 import { loadCanonicalFixtures } from "../src/fixtures/canonical-fixture-loader.js";
 import { canonicalFixtureManifest } from "../src/fixtures/canonical-fixture-manifest.js";
 import {
@@ -152,7 +159,7 @@ describe("fixture maintenance", () => {
         initiator: "PROJECT_OWNER",
         owner_reason: "Restore the public demonstration after reviewer use.",
         fixture_generation: 1,
-        schema_version: "0032_fixture_maintenance.sql",
+        schema_version: SCHEMA_VERSION,
         validation_evidence: {
           canonicalFixtureInvariants: "PASSED",
           rollingFixtureReconciliation: "PASSED",
@@ -166,7 +173,7 @@ describe("fixture maintenance", () => {
       initiator: "PROJECT_OWNER",
       fixtureGeneration: 1,
       manifestVersion: canonicalFixtureManifest.version,
-      schemaVersion: "0032_fixture_maintenance.sql",
+      schemaVersion: SCHEMA_VERSION,
       aggregateValidation: "PASSED",
     });
   });
@@ -324,7 +331,7 @@ describe("fixture maintenance", () => {
       state: "INDETERMINATE",
       leaseOwned: true,
       auditEvidenceComplete: true,
-      expectedSchemaVersion: "0032_fixture_maintenance.sql",
+      expectedSchemaVersion: SCHEMA_VERSION,
     });
 
     const heartbeat = startWorkerHeartbeat({ db, release: "smoke-recovery", intervalMilliseconds: 2 });

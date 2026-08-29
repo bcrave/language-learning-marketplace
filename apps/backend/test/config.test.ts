@@ -79,6 +79,18 @@ describe("single public origin configuration", () => {
     ).toThrowError("The single public origin requires PUBLIC_ORIGIN in production");
   });
 
+  it("normalizes the configured origin to the shape a browser sends", () => {
+    // A trailing slash or a path would match no `Origin` header at all, and
+    // would refuse every reviewer rather than announcing the misconfiguration.
+    expect(
+      parseAppConfig({
+        NODE_ENV: "test",
+        DATABASE_URL: "postgres://example.invalid/marketplace",
+        PUBLIC_ORIGIN: "https://marketplace.example.test/",
+      }).PUBLIC_ORIGIN,
+    ).toBe(PUBLIC_ORIGIN);
+  });
+
   it("leaves the public origin optional outside production", () => {
     expect(
       parseAppConfig({

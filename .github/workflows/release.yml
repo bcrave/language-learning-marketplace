@@ -7,7 +7,7 @@ name: Release
 # secrets for that run only. No credential is returned to the owner session.
 #
 # ADR 0038 fixes the order: database, then API, then the worker heartbeat, then
-# the Caddy-hosted browser client, then the browser policy that client serves,
+# the Caddy-hosted browser client, then the public surface that client serves,
 # then the deployed smoke journey. A failed stage stops every later one, and a
 # failed job is the owner-attention route the operator guide names for
 # deployment incidents.
@@ -91,15 +91,16 @@ jobs:
           railway variables --service web --set "APP_RELEASE=$APP_RELEASE" --skip-deploys
           railway up --service web --ci
 
-      # The browser policy, as a browser receives it from the single public
-      # origin. Drift from the versioned policy blocks the release.
-      - name: Verify the deployed browser policy
+      # What the single public origin discloses to a browser: the versioned
+      # policy, and whether this build's source maps are reachable. Either
+      # finding blocks the release.
+      - name: Verify the deployed public surface
         timeout-minutes: 5
         env:
           PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
           AUTH0_TENANT_ORIGIN: ${{ vars.AUTH0_TENANT_ORIGIN }}
           SENTRY_INGEST_ORIGIN: ${{ vars.SENTRY_INGEST_ORIGIN }}
-        run: pnpm --filter @marketplace/backend release:browser-policy
+        run: pnpm --filter @marketplace/backend release:public-surface
 
       # The deployed smoke journey: authentication, Interface Locale, Class
       # Session Discovery, Booking, Student Cancellation, and the Audit

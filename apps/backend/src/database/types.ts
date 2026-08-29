@@ -98,6 +98,18 @@ export interface WorkerHeartbeatsTable {
   observed_at: Generated<Date>;
 }
 
+export interface PersistedOperationManifestsTable {
+  release: string;
+  version: string;
+  recorded_at: Generated<Date>;
+}
+
+export interface PersistedOperationsTable {
+  document_id: string;
+  release: string;
+  document: string;
+}
+
 export interface MaintenanceStateTable {
   singleton: boolean;
   state: "AVAILABLE" | "REBUILDING" | "INDETERMINATE";
@@ -230,6 +242,8 @@ export interface DatabaseSchema {
   role_workspace_places: RoleWorkspacePlacesTable;
   audit_entries: AuditEntriesTable;
   worker_heartbeats: WorkerHeartbeatsTable;
+  persisted_operation_manifests: PersistedOperationManifestsTable;
+  persisted_operations: PersistedOperationsTable;
   maintenance_state: MaintenanceStateTable;
   canonical_data_rebuilds: CanonicalDataRebuildsTable;
   rolling_fixture_reconciliations: RollingFixtureReconciliationsTable;

@@ -22,16 +22,16 @@ await build({
         "src/database/seed.ts",
         // The release's own entry points: the shared identity binding and the
         // readiness gates run inside Railway as pre-deploy steps, and the
-        // browser policy and deployed smoke journey run from the release job
+        // deployed public surface and smoke journey run from the release job
         // after them. The artifact evidence is deliberately absent: it inspects
         // this output, so building it into the output would make it inspect
         // its own list of forbidden markers.
         "src/operations/bind-identities-main.ts",
-        "src/operations/browser-policy-main.ts",
         "src/operations/canonical-data-rebuild-main.ts",
         "src/operations/canonical-data-recovery-main.ts",
         "src/operations/deployed-maintenance-smoke-main.ts",
         "src/operations/deployed-smoke-main.ts",
+        "src/operations/public-surface-main.ts",
         "src/operations/release-gate-main.ts",
         "src/worker/main.ts",
       ],

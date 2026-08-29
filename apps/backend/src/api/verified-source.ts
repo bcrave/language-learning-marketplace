@@ -16,6 +16,13 @@ const VERIFIED_SOURCE_HEADER = "x-verified-source";
 export const VERIFIED_SOURCE_CONTEXT_HEADER = "x-marketplace-verified-source";
 
 /**
+ * The budget key for a request whose source could not be established at all.
+ * They share one bucket deliberately: an unattributable request is exactly what
+ * a misconfigured origin produces, and it must not buy an unbounded path.
+ */
+export const UNATTRIBUTED_SOURCE = "unattributable";
+
+/**
  * Caddy sends exactly the one address it verified. A chain, a name, or a
  * repeated header means something else produced the value, so the request
  * fails closed rather than letting a caller choose which entry counts.

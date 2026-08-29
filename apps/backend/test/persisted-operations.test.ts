@@ -61,7 +61,6 @@ describe("the persisted GraphQL operation manifest", () => {
 
     expect(one.version).toBe(same.version);
     expect(one.version).not.toBe(other.version);
-    expect(one.size).toBe(1);
   });
 
   it("refuses a manifest whose identifier does not match its document", () => {
