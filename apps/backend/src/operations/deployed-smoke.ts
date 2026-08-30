@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
 
+import { persistedOperationId } from "../api/persisted-operations.js";
+import {
+  RELEASE_JOURNEY_OPERATIONS,
+  type ReleaseJourneyOperationName,
+} from "../api/release-journey-operations.js";
+
 /**
  * The deployed smoke journey of ADR 0038: the last release stage, run against
  * the public origin after the browser client has been transitioned. It proves
@@ -11,6 +17,11 @@ import { randomUUID } from "node:crypto";
  * runs unchanged against a local server. Nothing it records carries a secret,
  * an access token, or a person's content: only operation names, codes, and
  * counts, because a release job's output is privacy-safe evidence (ADR 0039).
+ *
+ * The journey speaks the public boundary's own dialect (ADR 0024): it names a
+ * persisted operation and sends the public origin in `Origin`, exactly as the
+ * browser client does, so a deployment that has stopped accepting either fails
+ * here rather than after a reviewer arrives.
  */
 export type SmokeRole = "student" | "administrator";
 
@@ -66,19 +77,32 @@ export async function runDeployedSmoke(
     throw new SmokeFailure(name);
   };
 
-  async function graphql(
+  async function post(
     role: SmokeRole | null,
-    query: string,
-    variables: Record<string, unknown> = {},
-  ): Promise<GraphQLResponse> {
-    const response = await call(endpoint, {
+    body: Record<string, unknown>,
+  ): Promise<Response> {
+    return call(endpoint, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "x-correlation-id": correlationId,
+        // ADR 0028 lets the deployment refuse a state-changing request that
+        // does not name the single public origin.
+        origin: new URL(options.origin).origin,
         ...(role ? options.authorizationFor[role] : {}),
       },
-      body: JSON.stringify({ query, variables }),
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function graphql(
+    role: SmokeRole | null,
+    operation: ReleaseJourneyOperationName,
+    variables: Record<string, unknown> = {},
+  ): Promise<GraphQLResponse> {
+    const response = await post(role, {
+      extensions: { documentId: persistedOperationId(RELEASE_JOURNEY_OPERATIONS[operation]) },
+      variables,
     });
     return (await response.json()) as GraphQLResponse;
   }
@@ -96,14 +120,29 @@ export async function runDeployedSmoke(
   try {
     // Authentication. An unauthenticated caller reaches nothing, and a shared
     // identity reaches its own workspace.
-    const anonymous = await graphql(
-      null,
-      "query SmokeAnonymous { studentClassCredits { availableBalance } }",
-    );
+    const anonymous = await graphql(null, "SmokeCredits");
     if (!anonymous.errors?.length || anonymous.data?.studentClassCredits) {
       fail("authentication.anonymousDenied", "an unauthenticated request was answered");
     }
     record("authentication.anonymousDenied", "an unauthenticated request was refused");
+
+    // Deployment boundary. A document the build did not produce is refused
+    // before authentication is even considered (ADR 0024).
+    const arbitrary = await post(null, {
+      query: "query DeployedSmokeArbitraryDocument { __typename }",
+    });
+    const arbitraryBody = (await arbitrary.json()) as GraphQLResponse;
+    if (
+      arbitrary.ok ||
+      arbitraryBody.data ||
+      !arbitraryBody.errors?.some((error) => error.message.includes("persisted"))
+    ) {
+      fail(
+        "boundary.persistedOperationsOnly",
+        `an arbitrary GraphQL document answered with status ${arbitrary.status}`,
+      );
+    }
+    record("boundary.persistedOperationsOnly", "an arbitrary GraphQL document was refused");
 
     const workspace = fieldOf<{
       actingRole: string;
@@ -117,13 +156,7 @@ export async function runDeployedSmoke(
       "authentication.studentIdentified",
       await graphql(
         "student",
-        `query SmokeWorkspace {
-          roleWorkspace(actingRole: STUDENT) {
-            actingRole
-            relationshipScope
-            user { id interfaceLocale displayTimeZone }
-          }
-        }`,
+        "SmokeWorkspace",
       ),
       "roleWorkspace",
     );
@@ -148,7 +181,7 @@ export async function runDeployedSmoke(
       "discovery.results",
       await graphql(
         "student",
-        "query SmokeDiscoveryOptions { classSessionDiscoveryOptions { targetLanguages } }",
+        "SmokeDiscoveryOptions",
       ),
       "classSessionDiscoveryOptions",
     );
@@ -175,17 +208,7 @@ export async function runDeployedSmoke(
         "discovery.results",
         await graphql(
           "student",
-          `query SmokeDiscovery($input: ClassSessionDiscoveryInput!) {
-            discoverClassSessions(input: $input) {
-              nodes {
-                id
-                startsAt
-                seatCapacity
-                occupiedSeats
-                teacherProfile { id }
-              }
-            }
-          }`,
+          "SmokeDiscovery",
           { input: { targetLanguage } },
         ),
         "discoverClassSessions",
@@ -215,11 +238,7 @@ export async function runDeployedSmoke(
         "localization.teacherProfileLocalized",
         await graphql(
           "student",
-          `query SmokeTeacherProfile($teacherUserId: ID!, $locale: InterfaceLocale!) {
-            publicTeacherProfile(teacherUserId: $teacherUserId, locale: $locale) {
-              teachingTopics { key label labelEn labelEs }
-            }
-          }`,
+          "SmokeTeacherProfile",
           { teacherUserId: bookableSession.teacherProfile.id, locale },
         ),
         "publicTeacherProfile",
@@ -248,7 +267,7 @@ export async function runDeployedSmoke(
       "booking.created",
       await graphql(
         "student",
-        "query SmokeCredits { studentClassCredits { availableBalance } }",
+        "SmokeCredits",
       ),
       "studentClassCredits",
     ).availableBalance;
@@ -263,16 +282,7 @@ export async function runDeployedSmoke(
       "booking.created",
       await graphql(
         "student",
-        `mutation SmokeBook($input: BookClassSessionInput!) {
-          bookClassSession(input: $input) {
-            __typename
-            ... on BookClassSessionSuccess {
-              booking { id state }
-              account { availableBalance }
-            }
-            ... on BookingError { code }
-          }
-        }`,
+        "SmokeBook",
         { input: { idempotencyKey: randomUUID(), classSessionId: bookableSession.id } },
       ),
       "bookClassSession",
@@ -298,16 +308,7 @@ export async function runDeployedSmoke(
       "booking.cancelled",
       await graphql(
         "student",
-        `mutation SmokeCancel($input: CancelBookingInput!) {
-          cancelBooking(input: $input) {
-            __typename
-            ... on CancelBookingSuccess {
-              booking { state terminalReason classCreditRefunded }
-              account { availableBalance }
-            }
-            ... on BookingError { code }
-          }
-        }`,
+        "SmokeCancel",
         { input: { idempotencyKey: randomUUID(), bookingId: booked.booking!.id } },
       ),
       "cancelBooking",
@@ -340,13 +341,7 @@ export async function runDeployedSmoke(
       "audit.entriesRecorded",
       await graphql(
         "administrator",
-        `query SmokeAudit($filter: AuditLogFilterInput) {
-          auditLog(filter: $filter) {
-            __typename
-            ... on AuditLog { entries { operation outcome correlationId } }
-            ... on AuditLogError { code }
-          }
-        }`,
+        "SmokeAudit",
         { filter: { correlationId } },
       ),
       "auditLog",

@@ -1,4 +1,3 @@
-import { createHash, randomBytes } from "node:crypto";
 import { createServer, type ServerResponse } from "node:http";
 
 import { sql } from "kysely";
@@ -10,34 +9,18 @@ import {
   workerHeartbeatIsFresh,
 } from "../worker/worker-heartbeat.js";
 import type { createApi } from "./app.js";
-import { connectionSourceFor, createVerifiedSourceReader } from "./verified-source.js";
+import { createWindowedBudget, RETRY_AFTER_SECONDS } from "./resource-budget.js";
+import {
+  connectionSourceFor,
+  createVerifiedSourceReader,
+  UNATTRIBUTED_SOURCE,
+  VERIFIED_SOURCE_CONTEXT_HEADER,
+} from "./verified-source.js";
 
 const GRAPHQL_BODY_LIMIT_BYTES = 1_000_000;
-const RATE_LIMIT_WINDOW_MILLISECONDS = 60_000;
 const LIVENESS_PATH = "/health/live";
 const READINESS_PATH = "/health/ready";
 const WORKER_READINESS_PATH = "/health/worker";
-
-class SourceRateLimiter {
-  readonly #counters = new Map<string, { count: number; startedAt: number }>();
-  readonly #salt = randomBytes(32);
-  readonly #limit: number;
-
-  constructor(limit: number) {
-    this.#limit = limit;
-  }
-
-  accepts(source: string, now = Date.now()) {
-    const key = createHash("sha256").update(this.#salt).update(source).digest("base64url");
-    const current = this.#counters.get(key);
-    if (!current || now - current.startedAt >= RATE_LIMIT_WINDOW_MILLISECONDS) {
-      this.#counters.set(key, { count: 1, startedAt: now });
-      return true;
-    }
-    current.count += 1;
-    return current.count <= this.#limit;
-  }
-}
 
 function sendJson(
   response: ServerResponse,
@@ -57,11 +40,27 @@ export function createMarketplaceServer(options: {
   now?: () => Date;
   sourceRequestLimit: number;
   trustedProxySecret?: string;
+  /**
+   * The sole public origin of ADR 0028, already normalized to a bare origin.
+   * When it is configured, every request to `/graphql` must name it in
+   * `Origin`: the threat model keeps that check as defence in depth behind the
+   * absent CORS policy, so a cross-site page cannot spend a reviewer's session
+   * even if a browser were to send the request.
+   *
+   * The threat model scopes the check to state-changing requests. This is
+   * deliberately the stricter superset, because the transport has not resolved
+   * a persisted identifier into a document yet and so cannot tell a read from
+   * a write — and because every operation the browser client sends is a POST
+   * from this one origin, so the wider rule costs a legitimate caller nothing.
+   */
+  publicOrigin?: string;
   /** Deployed loopback-only API backed by the verification database pool. */
   maintenanceApi?: ReturnType<typeof createApi>;
 }) {
   const now = options.now ?? (() => new Date());
-  const rateLimiter = new SourceRateLimiter(options.sourceRequestLimit);
+  // ADR 0025's per-source request budget, keyed by a salted hash so a source
+  // address decides one request and is never retained in a readable form.
+  const sourceRequests = createWindowedBudget(options.sourceRequestLimit);
   const verifiedSourceFor = createVerifiedSourceReader(options.trustedProxySecret);
 
   return createServer(async (request, response) => {
@@ -86,8 +85,13 @@ export function createMarketplaceServer(options: {
     // Refusals stay inside a budget too. A misconfigured origin would
     // otherwise buy an unbounded path through the API and an unbounded run of
     // log lines by simply presenting nothing.
-    if (!rateLimiter.accepts(source ?? connectionSource ?? "unattributable")) {
-      response.setHeader("retry-after", "60");
+    if (
+      sourceRequests.consume(
+        source ?? connectionSource ?? UNATTRIBUTED_SOURCE,
+        now().getTime(),
+      ) !== "ACCEPTED"
+    ) {
+      response.setHeader("retry-after", String(RETRY_AFTER_SECONDS));
       sendJson(response, 429, { error: "Request limit exceeded" });
       return;
     }
@@ -178,7 +182,25 @@ export function createMarketplaceServer(options: {
         sendJson(response, 413, { error: "GraphQL request body is invalid or too large" });
         return;
       }
+
+      // The loopback verification API is not reached through the public origin
+      // and names no origin of its own, so the check that guards the public one
+      // would only ever refuse it.
+      if (
+        options.publicOrigin !== undefined &&
+        !loopbackVerification &&
+        request.headers.origin !== options.publicOrigin
+      ) {
+        options.logger.warn({ event: "origin.refused" });
+        sendJson(response, 403, { error: "Request origin is not permitted" });
+        return;
+      }
     }
+
+    // The GraphQL layer keys ADR 0025's denied-authorization budget on the
+    // source this transport verified, so it travels as a header the transport
+    // owns: assigning it discards anything a caller sent under the same name.
+    request.headers[VERIFIED_SOURCE_CONTEXT_HEADER] = source;
 
     await (loopbackVerification && path === "/graphql" ? options.maintenanceApi! : options.api)(request, response);
   });

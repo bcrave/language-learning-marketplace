@@ -47,7 +47,15 @@ describe("deployed smoke journey", () => {
     await loadCanonicalFixtures(db, { correlationId: "deployed-smoke-fixtures" });
 
     const server = createMarketplaceServer({
-      api: createApi({ db, authMode: "fake", nodeEnv: "test" }),
+      // The journey is the release's proof that the public boundary works, so
+      // the server it runs against here enforces it: only build-produced
+      // persisted operations, and ADR 0025's per-User budgets charged.
+      api: createApi({
+        db,
+        authMode: "fake",
+        nodeEnv: "test",
+        enforcesPublicBoundary: true,
+      }),
       currentSchemaMigration: await latestMigrationName(),
       db,
       logger: { warn: () => undefined } as never,
@@ -79,6 +87,7 @@ describe("deployed smoke journey", () => {
 
     expect(report.checks.map(({ name }) => name)).toEqual([
       "authentication.anonymousDenied",
+      "boundary.persistedOperationsOnly",
       "authentication.studentIdentified",
       "discovery.results",
       "localization.teacherProfileLocalized",

@@ -122,7 +122,13 @@ import {
   WorkspacePlace as GraphQLWorkspacePlace,
   WorkspaceRelationshipScope,
 } from "./generated/resolvers.js";
+import {
+  loadPersistedOperationManifest,
+  type PersistedOperationManifest,
+} from "./persisted-operations.js";
+import { createPublicBoundaryPlugin, refusal } from "./public-boundary.js";
 import { correlationIdForRequest } from "./request-context.js";
+import { createResourceBudgets, type ResourceBudgets } from "./resource-budget.js";
 
 const typeDefs = readFileSync(
   resolve(dirname(fileURLToPath(import.meta.url)), "schema.graphql"),
@@ -195,6 +201,19 @@ const withdrawWaitlistInputSchema = z.object({
   idempotencyKey: z.string().min(1).max(200),
   waitlistEntryId: z.uuid(),
 });
+
+/**
+ * A Topic's identity and its two labels, bounded here rather than only by the
+ * database check behind them: an administrator-supplied key that reached
+ * PostgreSQL malformed would come back as an unexplained internal failure
+ * instead of a statement of what the input has to be (ADR 0016).
+ */
+const localizedTopicInputSchema = z.object({
+  key: z.string().regex(/^[A-Z]{2,8}$/),
+  labelEn: z.string().trim().min(1).max(80),
+  labelEs: z.string().trim().min(1).max(80),
+});
+
 const cohortNameSchema = z.string().trim().min(1).max(120);
 const createCohortInputSchema = z.object({
   idempotencyKey: z.string().min(1).max(200),
@@ -263,6 +282,21 @@ export function createApi(options: {
   auth0Issuer?: string;
   now?: () => Date;
   classroomProvider?: ClassroomProvider;
+  /**
+   * Whether this API is the public boundary of ADR 0024, ADR 0025, and ADR
+   * 0028: only build-produced persisted operations execute, ADR 0025's per-User
+   * budgets are charged, and no cross-origin CORS policy is offered. Production
+   * always is; a suite proving the boundary asks for it explicitly, because
+   * production also refuses the fake authenticator those suites depend on.
+   */
+  enforcesPublicBoundary?: boolean;
+  /** ADR 0025's thresholds, which a suite narrows to reach them deliberately. */
+  resourceBudgets?: ResourceBudgets;
+  /**
+   * The operations this API executes. A deployment passes the manifest widened
+   * by ADR 0038's rollout window; anything else runs this build's own.
+   */
+  persistedOperations?: PersistedOperationManifest;
 }) {
   const authenticatorPromise = createAuthenticator({
     AUTH_MODE: options.authMode,
@@ -271,6 +305,14 @@ export function createApi(options: {
     NODE_ENV: options.nodeEnv,
   });
   const classroomProvider = options.classroomProvider ?? createSimulatedClassroomProvider();
+  const clock = options.now ?? (() => new Date());
+  const enforcesPublicBoundary =
+    options.enforcesPublicBoundary ?? options.nodeEnv === "production";
+  const budgets = options.resourceBudgets ?? createResourceBudgets();
+  // Resolved regardless of enforcement so a persisted identifier means the same
+  // thing everywhere: the deployed release journey sends one against every
+  // environment it runs in, including a local server.
+  const persistedOperations = options.persistedOperations ?? loadPersistedOperationManifest();
 
   const resolvers: Resolvers<ApiContext> = {
       CreateCourseResult: { __resolveType: (value) => value.__typename! },
@@ -1388,6 +1430,12 @@ export function createApi(options: {
         },
         saveLocalizedTopic: async (_parent, { input }, context) => {
           const administrator = await authenticateAdministrator(context, "topic.saved");
+          if (!localizedTopicInputSchema.safeParse(input).success) {
+            throw createGraphQLError(
+              "Provide a Topic key of 2 to 8 capital letters and labels of 1 to 80 characters",
+              { extensions: { code: "BAD_USER_INPUT" } },
+            );
+          }
           return graphQLResult(await idempotentAdministrationMutation(context, administrator, "topic.saved", input.idempotencyKey, input, (transaction) => saveLocalizedTopic(transaction, administrator, input, context.correlationId)));
         },
         addLessonMaterial: async (_parent, { input }, context) => {
@@ -2026,9 +2074,31 @@ export function createApi(options: {
     schema,
     graphqlEndpoint: "/graphql",
     logging: false,
-    context: async ({ request }) => {
+    plugins: [
+      createPublicBoundaryPlugin({
+        enforced: enforcesPublicBoundary,
+        budgets,
+        persistedOperations,
+        clock,
+      }),
+    ],
+    // ADR 0028 gives the deployment one public origin, so a cross-origin policy
+    // would only describe callers the browser client never is. Yoga's default
+    // reflects the requesting origin, which is exactly what must not ship.
+    ...(enforcesPublicBoundary ? { cors: false as const } : {}),
+    // The query language stays explorable where documents are arbitrary anyway.
+    graphiql: options.nodeEnv === "development",
+    landingPage: options.nodeEnv === "development",
+    context: async ({ params, request }) => {
       const baseAuthenticator = await authenticatorPromise;
       const correlationId = correlationIdForRequest(request.headers);
+      const budgetClass = persistedOperations.budgetClassFor(
+        params.query ?? "",
+        params.operationName,
+      );
+      // One request charges its budget once, however many resolvers ask who is
+      // calling.
+      let charged = false;
       const authenticator: Authenticator = {
         authenticate: async (authenticatedRequest) => {
           const identity = await baseAuthenticator.authenticate(authenticatedRequest);
@@ -2058,6 +2128,34 @@ export function createApi(options: {
           if (user?.access_status === "FIXTURE_REMOVED") {
             await options.db.insertInto("audit_entries").values({ actor_user_id: user.id, acting_role: null, operation: "authenticated-operation.blocked", target_type: "User", target_id: user.id, outcome: "DENIED", reason_code: "USER_FIXTURE_REMOVED", correlation_id: correlationId }).execute();
             throw createGraphQLError("This synthetic User is no longer part of the canonical demonstration", { extensions: { code: "USER_FIXTURE_REMOVED" } });
+          }
+
+          // ADR 0025's per-User budget. It is charged here rather than at the
+          // transport, because a shared credential is only a person once the
+          // token has been validated and resolved to a User.
+          // A token that resolves to no User is charged nothing: every operation
+          // it attempts is refused by the resolver, and those refusals are what
+          // the per-source denial budget counts.
+          if (enforcesPublicBoundary && user && !charged) {
+            charged = true;
+            const outcome = budgets.chargeUserOperation(
+              user.id,
+              budgetClass,
+              clock().getTime(),
+            );
+            if (outcome !== "ACCEPTED") {
+              // Only the request that exhausted the budget is audited: every
+              // later refusal would otherwise let a refused caller drive
+              // unbounded Audit writes.
+              if (outcome === "FIRST_REFUSAL") {
+                await options.db.insertInto("audit_entries").values({ actor_user_id: user.id, acting_role: null, operation: "authenticated-operation.rate-limited", target_type: "User", target_id: user.id, outcome: "DENIED", reason_code: "RESOURCE_LIMIT_EXCEEDED", correlation_id: correlationId }).execute();
+              }
+              throw refusal(
+                429,
+                "REQUEST_LIMIT_EXCEEDED",
+                "Too many requests. Try again in a minute.",
+              );
+            }
           }
           return identity;
         },

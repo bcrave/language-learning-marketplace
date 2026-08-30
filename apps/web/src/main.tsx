@@ -1,4 +1,4 @@
-import { ApolloClient, HttpLink, InMemoryCache } from "@apollo/client";
+import { ApolloClient, ApolloLink, HttpLink, InMemoryCache } from "@apollo/client";
 import { setContext } from "@apollo/client/link/context";
 import { useAuth0, Auth0Provider } from "@auth0/auth0-react";
 import auth0WorkerUrl from "@auth0/auth0-spa-js/dist/auth0-spa-js.worker.production.js?url";
@@ -11,6 +11,7 @@ import { App } from "./app.js";
 import { parseClientConfig, type ClientConfig } from "./client-config.js";
 import { suggestedInterfaceLocale } from "./interface-locale.js";
 import { MaintenanceStatus, maintenanceAwareFetch } from "./maintenance-status.js";
+import { persistedOperationLink } from "./persisted-operations.js";
 import { productionAuth0Options } from "./production-auth.js";
 import "./styles.css";
 
@@ -64,13 +65,19 @@ function AuthenticatedApp({
     });
     return new ApolloClient({
       cache: new InMemoryCache(),
-      link: authorizationLink.concat(new HttpLink({
-        uri: config.graphqlUrl,
-        fetch: maintenanceAwareFetch(
-          window.fetch.bind(window),
-          () => setMaintenance(true),
-        ),
-      })),
+      link: ApolloLink.from([
+        // ADR 0024: the deployed API executes only the documents the build
+        // produced, so the browser names one instead of sending a document.
+        persistedOperationLink(),
+        authorizationLink,
+        new HttpLink({
+          uri: config.graphqlUrl,
+          fetch: maintenanceAwareFetch(
+            window.fetch.bind(window),
+            () => setMaintenance(true),
+          ),
+        }),
+      ]),
     });
   }, [config.graphqlUrl, getAccessTokenSilently]);
 

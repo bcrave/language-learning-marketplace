@@ -54,6 +54,19 @@ describe("Platform Administrator curriculum journey", () => {
     await userEvent.type(within(profile).getByLabelText("Profile image HTTPS URL"), "https://example.org/teacher.jpg");
     expect(within(profile).getByLabelText("Profile image HTTPS URL")).toHaveValue("https://example.org/teacher.jpg");
   });
+
+  it("opens an approved external reference without giving it opener access", async () => {
+    // The threat model requires that no external link can reach back into the
+    // page that opened it, on every surface that renders one.
+    renderPanel("en", false, true);
+    await screen.findByRole("heading", { name: "Curriculum administration" });
+
+    const reference = screen.getByText("Example Publisher").closest("a")!;
+
+    expect(reference).toHaveAttribute("href", "https://example.org/guide");
+    expect(reference).toHaveAttribute("target", "_blank");
+    expect(reference).toHaveAttribute("rel", "noreferrer noopener");
+  });
 });
 
 function renderPanel(locale: "en" | "es", includeMutation = false, includeCatalog = locale === "es") {
@@ -62,7 +75,7 @@ function renderPanel(locale: "en" | "es", includeMutation = false, includeCatalo
       topics: [{ key: "EC", label: locale === "es" ? "Conversación cotidiana" : "Everyday Conversation", labelEn: "Everyday Conversation", labelEs: "Conversación cotidiana" }],
       courses: includeCatalog ? [{
         id: "course-1", targetLanguage: "en", curriculumLevel: "A1", title: "Everyday English Foundations", summary: "Build confidence in practical exchanges.",
-        lessonUnits: [{ id: "unit-1", title: "Introductions That Continue", summary: "Ask follow-up questions.", order: 1, state: "ACTIVE", objectives: ["Introduce yourself."], topics: [{ key: "EC", label: locale === "es" ? "Conversación cotidiana" : "Everyday Conversation" }], materials: [{ id: "material-1", kind: "STRUCTURED_TEXT", title: "Lesson guide", structuredContent: "[{\"type\":\"paragraph\",\"text\":\"Practice.\"}]", httpsUrl: null, publisher: null }] }],
+        lessonUnits: [{ id: "unit-1", title: "Introductions That Continue", summary: "Ask follow-up questions.", order: 1, state: "ACTIVE", objectives: ["Introduce yourself."], topics: [{ key: "EC", label: locale === "es" ? "Conversación cotidiana" : "Everyday Conversation" }], materials: [{ id: "material-1", kind: "STRUCTURED_TEXT", title: "Lesson guide", structuredContent: "[{\"type\":\"paragraph\",\"text\":\"Practice.\"}]", httpsUrl: null, publisher: null }, { id: "material-2", kind: "HTTPS_REFERENCE", title: "External guide", structuredContent: null, httpsUrl: "https://example.org/guide", publisher: "Example Publisher" }] }],
       }] : [],
       teachers: [],
     },

@@ -20,7 +20,7 @@
     "test:integration": "vitest run --project integration",
     "test:e2e": "playwright test",
     "typecheck": "pnpm -r typecheck",
-    "verify:production-auth": "node scripts/verify-production-auth.mjs"
+    "verify:public-artifacts": "tsx apps/backend/src/operations/public-artifact-evidence-main.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.12.1",

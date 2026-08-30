@@ -22,12 +22,16 @@ await build({
         "src/database/seed.ts",
         // The release's own entry points: the shared identity binding and the
         // readiness gates run inside Railway as pre-deploy steps, and the
-        // deployed smoke journey runs from the release job after them.
+        // deployed public surface and smoke journey run from the release job
+        // after them. The artifact evidence is deliberately absent: it inspects
+        // this output, so building it into the output would make it inspect
+        // its own list of forbidden markers.
         "src/operations/bind-identities-main.ts",
         "src/operations/canonical-data-rebuild-main.ts",
         "src/operations/canonical-data-recovery-main.ts",
-        "src/operations/deployed-smoke-main.ts",
         "src/operations/deployed-maintenance-smoke-main.ts",
+        "src/operations/deployed-smoke-main.ts",
+        "src/operations/public-surface-main.ts",
         "src/operations/release-gate-main.ts",
         "src/worker/main.ts",
       ],
@@ -59,4 +63,11 @@ await build({
 
 await mkdir(resolve(outputDirectory, "api"), { recursive: true });
 await cp("src/api/schema.graphql", resolve(outputDirectory, "api/schema.graphql"));
+// ADR 0024's persisted-operation manifest travels with the API, beside the
+// schema: the API service builds without the browser client, so the generated
+// file has to be part of this build's own output.
+await cp(
+  "../web/src/generated/persisted-documents.json",
+  resolve(outputDirectory, "api/persisted-documents.json"),
+);
 await cp("migrations", resolve(outputDirectory, "migrations"), { recursive: true });

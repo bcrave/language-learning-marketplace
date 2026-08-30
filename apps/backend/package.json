@@ -14,6 +14,7 @@
     "release:rebuild-fixtures": "node dist/operations/canonical-data-rebuild-main.js",
     "release:recover-fixtures": "node dist/operations/canonical-data-recovery-main.js",
     "release:gate": "node dist/operations/release-gate-main.js",
+    "release:public-surface": "node dist/operations/public-surface-main.js",
     "release:smoke": "node dist/operations/deployed-smoke-main.js",
     "start:api": "node dist/api/main.js",
     "start:test-api": "node dist/api/test-main.js",

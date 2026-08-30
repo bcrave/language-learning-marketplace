@@ -7,6 +7,22 @@ const PROXY_AUTHORIZATION_HEADER = "x-proxy-authorization";
 const VERIFIED_SOURCE_HEADER = "x-verified-source";
 
 /**
+ * How the transport hands the source it verified to the GraphQL layer, which
+ * needs it for ADR 0025's denied-authorization budget. `createMarketplaceServer`
+ * overwrites this header on every request it forwards, so a caller cannot
+ * present one: whatever arrived under this name is replaced before the API
+ * sees it.
+ */
+export const VERIFIED_SOURCE_CONTEXT_HEADER = "x-marketplace-verified-source";
+
+/**
+ * The budget key for a request whose source could not be established at all.
+ * They share one bucket deliberately: an unattributable request is exactly what
+ * a misconfigured origin produces, and it must not buy an unbounded path.
+ */
+export const UNATTRIBUTED_SOURCE = "unattributable";
+
+/**
  * Caddy sends exactly the one address it verified. A chain, a name, or a
  * repeated header means something else produced the value, so the request
  * fails closed rather than letting a caller choose which entry counts.
