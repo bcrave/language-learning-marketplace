@@ -636,7 +636,7 @@ export const ALERT_CONDITIONS = [
     },
     confirmation: { kind: "SINGLE_OBSERVATION" },
     containment: "Inspect per-service usage, replicas, volumes, and jobs, and stop unintended consumption.",
-    evidence: ["usdActual", "projectedUsd"],
+    evidence: ["actualUsd", "projectedUsd"],
     clearing: { kind: "OWNER_VERIFICATION" },
   },
   {
@@ -652,7 +652,7 @@ export const ALERT_CONDITIONS = [
     },
     confirmation: { kind: "SINGLE_OBSERVATION" },
     containment: "The ceiling outranks availability: stop unintended consumption even where that stops the demonstration.",
-    evidence: ["usdActual", "projectedUsd"],
+    evidence: ["actualUsd", "projectedUsd"],
     clearing: { kind: "OWNER_VERIFICATION" },
   },
 ] as const satisfies readonly AlertCondition[];
@@ -675,4 +675,15 @@ export function alertCondition(id: AlertConditionId): AlertCondition {
 /** Narrows an identifier read back out of storage, where the type is lost. */
 export function isAlertConditionId(id: string): id is AlertConditionId {
   return conditionsById.has(id);
+}
+
+/**
+ * Narrows a family read back out of storage. The column carries no `check`
+ * constraint, because the families are this build's own vocabulary rather than
+ * a fact the schema should outlive; a row written by a build that named one
+ * differently is therefore possible, and must be recognised as unreadable
+ * rather than indexed blindly into `INCIDENT_FAMILIES`.
+ */
+export function isIncidentFamily(family: string): family is IncidentFamily {
+  return Object.hasOwn(INCIDENT_FAMILIES, family);
 }

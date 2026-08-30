@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -129,7 +128,12 @@ import {
   type PersistedOperationManifest,
 } from "./persisted-operations.js";
 import { createPublicBoundaryPlugin, refusal } from "./public-boundary.js";
-import { correlationIdForRequest } from "./request-context.js";
+import {
+  correlationIdForRequest,
+  currentCorrelationId,
+  UNCORRELATED_OPERATION,
+  withCorrelationId,
+} from "./request-context.js";
 import type { OperationalCounters } from "../observability/operational-counters.js";
 import { createResourceBudgets, type ResourceBudgets } from "./resource-budget.js";
 
@@ -322,7 +326,13 @@ export function createApi(options: {
               {
                 integration: AUTH0_INTEGRATION,
                 safeFailureCode,
-                correlationId: randomUUID(),
+                // The operation in flight, never a fresh identifier: the guide
+                // reads how many correlations a run of failures spans to tell
+                // one retried operation from a boundary that is down, and a
+                // unique value per failure would make every run look like the
+                // latter. A failure reached from no operation says so once,
+                // under one bucket, rather than inflating that count.
+                correlationId: currentCorrelationId() ?? UNCORRELATED_OPERATION,
               },
               clock().getTime(),
             ),
@@ -2126,7 +2136,12 @@ export function createApi(options: {
       let charged = false;
       const authenticator: Authenticator = {
         authenticate: async (authenticatedRequest) => {
-          const identity = await baseAuthenticator.authenticate(authenticatedRequest);
+          // The shared authenticator outlives this request, so the correlation
+          // travels as ambient context rather than an argument the
+          // `Authenticator` contract has no room for.
+          const identity = await withCorrelationId(correlationId, () =>
+            baseAuthenticator.authenticate(authenticatedRequest),
+          );
           if (!identity) return null;
           const user = await options.db.selectFrom("users")
             .select(["id", "access_status", "suspension_reason"])

@@ -7,7 +7,15 @@ import {
 } from "jose";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { Auth0Authenticator } from "../src/auth/auth0-authenticator.js";
+import {
+  currentCorrelationId,
+  withCorrelationId,
+} from "../src/api/request-context.js";
+import {
+  Auth0Authenticator,
+  AUTH0_INTEGRATION,
+} from "../src/auth/auth0-authenticator.js";
+import { createOperationalCounters } from "../src/observability/operational-counters.js";
 
 describe("Auth0 JWT contract", () => {
   const audience = "https://api.example.test";
@@ -132,5 +140,91 @@ describe("Auth0 JWT contract", () => {
     expect(failures).toHaveLength(1);
     // A stable code, never a provider message and never the token.
     expect(failures[0]).toMatch(/^[A-Z0-9_]+$/);
+  });
+
+  // The guide reads how many correlations a run of failures spans to separate
+  // one operation retrying from the boundary being down, so the identifier a
+  // failure carries has to be the operation's own. Composed here the way the
+  // API composes it, because a fresh identifier per failure would satisfy every
+  // other assertion while making the correlation leg of the threshold
+  // unreachable — `correlationCount` would simply track `failureCount`.
+  describe("what a run of boundary failures reports to the guide's threshold", () => {
+    const observedAt = Date.UTC(2026, 7, 29, 12, 0, 0);
+
+    async function failWithin(correlationId: string | null, attempts: number) {
+      const counters = createOperationalCounters();
+      const unreachable = new Auth0Authenticator({
+        audience,
+        issuer: "http://127.0.0.1:1/",
+        onBoundaryFailure: ({ safeFailureCode }) =>
+          counters.recordIntegrationFailure(
+            {
+              integration: AUTH0_INTEGRATION,
+              safeFailureCode,
+              correlationId: currentCorrelationId() ?? "uncorrelated",
+            },
+            observedAt,
+          ),
+      });
+      const call = async () => {
+        for (let attempt = 0; attempt < attempts; attempt += 1) {
+          await unreachable.authenticate(
+            new Request("http://localhost/graphql", {
+              headers: {
+                authorization: `Bearer ${await token({ issuer: "http://127.0.0.1:1/" })}`,
+              },
+            }),
+          );
+        }
+      };
+      if (correlationId === null) await call();
+      else await withCorrelationId(correlationId, call);
+      return counters.read(observedAt).integrations[0];
+    }
+
+    it("counts one operation retrying as one correlation", async () => {
+      expect(await failWithin("operation-1", 3)).toMatchObject({
+        failureCount: 3,
+        correlationCount: 1,
+      });
+    });
+
+    it("counts separate operations as separate correlations", async () => {
+      const counters = createOperationalCounters();
+      const unreachable = new Auth0Authenticator({
+        audience,
+        issuer: "http://127.0.0.1:1/",
+        onBoundaryFailure: ({ safeFailureCode }) =>
+          counters.recordIntegrationFailure(
+            {
+              integration: AUTH0_INTEGRATION,
+              safeFailureCode,
+              correlationId: currentCorrelationId() ?? "uncorrelated",
+            },
+            observedAt,
+          ),
+      });
+      const accessToken = await token({ issuer: "http://127.0.0.1:1/" });
+      for (const operation of ["operation-1", "operation-2"]) {
+        await withCorrelationId(operation, () =>
+          unreachable.authenticate(
+            new Request("http://localhost/graphql", {
+              headers: { authorization: `Bearer ${accessToken}` },
+            }),
+          ),
+        );
+      }
+      expect(counters.read(observedAt).integrations[0]).toMatchObject({
+        failureCount: 2,
+        correlationCount: 2,
+      });
+    });
+
+    it("groups failures reached from no operation under one correlation", async () => {
+      expect(await failWithin(null, 3)).toMatchObject({
+        failureCount: 3,
+        correlationCount: 1,
+      });
+    });
   });
 });

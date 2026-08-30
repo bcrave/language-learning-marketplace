@@ -478,6 +478,7 @@ export const TELEMETRY_REDACTION = "[filtered]";
  * hold a secret, a contact detail, an address, or authored domain content.
  */
 export const TELEMETRY_SAFE_CONTEXT_KEYS = [
+  "actualUsd",
   "alertCondition",
   "attemptCount",
   "channel",
@@ -515,7 +516,6 @@ export const TELEMETRY_SAFE_CONTEXT_KEYS = [
   "schemaVersion",
   "severity",
   "sinceLastSuccessSeconds",
-  "usdActual",
   "workerName",
 ] as const;
 

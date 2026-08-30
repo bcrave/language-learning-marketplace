@@ -4,6 +4,7 @@ import type { Database } from "../database/database.js";
 import {
   alertCondition,
   isAlertConditionId,
+  isIncidentFamily,
   type AlertConditionId,
   type AlertRoute,
   type AlertSeverity,
@@ -113,12 +114,15 @@ function dispatchFor(
   evidence: Record<string, string | number | boolean>,
 ): AlertDispatch | null {
   // A condition the running build no longer defines cannot be described, and
-  // guessing at it would send the owner to a runbook that is not there.
+  // guessing at it would send the owner to a runbook that is not there. The
+  // family is checked for the same reason: an alert naming one this build
+  // cannot resolve would reach the owner with no runbook behind it either.
   if (!isAlertConditionId(incident.condition_id)) return null;
+  if (!isIncidentFamily(incident.incident_family)) return null;
   return {
     kind,
     conditionId: incident.condition_id,
-    family: incident.incident_family as IncidentFamily,
+    family: incident.incident_family,
     fingerprint: incident.fingerprint,
     severity: incident.severity,
     route: incident.route,

@@ -12,12 +12,14 @@ import {
   INCIDENT_FAMILIES,
   alertCondition,
   isAlertConditionId,
+  isIncidentFamily,
   type AlertCondition,
 } from "../src/observability/alert-policy.js";
 import {
   costCeilingCondition,
   evaluateOperationalAlerts,
   projectedCycleCostUsd,
+  type DeploymentCostReading,
   type OperationalSnapshot,
 } from "../src/observability/alert-evaluation.js";
 import { WORKER_HEARTBEAT_STALE_MILLISECONDS } from "../src/worker/worker-heartbeat.js";
@@ -133,6 +135,34 @@ describe("alert policy coverage", () => {
     for (const condition of ALERT_CONDITIONS) {
       for (const key of condition.evidence) expect(safe.has(key)).toBe(true);
     }
+  });
+
+  // The allowlist above only proves a key is safe to send, not that anything
+  // ever produces it. A cost condition promising evidence under a name the
+  // reading does not carry would pass every other check here and still reach
+  // the owner with the numbers missing.
+  it("promises cost evidence under the names the reading actually carries", () => {
+    const reading: DeploymentCostReading = {
+      actualUsd: 1,
+      last24HourUsd: 1,
+      trailingSevenDayUsd: 1,
+      daysRemainingInCycle: 1,
+    };
+    const available = new Set([...Object.keys(reading), "projectedUsd"]);
+    for (const condition of ALERT_CONDITIONS) {
+      if (condition.family !== "deployment-cost-ceiling") continue;
+      for (const key of condition.evidence) expect(available).toContain(key);
+    }
+  });
+
+  it("recognises only the families it defines, whatever storage hands back", () => {
+    for (const family of Object.keys(INCIDENT_FAMILIES)) {
+      expect(isIncidentFamily(family)).toBe(true);
+    }
+    expect(isIncidentFamily("a-family-a-later-build-renamed")).toBe(false);
+    // Never satisfied by what every object inherits.
+    expect(isIncidentFamily("toString")).toBe(false);
+    expect(isIncidentFamily("constructor")).toBe(false);
   });
 
   it("names each condition once, so an incident cannot resolve to two policies", () => {
