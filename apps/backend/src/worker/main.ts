@@ -7,11 +7,13 @@ import { createDatabase } from "../database/database.js";
 import { migrateDatabase } from "../database/migrate.js";
 import { fixtureMaintenanceTasks } from "../fixtures/fixture-maintenance.js";
 import { notificationDeliveryTasks } from "../notification/notification-delivery-worker.js";
+import { createMarketplaceLogger, logOperationalEvent } from "../observability/correlated-logger.js";
+import { createTelemetryReporter } from "../observability/telemetry.js";
 import { reportExportTasks } from "../reporting/report-export-worker.js";
 import { sponsorshipTasks } from "../sponsorship/sponsorship-worker.js";
 import { waitlistTasks } from "../waitlist/waitlist-worker.js";
 import { userAnonymizationTasks } from "../authorization/user-anonymization-worker.js";
-import { startWorkerHeartbeat } from "./worker-heartbeat.js";
+import { MARKETPLACE_WORKER_NAME, startWorkerHeartbeat } from "./worker-heartbeat.js";
 import {
   WORKER_CONCURRENCY,
   WORKER_POLL_INTERVAL_MILLISECONDS,
@@ -20,6 +22,17 @@ import { Auth0IdentityAdministration } from "../auth/auth0-identity-administrati
 import { createSimulatedIdentityAdministration, createUnavailableIdentityAdministration } from "../auth/identity-administration.js";
 
 const config = parseAppConfig(process.env);
+const logger = createMarketplaceLogger({ release: config.APP_RELEASE });
+// The worker reports its own unexpected failures. It raises no alert of its
+// own: every worker threshold in the operator guide is measured from durable
+// state by the API's watch, because a worker that has stopped cannot report
+// that it has stopped.
+const telemetry = createTelemetryReporter({
+  logger,
+  release: config.APP_RELEASE,
+  environment: config.NODE_ENV,
+  ...(config.SENTRY_DSN ? { dsn: config.SENTRY_DSN } : {}),
+});
 const db = createDatabase(config.DATABASE_URL);
 await migrateDatabase(db);
 const identityAdministration = config.AUTH_MODE === "fake"
@@ -52,16 +65,24 @@ const runner = await run({
 const heartbeat = startWorkerHeartbeat({
   db,
   release: config.APP_RELEASE,
-  onFailure: () =>
-    console.log(JSON.stringify({ event: "worker.heartbeat.failed" })),
+  onFailure: (error) =>
+    telemetry.reportFailure(error, {
+      event: "worker.heartbeat-failed",
+      workerName: MARKETPLACE_WORKER_NAME,
+    }),
 });
 await heartbeat.written;
 
-console.log(JSON.stringify({ event: "worker.started", release: config.APP_RELEASE }));
+logOperationalEvent(logger, "info", {
+  event: "worker.started",
+  release: config.APP_RELEASE,
+  workerName: MARKETPLACE_WORKER_NAME,
+});
 
 async function shutdown() {
   heartbeat.stop();
   await runner.stop();
+  await telemetry.flush();
   await db.destroy();
 }
 

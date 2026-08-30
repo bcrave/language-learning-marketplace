@@ -142,6 +142,25 @@ export interface RollingFixtureReconciliationsTable {
   completed_at: Date;
 }
 
+export interface OperationalIncidentsTable {
+  id: Generated<string>;
+  condition_id: string;
+  incident_family: string;
+  fingerprint: string;
+  severity: "IMMEDIATE" | "OWNER_ATTENTION";
+  route: "SENTRY_EMAIL" | "GITHUB_ACTIONS" | "RAILWAY_BILLING";
+  correlation_id: string;
+  evidence: ColumnType<Record<string, unknown>, string | undefined, string>;
+  first_observed_at: Date;
+  last_observed_at: Date;
+  observation_count: Generated<number>;
+  healthy_since: Date | null;
+  healthy_observation_count: Generated<number>;
+  confirmed_at: Date | null;
+  escalated_at: Date | null;
+  cleared_at: Date | null;
+}
+
 export interface SchemaMigrationsTable {
   name: string;
   applied_at: Generated<Date>;
@@ -247,6 +266,7 @@ export interface DatabaseSchema {
   maintenance_state: MaintenanceStateTable;
   canonical_data_rebuilds: CanonicalDataRebuildsTable;
   rolling_fixture_reconciliations: RollingFixtureReconciliationsTable;
+  operational_incidents: OperationalIncidentsTable;
   schema_migrations: SchemaMigrationsTable;
   curriculum_levels: CurriculumLevelsTable;
   student_placements: StudentPlacementsTable;

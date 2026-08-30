@@ -59,8 +59,15 @@ describe("Auth0 JWT contract", () => {
       .sign(options?.signingKey ?? privateKey);
   }
 
-  async function authenticate(accessToken: string) {
-    const authenticator = new Auth0Authenticator({ audience, issuer });
+  async function authenticate(
+    accessToken: string,
+    onBoundaryFailure?: (failure: { safeFailureCode: string }) => void,
+  ) {
+    const authenticator = new Auth0Authenticator({
+      audience,
+      issuer,
+      ...(onBoundaryFailure ? { onBoundaryFailure } : {}),
+    });
     return authenticator.authenticate(
       new Request("http://localhost/graphql", {
         headers: { authorization: `Bearer ${accessToken}` },
@@ -88,5 +95,42 @@ describe("Auth0 JWT contract", () => {
       authenticate(await token({ issuer: "https://wrong-issuer.example/" })),
     ).resolves.toBeNull();
     await expect(authenticate(await token({ expiration: 0 }))).resolves.toBeNull();
+  });
+
+  // The operator guide's third-party-integration threshold is measured on
+  // actual calls. A reviewer whose token expired must not push Auth0 towards
+  // an incident, and a JWKS endpoint that has stopped answering must.
+  it("reports nothing to the integration threshold when the token itself is refused", async () => {
+    const failures: string[] = [];
+    const record = ({ safeFailureCode }: { safeFailureCode: string }) => {
+      failures.push(safeFailureCode);
+    };
+    const otherKeyPair = await generateKeyPair("RS256");
+    await authenticate(await token({ expiration: 0 }), record);
+    await authenticate(await token({ audience: "wrong-audience" }), record);
+    await authenticate(await token({ signingKey: otherKeyPair.privateKey }), record);
+    expect(failures).toEqual([]);
+  });
+
+  it("reports a safe failure code when Auth0 itself cannot be reached", async () => {
+    const failures: string[] = [];
+    const unreachable = new Auth0Authenticator({
+      audience,
+      // A port nothing listens on: the JWKS fetch fails rather than the token.
+      issuer: "http://127.0.0.1:1/",
+      onBoundaryFailure: ({ safeFailureCode }) => {
+        failures.push(safeFailureCode);
+      },
+    });
+    await expect(
+      unreachable.authenticate(
+        new Request("http://localhost/graphql", {
+          headers: { authorization: `Bearer ${await token({ issuer: "http://127.0.0.1:1/" })}` },
+        }),
+      ),
+    ).resolves.toBeNull();
+    expect(failures).toHaveLength(1);
+    // A stable code, never a provider message and never the token.
+    expect(failures[0]).toMatch(/^[A-Z0-9_]+$/);
   });
 });
