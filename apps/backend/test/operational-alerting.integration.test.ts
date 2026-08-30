@@ -6,6 +6,7 @@ import {
   startPostgreSqlTemplate,
   type StartedPostgreSqlContainer,
 } from "@marketplace/test-support";
+import { generateKeyPair, SignJWT } from "jose";
 import { sql } from "kysely";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -696,6 +697,37 @@ describe("owner diagnostics summary", () => {
       .toEqual(before);
   });
 
+  // The family column carries no `check` constraint, so a row written by a
+  // build that named the families differently is possible. The owner still has
+  // to act on it, so it must reach their table saying what it is rather than
+  // reading `undefined`.
+  it("still shows an open incident whose family this build cannot name", async () => {
+    await db
+      .insertInto("operational_incidents")
+      .values({
+        condition_id: "worker.heartbeat-stale",
+        incident_family: "a-family-a-later-build-renamed",
+        fingerprint: "a-family-a-later-build-renamed:worker.heartbeat-stale",
+        severity: "OWNER_ATTENTION",
+        route: "SENTRY_EMAIL",
+        correlation_id: "incident-from-a-later-build",
+        first_observed_at: observedAt,
+        last_observed_at: observedAt,
+      })
+      .execute();
+
+    const summary = renderOwnerDiagnosticsSummary(
+      await readOwnerDiagnostics(db, { release: RELEASE, now: observedAt }),
+    );
+    expect(summary).toContain("a-family-a-later-build-renamed");
+    expect(summary).not.toContain("undefined");
+
+    await db
+      .deleteFrom("operational_incidents")
+      .where("correlation_id", "=", "incident-from-a-later-build")
+      .execute();
+  });
+
   it("renders a summary carrying evidence and links rather than private detail", async () => {
     const summary = renderOwnerDiagnosticsSummary(
       await readOwnerDiagnostics(db, { release: RELEASE, now: observedAt }),
@@ -704,5 +736,84 @@ describe("owner diagnostics summary", () => {
     expect(summary).toContain("Canonical fixtures");
     expect(summary).toContain(SCHEMA_VERSION);
     expect(summary).not.toMatch(/postgres(ql)?:\/\//);
+  });
+});
+
+/**
+ * The guide's third-party-integration threshold has two legs: how many
+ * failures, and how many operations they span. The second is what separates one
+ * reviewer's operation retrying from Auth0 being down for everyone, so it is
+ * checked here through the API rather than against the counters directly — the
+ * identifier only means anything if the request the failure happened in is the
+ * one that supplies it.
+ */
+describe("how many operations a run of Auth0 failures spans", () => {
+  let db: Database;
+  let api: ReturnType<typeof createApi>;
+  let counters: OperationalCounters;
+  let accessToken: string;
+  const observedAt = new Date("2026-08-29T12:00:00.000Z");
+  // A port nothing listens on, so the JWKS fetch fails rather than the token:
+  // an unreachable Auth0, which is what the threshold counts.
+  const UNREACHABLE_ISSUER = "http://127.0.0.1:1/";
+  const AUDIENCE = "https://api.example.test";
+
+  beforeAll(async () => {
+    db = await cloneDatabase("integration_correlations");
+    counters = createOperationalCounters();
+    api = createApi({
+      db,
+      authMode: "auth0",
+      auth0Audience: AUDIENCE,
+      auth0Issuer: UNREACHABLE_ISSUER,
+      nodeEnv: "test",
+      operationalCounters: counters,
+      now: () => observedAt,
+    });
+    const { privateKey } = await generateKeyPair("RS256");
+    accessToken = await new SignJWT({})
+      .setProtectedHeader({ alg: "RS256", kid: "unreachable-key" })
+      .setIssuer(UNREACHABLE_ISSUER)
+      .setAudience(AUDIENCE)
+      .setSubject("auth0|student-123")
+      .setIssuedAt()
+      .setExpirationTime("5m")
+      .sign(privateKey);
+  }, 180_000);
+
+  afterAll(async () => {
+    await db.destroy();
+  });
+
+  async function askForProgress(correlationId: string) {
+    return api.fetch("http://localhost/graphql", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${accessToken}`,
+        "x-correlation-id": correlationId,
+      },
+      body: JSON.stringify({ query: "query { studentCourseProgress { __typename } }" }),
+    });
+  }
+
+  it("counts one operation retried as one correlation, and separate operations separately", async () => {
+    // The same operation, tried twice: the guide reads this as one operation
+    // affected, whatever the failure count reaches.
+    await askForProgress("operation-1");
+    await askForProgress("operation-1");
+    expect(counters.read(observedAt.getTime()).integrations[0]).toMatchObject({
+      integration: "auth0",
+      failureCount: 2,
+      correlationCount: 1,
+    });
+
+    // A second operation is a second correlation, which is what tells the owner
+    // the boundary is failing for more than one caller.
+    await askForProgress("operation-2");
+    expect(counters.read(observedAt.getTime()).integrations[0]).toMatchObject({
+      failureCount: 3,
+      correlationCount: 2,
+    });
   });
 });

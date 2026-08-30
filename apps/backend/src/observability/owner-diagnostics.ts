@@ -1,5 +1,5 @@
 import type { Database } from "../database/database.js";
-import { alertCondition, INCIDENT_FAMILIES, type IncidentFamily } from "./alert-policy.js";
+import { alertCondition, INCIDENT_FAMILIES, isIncidentFamily } from "./alert-policy.js";
 import {
   costCeilingCondition,
   projectedCycleCostUsd,
@@ -62,7 +62,12 @@ export interface OwnerDiagnostics {
     containment: string | null;
   } | null;
   openIncidents: readonly {
-    family: IncidentFamily;
+    /**
+     * The stored family, which a build that named them differently may have
+     * written. It is carried as read so an incident this build cannot name is
+     * still shown to the owner rather than dropped from their table.
+     */
+    family: string;
     conditionId: string;
     severity: string;
     route: string;
@@ -127,7 +132,7 @@ export async function readOwnerDiagnostics(
       groups: snapshot.notifications,
     },
     openIncidents: incidents.map((incident) => ({
-      family: incident.incident_family as IncidentFamily,
+      family: incident.incident_family,
       conditionId: incident.condition_id,
       severity: incident.severity,
       route: incident.route,
@@ -151,6 +156,15 @@ function costOf(reading: DeploymentCostReading | undefined): OwnerDiagnostics["c
     severity: condition ? alertCondition(condition).severity : null,
     containment: condition ? alertCondition(condition).containment : null,
   };
+}
+
+/**
+ * What the owner reads for a family. An unrecognised value is shown as stored
+ * rather than as `undefined`, because the row is still an open incident the
+ * owner has to act on and the stored name is the only honest thing to print.
+ */
+function incidentFamilyLabel(family: string) {
+  return isIncidentFamily(family) ? INCIDENT_FAMILIES[family] : family;
 }
 
 function row(name: string, value: string | number | boolean | null) {
@@ -234,7 +248,7 @@ export function renderOwnerDiagnosticsSummary(diagnostics: OwnerDiagnostics): st
       "| --- | --- | --- | --- | --- | --- | --- | --- |",
       ...diagnostics.openIncidents.map(
         (incident) =>
-          `| ${INCIDENT_FAMILIES[incident.family]} | ${incident.conditionId} | ${incident.severity} | ${incident.route} | ${incident.incidentCorrelationId} | ${incident.firstObservedAt.toISOString()} | ${incident.confirmed} | ${incident.escalated} |`,
+          `| ${incidentFamilyLabel(incident.family)} | ${incident.conditionId} | ${incident.severity} | ${incident.route} | ${incident.incidentCorrelationId} | ${incident.firstObservedAt.toISOString()} | ${incident.confirmed} | ${incident.escalated} |`,
       ),
     );
   }
