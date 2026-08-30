@@ -66,3 +66,39 @@ for verify-and-reopen or a clean canonical rebuild. Failed post-rebuild role smo
 immediately restore fail-closed maintenance and require the same recovery path.
 
 The database work and both readiness gates run as Railway pre-deploy commands rather than workflow steps ([`deploy/railway/`](deploy/railway/)). That is deliberate: the API has no public address ([ADR 0028](docs/adr/0028-use-a-single-public-origin.md)), its health probes are internal, and GitHub holds no database credential ([ADR 0039](docs/adr/0039-separate-public-client-configuration-from-secrets.md)). The smoke journey's own Auth0 principal is the one documented exception, recorded in [ADR 0060](docs/adr/0060-automate-the-deployed-smoke-journey.md). `.env.example` lists the safe placeholders.
+
+## Observe
+
+The API answers three internal probes over Railway private networking: `/health/live`
+is process health, `/health/ready` proves PostgreSQL access and that the newest
+migration this build ships is applied, and `/health/worker` reads the heartbeat the
+non-HTTP worker writes to PostgreSQL. None of them is publicly addressable.
+
+A watch inside the API evaluates the [operator guide](docs/operations/operator-guide.md)'s
+application-detected thresholds every 30 seconds and sends private alerts through
+Sentry email ([ADR 0061](docs/adr/0061-evaluate-private-alerts-inside-the-api.md)).
+An incident sends one confirmation alert, one more if its severity rises, and one
+recovery notification — never a reminder — and that lifecycle is durable, so a
+restart during an incident does not re-announce it. Both the browser and the API
+run every event through one shared allowlist filter: authorization data, GraphQL
+variables, URL query strings, contact details, and reviewer-entered content do not
+travel, and Session Replay, user Feedback, screenshots, and attachments are never
+added to the browser SDK at all.
+
+The `Owner Diagnostics` workflow prints the sanitized current-state summary —
+readiness, worker heartbeat and queue, fixture generation and maintenance lease,
+notification reconciliation, and open incidents. Reading changes nothing and is
+safe to dispatch during maintenance. It is also where the owner records a
+verification only a person can perform — an authorization smoke after abusive
+traffic, an integration smoke, a rotated credential — against the incident's
+correlation identifier, and where the guide's daily cost projection is made from
+the figures Railway shows. The public application exposes no diagnostics surface
+and no owner route.
+
+The policy states who evaluates every threshold, including the conditions nothing
+in the deployment detects: a secret leaving its approved store, an authorization
+that failed open, an unauthorized mutation that committed. Those are found by the
+Security Release Gate or by a person, and the policy records the response so it is
+not improvised. Source maps are still not uploaded to Sentry — that needs an
+owner-provisioned Sentry auth token, so ADR 0022's stack-frame mapping remains
+outstanding.

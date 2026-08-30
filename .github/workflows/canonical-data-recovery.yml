@@ -89,6 +89,8 @@ jobs:
       - name: Assess or perform the authorized recovery
         env:
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          APP_RELEASE: ${{ github.sha }}
+          SENTRY_DSN: ${{ vars.SENTRY_DSN }}
           DEMONSTRATION_IDENTITY_SUBJECTS: ${{ secrets.DEMONSTRATION_IDENTITY_SUBJECTS }}
           AUTH0_ISSUER: ${{ vars.AUTH0_ISSUER }}
           AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}

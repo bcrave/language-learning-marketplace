@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,6 +36,7 @@ import { administerAttendance, classRosterForViewer, recordAttendance } from "..
 import { administrationAttendanceReviewRequests, decideAttendanceReview, requestAttendanceReview, studentAttendanceRecords } from "../attendance/attendance-review-service.js";
 import { courseProgressForStudent } from "../attendance/course-progress-service.js";
 import { administratorFeedbackAndRatings, redactLearningFeedback, redactSessionRatingComment, saveLearningFeedback, saveSessionRating, studentFeedbackAndRatings, teacherFeedbackWork } from "../feedback/feedback-service.js";
+import { AUTH0_INTEGRATION } from "../auth/auth0-authenticator.js";
 import { createAuthenticator } from "../auth/create-authenticator.js";
 import { bookClassSession, bookingsForStudent, cancelBooking, rescheduleBooking } from "../booking/booking-service.js";
 import {
@@ -128,6 +130,7 @@ import {
 } from "./persisted-operations.js";
 import { createPublicBoundaryPlugin, refusal } from "./public-boundary.js";
 import { correlationIdForRequest } from "./request-context.js";
+import type { OperationalCounters } from "../observability/operational-counters.js";
 import { createResourceBudgets, type ResourceBudgets } from "./resource-budget.js";
 
 const typeDefs = readFileSync(
@@ -297,15 +300,36 @@ export function createApi(options: {
    * by ADR 0038's rollout window; anything else runs this build's own.
    */
   persistedOperations?: PersistedOperationManifest;
+  /** Where a denied authorization is counted for the operator guide's abuse threshold. */
+  operationalCounters?: OperationalCounters;
 }) {
-  const authenticatorPromise = createAuthenticator({
-    AUTH_MODE: options.authMode,
-    AUTH0_AUDIENCE: options.auth0Audience,
-    AUTH0_ISSUER: options.auth0Issuer,
-    NODE_ENV: options.nodeEnv,
-  });
-  const classroomProvider = options.classroomProvider ?? createSimulatedClassroomProvider();
   const clock = options.now ?? (() => new Date());
+  const counters = options.operationalCounters;
+  const authenticatorPromise = createAuthenticator(
+    {
+      AUTH_MODE: options.authMode,
+      AUTH0_AUDIENCE: options.auth0Audience,
+      AUTH0_ISSUER: options.auth0Issuer,
+      NODE_ENV: options.nodeEnv,
+    },
+    // The operator guide evaluates a third-party integration on actual calls
+    // rather than by polling the provider, and this is where the deployment
+    // actually calls Auth0.
+    counters
+      ? {
+          onBoundaryFailure: ({ safeFailureCode }) =>
+            counters.recordIntegrationFailure(
+              {
+                integration: AUTH0_INTEGRATION,
+                safeFailureCode,
+                correlationId: randomUUID(),
+              },
+              clock().getTime(),
+            ),
+        }
+      : {},
+  );
+  const classroomProvider = options.classroomProvider ?? createSimulatedClassroomProvider();
   const enforcesPublicBoundary =
     options.enforcesPublicBoundary ?? options.nodeEnv === "production";
   const budgets = options.resourceBudgets ?? createResourceBudgets();
@@ -2080,6 +2104,7 @@ export function createApi(options: {
         budgets,
         persistedOperations,
         clock,
+        ...(counters ? { counters } : {}),
       }),
     ],
     // ADR 0028 gives the deployment one public origin, so a cross-origin policy

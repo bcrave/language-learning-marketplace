@@ -1,5 +1,6 @@
 import { createGraphQLError, type Plugin } from "graphql-yoga";
 
+import type { OperationalCounters } from "../observability/operational-counters.js";
 import type { PersistedOperationManifest } from "./persisted-operations.js";
 import {
   GRAPHQL_VARIABLES_LIMIT_BYTES,
@@ -67,8 +68,10 @@ export function createPublicBoundaryPlugin(options: {
   budgets: ResourceBudgets;
   persistedOperations: PersistedOperationManifest;
   clock: () => Date;
+  /** The aggregate the operator guide's enumeration threshold is measured on. */
+  counters?: OperationalCounters;
 }): Plugin {
-  const { enforced, budgets, persistedOperations, clock } = options;
+  const { enforced, budgets, persistedOperations, clock, counters } = options;
 
   return {
     onParams({ params, request, setParams }) {
@@ -129,7 +132,12 @@ export function createPublicBoundaryPlugin(options: {
       const denied = result.errors?.some((error) =>
         DENIAL_CODES.has(String(error.extensions?.["code"] ?? "")),
       );
-      if (denied) budgets.recordDeniedAuthorization(verifiedSourceOf(request), clock().getTime());
+      if (!denied) return;
+      budgets.recordDeniedAuthorization(verifiedSourceOf(request), clock().getTime());
+      // The budget refuses one enumerating source; the counter measures the
+      // guide's marketplace-wide threshold across sources, which a shared
+      // reviewer identity reaches without any single source standing out.
+      counters?.recordDeniedAuthorization(clock().getTime());
     },
   };
 }

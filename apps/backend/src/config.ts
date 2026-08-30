@@ -53,6 +53,13 @@ const baseConfigSchema = z.object({
    */
   APP_RELEASE: z.string().min(1).max(255).default("development"),
   /**
+   * ADR 0022's server telemetry destination. A DSN is a public write-only
+   * ingestion identifier rather than a credential — the browser bundle ships
+   * its own — so it is configuration and not a secret. Unset, telemetry stays
+   * in the correlated log, which is what local development and tests want.
+   */
+  SENTRY_DSN: z.url().optional(),
+  /**
    * ADR 0019's shared reviewer identities, as a JSON map from canonical fixture
    * User identifier to Auth0 `sub`. The subjects are public identifiers rather
    * than credentials, and the map grants nothing: roles stay with the manifest.

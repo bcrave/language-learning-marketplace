@@ -4,6 +4,8 @@ import { sql } from "kysely";
 import type { Logger } from "pino";
 
 import type { Database } from "../database/database.js";
+import type { OperationalCounters } from "../observability/operational-counters.js";
+import type { OperationalWatch } from "../observability/operational-watch.js";
 import {
   readWorkerHeartbeat,
   workerHeartbeatIsFresh,
@@ -56,6 +58,18 @@ export function createMarketplaceServer(options: {
   publicOrigin?: string;
   /** Deployed loopback-only API backed by the verification database pool. */
   maintenanceApi?: ReturnType<typeof createApi>;
+  /**
+   * Where the operator guide's abuse thresholds are counted. The transport is
+   * the only place that sees a refusal, and the counters keep only aggregates:
+   * a source decides one bucket under a per-process salt and is not retained.
+   */
+  counters?: OperationalCounters;
+  /**
+   * Where a fact the transport detects outright is raised. The one it can see
+   * that no threshold covers is an internal probe reached from the public
+   * origin, which the threat model treats as an immediate incident.
+   */
+  incidents?: OperationalWatch;
 }) {
   const now = options.now ?? (() => new Date());
   // ADR 0025's per-source request budget, keyed by a salted hash so a source
@@ -76,7 +90,8 @@ export function createMarketplaceServer(options: {
         path === READINESS_PATH ||
         path === WORKER_READINESS_PATH);
     const connectionSource = connectionSourceFor(request);
-    const source = probesHealth ? connectionSource : verifiedSourceFor(request);
+    const proxyVerifiedSource = verifiedSourceFor(request);
+    const source = probesHealth ? connectionSource : proxyVerifiedSource;
     const loopbackVerification = options.maintenanceApi !== undefined
       && (connectionSource === "127.0.0.1"
         || connectionSource === "::1"
@@ -85,18 +100,41 @@ export function createMarketplaceServer(options: {
     // Refusals stay inside a budget too. A misconfigured origin would
     // otherwise buy an unbounded path through the API and an unbounded run of
     // log lines by simply presenting nothing.
-    if (
-      sourceRequests.consume(
-        source ?? connectionSource ?? UNATTRIBUTED_SOURCE,
-        now().getTime(),
-      ) !== "ACCEPTED"
-    ) {
+    const budgetKey = source ?? connectionSource ?? UNATTRIBUTED_SOURCE;
+    if (sourceRequests.consume(budgetKey, now().getTime()) !== "ACCEPTED") {
+      // Counted apart from abuse whenever the source could not be verified. The
+      // operator guide is explicit that a run of `source.unverified` refusals is
+      // a Caddy trusted-proxy misconfiguration failing closed and "not abuse":
+      // charging them to the abuse thresholds would point the owner at
+      // containment the guide warns against, and would do it under one shared
+      // bucket that names no caller anyway.
+      if (source === null) options.counters?.recordUnverifiedSourceRefusal(now().getTime());
+      else options.counters?.recordRefusedRequest(source, now().getTime());
       response.setHeader("retry-after", String(RETRY_AFTER_SECONDS));
       sendJson(response, 429, { error: "Request limit exceeded" });
       return;
     }
     if (source === null) {
+      options.counters?.recordUnverifiedSourceRefusal(now().getTime());
       options.logger.warn({ event: "source.unverified" });
+      sendJson(response, 403, { error: "Request source could not be verified" });
+      return;
+    }
+
+    // ADR 0028 gives the API no public address, and the probes are reached over
+    // private networking. Where a trusted-proxy secret is configured at all,
+    // context Caddy verified can only mean the request came through the public
+    // origin — which is the threat model's "internal endpoint reached
+    // publicly", and an immediate incident rather than a refusal to rate-limit.
+    if (
+      probesHealth &&
+      options.trustedProxySecret !== undefined &&
+      proxyVerifiedSource !== null
+    ) {
+      options.logger.warn({ event: "health.reached-publicly" });
+      void options.incidents
+        ?.report("security.internal-endpoint-reached-publicly", { operation: path })
+        .catch(() => undefined);
       sendJson(response, 403, { error: "Request source could not be verified" });
       return;
     }

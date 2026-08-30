@@ -10,6 +10,9 @@ import {
   runCanonicalDataRebuild,
   verifyAndReopenCanonicalData,
 } from "../fixtures/fixture-maintenance.js";
+import { createMarketplaceLogger } from "../observability/correlated-logger.js";
+import { clearOperationalIncidentsForFamily } from "../observability/operational-incidents.js";
+import { createTelemetryReporter } from "../observability/telemetry.js";
 import { runProtectedCanonicalVerification } from "./protected-canonical-verification.js";
 
 const environment = z.object({
@@ -19,9 +22,29 @@ const environment = z.object({
   CANONICAL_RECOVERY_DISPATCH_ID: z.string().min(1).max(255),
   CANONICAL_RECOVERY_INCIDENT_CORRELATION_ID: z.string().min(1).max(255).optional(),
   GITHUB_RUN_ATTEMPT: z.string().regex(/^1$/).optional(),
+  APP_RELEASE: z.string().min(1).max(255).default("unknown"),
+  SENTRY_DSN: z.url().optional(),
 }).parse(process.env);
 
 const db = createDatabase(environment.DATABASE_URL);
+// A verified recovery closes the incident that opened when the rebuild became
+// indeterminate. The operator guide's return-to-service ends in "send one
+// recovery notification", and it has to come from here: the API's watch sees
+// only that the condition stopped holding, which its clearing rule refuses to
+// accept as proof.
+const telemetry = createTelemetryReporter({
+  logger: createMarketplaceLogger({ release: environment.APP_RELEASE }),
+  release: environment.APP_RELEASE,
+  environment: "production",
+  ...(environment.SENTRY_DSN ? { dsn: environment.SENTRY_DSN } : {}),
+});
+const announceRecovery = async () => {
+  const recovered = await clearOperationalIncidentsForFamily(db, {
+    family: "canonical-rebuild-fixture-reconciliation",
+  });
+  for (const dispatch of recovered) telemetry.reportAlert(dispatch);
+  return recovered.length;
+};
 const beforeReopen = async () => {
   await runProtectedCanonicalVerification({
     environment: process.env,
@@ -40,9 +63,11 @@ try {
       reason: environment.CANONICAL_RECOVERY_REASON,
       beforeReopen,
     });
+    const clearedIncidents = await announceRecovery();
     process.stdout.write(`${JSON.stringify({
       event: "canonical-data-recovery.verified-and-reopened",
       correlationId,
+      clearedIncidents,
     })}\n`);
   } else if (environment.CANONICAL_RECOVERY_MODE === "CLEAN_REBUILD") {
     if (!environment.CANONICAL_RECOVERY_INCIDENT_CORRELATION_ID) {
@@ -61,9 +86,11 @@ try {
       beforeReopen,
       ...(identityBinding ? { identityBinding } : {}),
     });
+    const clearedIncidents = await announceRecovery();
     process.stdout.write(`${JSON.stringify({
       event: "canonical-data-recovery.clean-rebuild-completed",
       correlationId,
+      clearedIncidents,
     })}\n`);
   } else {
     const correlationId = `canonical-recovery-${randomUUID()}`;
@@ -77,5 +104,6 @@ try {
     })}\n`);
   }
 } finally {
+  await telemetry.flush();
   await db.destroy();
 }

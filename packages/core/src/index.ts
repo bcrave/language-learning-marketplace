@@ -456,6 +456,305 @@ export interface Authenticator {
   authenticate(request: Request): Promise<UserIdentity | null>;
 }
 
+/**
+ * ADR 0022's privacy filter, in one place because the same rules have to hold
+ * on both sides of the trust boundary: the browser SDK and the API SDK each
+ * hand every event through this before it leaves the process for the hosted
+ * Sentry ingestion origin.
+ *
+ * The filter is an allowlist, not a denylist. A denylist has to predict every
+ * field a future domain slice might attach to an event, and the first one it
+ * fails to predict is a private Learning Feedback observation or a complete
+ * set of GraphQL variables sitting in a third party's dashboard. An allowlist
+ * fails the other way: a new operational field is invisible until someone adds
+ * it here deliberately, which is a bug report rather than a disclosure.
+ */
+export const TELEMETRY_REDACTION = "[filtered]";
+
+/**
+ * The structured context an operational event may carry. Every name here is
+ * either a fingerprint, a version, a count, or a safe failure code — the
+ * evidence the operator guide asks an incident to retain. None of them can
+ * hold a secret, a contact detail, an address, or authored domain content.
+ */
+export const TELEMETRY_SAFE_CONTEXT_KEYS = [
+  "alertCondition",
+  "attemptCount",
+  "channel",
+  "clearedAt",
+  "confirmedAt",
+  "correlationId",
+  "correlationCount",
+  "deniedAuthorizationCount",
+  "durationMilliseconds",
+  "event",
+  "eventCount",
+  "exhaustedJobCount",
+  "fixtureGeneration",
+  "fixtureManifestVersion",
+  "heartbeatAgeSeconds",
+  "incidentFamily",
+  "incidentCorrelationId",
+  "incidentFingerprint",
+  "integration",
+  "jobType",
+  "maintenanceState",
+  "observationCount",
+  "oldestRunnableAgeSeconds",
+  "operation",
+  "operationName",
+  "outcome",
+  "persistedDocumentId",
+  "persistedOperationManifestVersion",
+  "projectedUsd",
+  "refusedRequestCount",
+  "release",
+  "route",
+  "runnableJobCount",
+  "safeFailureCode",
+  "schemaVersion",
+  "severity",
+  "sinceLastSuccessSeconds",
+  "usdActual",
+  "workerName",
+] as const;
+
+export type TelemetrySafeContextKey = (typeof TELEMETRY_SAFE_CONTEXT_KEYS)[number];
+
+const safeContextKeys = new Set<string>(TELEMETRY_SAFE_CONTEXT_KEYS);
+
+/** Long enough for a correlation identifier and a migration name, and no longer. */
+const MAXIMUM_SAFE_VALUE_LENGTH = 200;
+
+/** Long enough to identify a failing journey without carrying a payload with it. */
+const MAXIMUM_SAFE_TEXT_LENGTH = 500;
+
+/**
+ * Shapes that look like a credential wherever they appear. The allowlist above
+ * already keeps structured context clean; these patterns exist for the two
+ * places a value arrives as prose rather than as a field — an exception message
+ * and a log line — where an adapter may have interpolated something it should
+ * not have.
+ */
+const CREDENTIAL_PATTERNS: readonly RegExp[] = [
+  // A bearer token, an Authorization header value, or a JWT anywhere in prose.
+  /\b[Bb]earer\s+[\w.\-+/=]+/g,
+  /\beyJ[\w-]{6,}\.[\w-]{6,}\.[\w-]+/g,
+  // A PostgreSQL or provider URL carrying userinfo.
+  /\b[a-z][a-z0-9+.-]*:\/\/[^\s/@]+:[^\s/@]+@\S+/gi,
+  // An email address: never operational evidence, always a contact detail.
+  /\b[\w.%+-]+@[\w.-]+\.[A-Za-z]{2,}\b/g,
+  // A named secret assigned inline, however the assignment is spelled. The
+  // name is matched inside a surrounding identifier — `API_TRUSTED_PROXY_SECRET`
+  // is exactly the shape a start-up failure would interpolate — so a word
+  // boundary would miss the case this pattern exists for.
+  /[A-Za-z0-9_]*(?:password|passwd|secret|token|api[_-]?key|dsn)[A-Za-z0-9_]*\s*[:=]\s*\S+/gi,
+];
+
+export interface TelemetryBreadcrumb {
+  type?: string;
+  category?: string;
+  level?: string;
+  message?: string;
+  timestamp?: number;
+  data?: Record<string, unknown>;
+}
+
+/**
+ * The SDKs' own contexts, which describe the runtime rather than the request:
+ * the trace linkage that makes events navigable, the Node or browser version,
+ * and the platform. They are kept verbatim because filtering them through the
+ * marketplace allowlist would strip an event of the structure Sentry groups it
+ * by, and because none of them can hold a request, a User, or authored content.
+ */
+export const TELEMETRY_STRUCTURAL_CONTEXTS = ["trace", "runtime", "os", "app", "browser"] as const;
+
+const structuralContexts = new Set<string>(TELEMETRY_STRUCTURAL_CONTEXTS);
+
+/**
+ * The part of a Sentry event this filter is allowed to reason about. It is
+ * declared structurally rather than imported from an SDK so the browser bundle
+ * and the API share one implementation and one test.
+ */
+export interface TelemetryEvent {
+  message?: string;
+  /** Sentry's structured message. Its interpolation parameters are content. */
+  logentry?: { message?: string; params?: unknown };
+  /** The route or operation an event belongs to, never a populated URL. */
+  transaction?: string;
+  request?: {
+    method?: string;
+    url?: string;
+    headers?: Record<string, unknown>;
+    cookies?: unknown;
+    data?: unknown;
+    query_string?: unknown;
+  };
+  user?: { id?: string; ip_address?: string; email?: string; username?: string };
+  exception?: { values?: Array<{ type?: string; value?: string }> };
+  breadcrumbs?: TelemetryBreadcrumb[];
+  extra?: Record<string, unknown>;
+  tags?: Record<string, unknown>;
+  contexts?: Record<string, unknown>;
+  server_name?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Strips the query string and fragment. ADR 0022 excludes them because the
+ * application puts filters, cursors, and identifiers there: the path names the
+ * journey, which is what makes an event actionable, and the rest is content.
+ */
+export function sanitizeTelemetryUrl(url: string): string {
+  const separator = url.search(/[?#]/);
+  const trimmed = separator === -1 ? url : url.slice(0, separator);
+  return trimmed.slice(0, MAXIMUM_SAFE_VALUE_LENGTH);
+}
+
+/** Bounds prose and removes anything shaped like a credential or a contact. */
+export function sanitizeTelemetryText(text: string): string {
+  const filtered = CREDENTIAL_PATTERNS.reduce(
+    (value, pattern) => value.replace(pattern, TELEMETRY_REDACTION),
+    text,
+  );
+  return filtered.slice(0, MAXIMUM_SAFE_TEXT_LENGTH);
+}
+
+function safeValue(value: unknown): string | number | boolean | undefined {
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    return sanitizeTelemetryText(value).slice(0, MAXIMUM_SAFE_VALUE_LENGTH);
+  }
+  return undefined;
+}
+
+/**
+ * Keeps the allowlisted names of one structured container and discards the
+ * rest, including anything nested: a value that is not a bounded scalar cannot
+ * be inspected for content, so it does not travel.
+ */
+export function sanitizeTelemetryContext(
+  context: Record<string, unknown> | undefined,
+): Record<string, string | number | boolean> | undefined {
+  if (!context) return undefined;
+  const safe: Record<string, string | number | boolean> = {};
+  for (const [key, value] of Object.entries(context)) {
+    if (!safeContextKeys.has(key)) continue;
+    const kept = safeValue(value);
+    if (kept !== undefined) safe[key] = kept;
+  }
+  return Object.keys(safe).length > 0 ? safe : undefined;
+}
+
+function sanitizeBreadcrumb(breadcrumb: TelemetryBreadcrumb): TelemetryBreadcrumb {
+  const data = sanitizeTelemetryContext(breadcrumb.data);
+  return {
+    ...(breadcrumb.type === undefined ? {} : { type: breadcrumb.type }),
+    ...(breadcrumb.category === undefined ? {} : { category: breadcrumb.category }),
+    ...(breadcrumb.level === undefined ? {} : { level: breadcrumb.level }),
+    ...(breadcrumb.timestamp === undefined ? {} : { timestamp: breadcrumb.timestamp }),
+    ...(breadcrumb.message === undefined
+      ? {}
+      : { message: sanitizeTelemetryText(breadcrumb.message) }),
+    ...(data ? { data } : {}),
+  };
+}
+
+/**
+ * The `beforeSend` of ADR 0022. It keeps what makes an event actionable — the
+ * failing journey, the release, the correlation identifier, the safe failure
+ * code — and removes authorization data, GraphQL variables, URL query strings,
+ * reviewer-entered content, and every default identifier the SDKs would attach.
+ *
+ * `user.id` survives because it is the same opaque identifier an Audit Entry
+ * carries: it joins an event to history without naming anyone. Contact
+ * details, the source address, and the display name do not.
+ */
+export function sanitizeTelemetryEvent<E extends TelemetryEvent>(event: E): E {
+  const sanitized: TelemetryEvent = { ...event };
+
+  delete sanitized.server_name;
+
+  if (event.message !== undefined) sanitized.message = sanitizeTelemetryText(event.message);
+
+  if (event.transaction !== undefined) {
+    sanitized.transaction = sanitizeTelemetryUrl(event.transaction);
+  }
+
+  // A structured message keeps its template and loses its parameters: the
+  // template names the failure, the parameters are whatever was being handled.
+  if (event.logentry) {
+    sanitized.logentry = event.logentry.message === undefined
+      ? {}
+      : { message: sanitizeTelemetryText(event.logentry.message) };
+  }
+
+  if (event.request) {
+    sanitized.request = {
+      ...(event.request.method === undefined ? {} : { method: event.request.method }),
+      ...(event.request.url === undefined
+        ? {}
+        : { url: sanitizeTelemetryUrl(event.request.url) }),
+    };
+  }
+
+  if (event.user) {
+    const id = typeof event.user.id === "string" ? event.user.id : undefined;
+    sanitized.user = id === undefined ? {} : { id: id.slice(0, MAXIMUM_SAFE_VALUE_LENGTH) };
+  }
+
+  if (event.exception?.values) {
+    sanitized.exception = {
+      values: event.exception.values.map((value) => ({
+        ...(value.type === undefined ? {} : { type: value.type }),
+        ...(value.value === undefined
+          ? {}
+          : { value: sanitizeTelemetryText(value.value) }),
+      })),
+    };
+  }
+
+  if (event.breadcrumbs) sanitized.breadcrumbs = event.breadcrumbs.map(sanitizeBreadcrumb);
+
+  const extra = sanitizeTelemetryContext(event.extra);
+  if (extra) sanitized.extra = extra;
+  else delete sanitized.extra;
+
+  const tags = sanitizeTelemetryContext(event.tags);
+  if (tags) sanitized.tags = tags;
+  else delete sanitized.tags;
+
+  if (event.contexts) {
+    const contexts: Record<string, unknown> = {};
+    for (const [name, context] of Object.entries(event.contexts)) {
+      if (structuralContexts.has(name)) {
+        contexts[name] = context;
+        continue;
+      }
+      const safe = sanitizeTelemetryContext(
+        typeof context === "object" && context !== null
+          ? (context as Record<string, unknown>)
+          : undefined,
+      );
+      if (safe) contexts[name] = safe;
+    }
+    if (Object.keys(contexts).length > 0) sanitized.contexts = contexts;
+    else delete sanitized.contexts;
+  }
+
+  return sanitized as E;
+}
+
+/**
+ * Applies `sanitizeTelemetryEvent` without losing the SDK's own event type.
+ * Both halves of the deployment hand their `beforeSend` this same function, so
+ * "one shared filter" is one function rather than two identical ones.
+ */
+export function filterTelemetryEvent<E>(event: E): E {
+  return sanitizeTelemetryEvent(event as unknown as TelemetryEvent) as unknown as E;
+}
+
 export const interfaceMessages = {
   en: {
     "workspace.eyebrow": "Student workspace",

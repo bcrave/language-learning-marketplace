@@ -35,4 +35,20 @@ describe("browser authentication configuration", () => {
       graphqlUrl: "https://example.test/graphql",
     });
   });
+
+  it("carries the telemetry destination when one is configured, and starts without one", () => {
+    const environment = {
+      VITE_AUTH0_AUDIENCE: "https://api.example.test",
+      VITE_AUTH0_CLIENT_ID: "public-client-id",
+      VITE_AUTH0_DOMAIN: "login.example.test",
+      VITE_GRAPHQL_URL: "https://example.test/graphql",
+    };
+    expect(
+      parseClientConfig(
+        { ...environment, VITE_SENTRY_DSN: "https://0123456789abcdef@o1.ingest.sentry.io/42" },
+        false,
+      ),
+    ).toMatchObject({ sentryDsn: "https://0123456789abcdef@o1.ingest.sentry.io/42" });
+    expect(parseClientConfig(environment, false)).not.toHaveProperty("sentryDsn");
+  });
 });

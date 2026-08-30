@@ -13,6 +13,7 @@ import { suggestedInterfaceLocale } from "./interface-locale.js";
 import { MaintenanceStatus, maintenanceAwareFetch } from "./maintenance-status.js";
 import { persistedOperationLink } from "./persisted-operations.js";
 import { productionAuth0Options } from "./production-auth.js";
+import { startBrowserTelemetry } from "./telemetry.js";
 import "./styles.css";
 
 function AuthenticationStatus({
@@ -107,6 +108,13 @@ if (import.meta.env.DEV || import.meta.env.MODE === "test") {
   if (config.authMode !== "auth0") {
     throw new Error("The production browser requires Auth0 authentication");
   }
+  // Started before the application renders, so a failure in the first paint is
+  // reported rather than lost. Local development reports nothing at all.
+  startBrowserTelemetry({
+    environment: "production",
+    ...(config.sentryDsn ? { dsn: config.sentryDsn } : {}),
+    ...(config.appRelease ? { release: config.appRelease } : {}),
+  });
   const application = (
     <Auth0Provider
       {...productionAuth0Options({

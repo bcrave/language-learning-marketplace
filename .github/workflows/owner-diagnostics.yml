@@ -1,0 +1,112 @@
+name: Owner Diagnostics
+
+# ADR 0022's sanitized, read-only diagnostics summary. It is the Project Owner's
+# current-state evidence — readiness, worker heartbeat, fixture generation and
+# lease state, notification reconciliation, and open incidents — and it is not an
+# alert route. Alerts arrive through Sentry email, GitHub Actions notifications,
+# and Railway billing; this is what the owner opens after one arrives.
+#
+# It lives here rather than in the application because ADR 0018 and the threat
+# model keep operational authority outside the thing being operated: the public
+# demonstration exposes no diagnostics surface and no owner route, and the
+# protected `production` environment is what makes this owner-only.
+#
+# Reading changes nothing, so unlike the rebuild and recovery workflows this
+# takes no maintenance queue and is safe to dispatch while either is running.
+# Naming an incident is the one state change: several of the guide's clearing
+# rules end in a verification only a person can perform, and this is where the
+# owner records having performed one. The four optional cost figures are the
+# guide's daily check — the projection it asks for, done for them.
+
+on:
+  workflow_dispatch:
+    inputs:
+      clear_incident_correlation_id:
+        description: >-
+          Optional. The incident correlation identifier from the alert or the
+          summary, to record that its owner verification has been performed.
+          Leave empty for a read-only summary.
+        required: false
+        type: string
+      cost_actual_usd:
+        description: Optional. Railway actual usage this billing cycle, in USD.
+        required: false
+        type: string
+      cost_last_24h_usd:
+        description: Optional. Railway usage over the last 24 hours, in USD.
+        required: false
+        type: string
+      cost_trailing_7d_usd:
+        description: Optional. Railway usage over the trailing seven days, in USD.
+        required: false
+        type: string
+      cost_days_remaining:
+        description: Optional. Days remaining in the billing cycle.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24.15.0
+  PNPM_VERSION: 11.0.0
+
+jobs:
+  diagnostics:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_DEPLOYMENT_TOKEN }}
+      RAILWAY_DATABASE_SERVICE: ${{ vars.RAILWAY_DATABASE_SERVICE || 'Postgres' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @marketplace/backend build
+      - run: npm install --global @railway/cli
+      - name: Open protected database tunnel
+        run: |
+          railway connect "$RAILWAY_DATABASE_SERVICE" --tunnel-only --port 15432 > "$RUNNER_TEMP/railway-tunnel.log" 2>&1 &
+          echo "RAILWAY_TUNNEL_PID=$!" >> "$GITHUB_ENV"
+          railway variable list --service "$RAILWAY_DATABASE_SERVICE" --json > "$RUNNER_TEMP/railway-database-variables.json"
+          node --input-type=module -e '
+            import { appendFileSync, readFileSync } from "node:fs";
+            const variables = JSON.parse(readFileSync(process.env.RUNNER_TEMP + "/railway-database-variables.json", "utf8"));
+            const url = new URL(variables.DATABASE_URL);
+            url.hostname = "127.0.0.1";
+            url.port = "15432";
+            appendFileSync(process.env.GITHUB_ENV, `DATABASE_URL=${url.toString()}\n`);
+          '
+          node --input-type=module -e '
+            import net from "node:net";
+            for (let attempt = 0; attempt < 60; attempt += 1) {
+              const ready = await new Promise((resolve) => {
+                const socket = net.connect(15432, "127.0.0.1", () => { socket.destroy(); resolve(true); });
+                socket.once("error", () => resolve(false));
+              });
+              if (ready) process.exit(0);
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+            process.exit(1);
+          '
+      - name: Write the sanitized diagnostics summary
+        env:
+          APP_RELEASE: ${{ github.sha }}
+          SENTRY_DSN: ${{ vars.SENTRY_DSN }}
+          CLEAR_INCIDENT_CORRELATION_ID: ${{ inputs.clear_incident_correlation_id }}
+          COST_ACTUAL_USD: ${{ inputs.cost_actual_usd }}
+          COST_LAST_24H_USD: ${{ inputs.cost_last_24h_usd }}
+          COST_TRAILING_7D_USD: ${{ inputs.cost_trailing_7d_usd }}
+          COST_DAYS_REMAINING: ${{ inputs.cost_days_remaining }}
+        run: pnpm --filter @marketplace/backend release:diagnostics
+      - name: Close protected database tunnel
+        if: always()
+        run: kill "$RAILWAY_TUNNEL_PID" 2>/dev/null || true

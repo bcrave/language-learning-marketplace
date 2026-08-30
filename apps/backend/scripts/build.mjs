@@ -31,6 +31,7 @@ await build({
         "src/operations/canonical-data-recovery-main.ts",
         "src/operations/deployed-maintenance-smoke-main.ts",
         "src/operations/deployed-smoke-main.ts",
+        "src/operations/owner-diagnostics-main.ts",
         "src/operations/public-surface-main.ts",
         "src/operations/release-gate-main.ts",
         "src/worker/main.ts",
