@@ -1,0 +1,172 @@
+name: Recovery Drill
+
+# ADR 0023 requires recovery to be tested before public launch and after a
+# material database change. This is where both drills run.
+#
+# A backup drill restores the chosen Railway backup into an isolated database on
+# the same instance and validates that copy, never the live volume: the live
+# volume is the only remaining evidence if the restore turns out to be the
+# damaged one. A change-triggered drill runs against the deployment and
+# additionally drives the deployed role journeys.
+#
+# Either way the evidence is written to the deployment, not to the copy, so it
+# outlives the database it was measured on. See the operator guide's
+# "Recovery drills" and "Database recovery from a backup".
+#
+# The drill changes no marketplace state. It shares the maintenance queue anyway:
+# a restore that ran while a Canonical Data Rebuild held the lease would measure
+# a database being replaced underneath it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: Which recovery the drill proves
+        required: true
+        type: choice
+        options: [BACKUP_RESTORATION, CHANGE_TRIGGERED_RECOVERY]
+      backup_id:
+        description: >-
+          Railway backup to restore, for BACKUP_RESTORATION. Leave empty to use
+          the most recent daily backup.
+        required: false
+        type: string
+      limitation:
+        description: >-
+          Optional. A non-secret limitation this drill leaves behind, recorded
+          with the follow-up owner in the readiness record.
+        required: false
+        type: string
+      follow_up_owner:
+        description: Required whenever a limitation is recorded.
+        required: false
+        type: string
+      sign_off:
+        description: Project Owner sign-off recorded against this exercise.
+        required: true
+        type: string
+      acknowledge_drill:
+        description: >-
+          I authorize this drill. A backup restoration creates and drops an
+          isolated database; neither drill changes marketplace state.
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-maintenance
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 24.15.0
+  PNPM_VERSION: 11.0.0
+
+jobs:
+  drill:
+    if: inputs.acknowledge_drill == true
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 60
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_DEPLOYMENT_TOKEN }}
+      RAILWAY_DATABASE_SERVICE: ${{ vars.RAILWAY_DATABASE_SERVICE || 'Postgres' }}
+      RECOVERY_DRILL_KIND: ${{ inputs.kind }}
+      DRILL_EVIDENCE_LINK: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      DRILL_LIMITATION: ${{ inputs.limitation }}
+      DRILL_FOLLOW_UP_OWNER: ${{ inputs.follow_up_owner }}
+      DRILL_SIGNED_OFF_BY: ${{ inputs.sign_off }}
+    steps:
+      - name: Refuse ambiguous workflow reruns
+        # A rerun would reuse this run's correlation identifier and overwrite the
+        # earlier drill's evidence with a second attempt's. Dispatch again.
+        if: github.run_attempt != 1
+        run: exit 1
+      - name: Refuse a limitation nobody owns
+        if: inputs.limitation != '' && inputs.follow_up_owner == ''
+        run: exit 1
+      - name: Start the recovery clock
+        # Before the restore, not after it: the recovery-time target measures the
+        # outage, and a clock started after the slow part always meets it.
+        run: echo "DRILL_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @marketplace/backend build
+      - run: npm install --global @railway/cli
+      - name: Open protected database tunnel
+        run: |
+          railway connect "$RAILWAY_DATABASE_SERVICE" --tunnel-only --port 15432 > "$RUNNER_TEMP/railway-tunnel.log" 2>&1 &
+          echo "RAILWAY_TUNNEL_PID=$!" >> "$GITHUB_ENV"
+          railway variable list --service "$RAILWAY_DATABASE_SERVICE" --json > "$RUNNER_TEMP/railway-database-variables.json"
+          node --input-type=module -e '
+            import { appendFileSync, readFileSync } from "node:fs";
+            const variables = JSON.parse(readFileSync(process.env.RUNNER_TEMP + "/railway-database-variables.json", "utf8"));
+            const url = new URL(variables.DATABASE_URL);
+            url.hostname = "127.0.0.1";
+            url.port = "15432";
+            appendFileSync(process.env.GITHUB_ENV, `DATABASE_URL=${url.toString()}\n`);
+          '
+          node --input-type=module -e '
+            import net from "node:net";
+            for (let attempt = 0; attempt < 60; attempt += 1) {
+              const ready = await new Promise((resolve) => {
+                const socket = net.connect(15432, "127.0.0.1", () => { socket.destroy(); resolve(true); });
+                socket.once("error", () => resolve(false));
+              });
+              if (ready) process.exit(0);
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+            process.exit(1);
+          '
+      - name: Restore the backup into an isolated database
+        # Never over the live volume. The drill database is created beside it,
+        # validated, and dropped in the cleanup step below whatever happens.
+        if: inputs.kind == 'BACKUP_RESTORATION'
+        env:
+          BACKUP_ID: ${{ inputs.backup_id }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install --yes postgresql-client
+          if [ -n "$BACKUP_ID" ]; then
+            railway volume backup download "$BACKUP_ID" --service "$RAILWAY_DATABASE_SERVICE" --output "$RUNNER_TEMP/backup.dump"
+          else
+            railway volume backup download --latest --service "$RAILWAY_DATABASE_SERVICE" --output "$RUNNER_TEMP/backup.dump"
+          fi
+          DRILL_DATABASE="recovery_drill_${GITHUB_RUN_ID}"
+          echo "DRILL_DATABASE=$DRILL_DATABASE" >> "$GITHUB_ENV"
+          psql "$DATABASE_URL" --command "create database \"$DRILL_DATABASE\""
+          node --input-type=module -e '
+            import { appendFileSync } from "node:fs";
+            const url = new URL(process.env.DATABASE_URL);
+            url.pathname = `/${process.env.DRILL_DATABASE}`;
+            appendFileSync(process.env.GITHUB_ENV, `DRILL_DATABASE_URL=${url.toString()}\n`);
+          '
+          pg_restore --no-owner --no-privileges --dbname "$DRILL_DATABASE_URL" "$RUNNER_TEMP/backup.dump"
+      - name: Run the recovery drill
+        env:
+          APP_RELEASE: ${{ github.sha }}
+          PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
+          AUTH0_ISSUER: ${{ vars.AUTH0_ISSUER }}
+          AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
+          DEMONSTRATION_IDENTITY_SUBJECTS: ${{ secrets.DEMONSTRATION_IDENTITY_SUBJECTS }}
+          SMOKE_CLIENT_ID: ${{ secrets.SMOKE_CLIENT_ID }}
+          SMOKE_CLIENT_SECRET: ${{ secrets.SMOKE_CLIENT_SECRET }}
+          SMOKE_STUDENT_USERNAME: ${{ secrets.SMOKE_STUDENT_USERNAME }}
+          SMOKE_STUDENT_PASSWORD: ${{ secrets.SMOKE_STUDENT_PASSWORD }}
+          SMOKE_ADMINISTRATOR_USERNAME: ${{ secrets.SMOKE_ADMINISTRATOR_USERNAME }}
+          SMOKE_ADMINISTRATOR_PASSWORD: ${{ secrets.SMOKE_ADMINISTRATOR_PASSWORD }}
+        run: pnpm --filter @marketplace/backend release:recovery-drill
+      - name: Drop the isolated drill database
+        if: always() && env.DRILL_DATABASE != ''
+        run: psql "$DATABASE_URL" --command "drop database if exists \"$DRILL_DATABASE\" with (force)" || true
+      - name: Close protected database tunnel
+        if: always()
+        run: kill "$RAILWAY_TUNNEL_PID" 2>/dev/null || true

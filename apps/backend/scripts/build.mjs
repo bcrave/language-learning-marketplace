@@ -33,6 +33,8 @@ await build({
         "src/operations/deployed-smoke-main.ts",
         "src/operations/owner-diagnostics-main.ts",
         "src/operations/public-surface-main.ts",
+        "src/operations/readiness-evidence-main.ts",
+        "src/operations/recovery-drill-main.ts",
         "src/operations/release-gate-main.ts",
         "src/worker/main.ts",
       ],
