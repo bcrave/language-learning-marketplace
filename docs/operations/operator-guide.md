@@ -49,7 +49,7 @@ Use Sentry email for application, worker, reconciliation, third-party-integratio
 ### Backups and recovery verification
 
 - **Detect:** check provider backup status once after the expected daily window. Owner attention follows 26 hours without a daily backup or eight days without a weekly backup; alert immediately at 48 hours without a valid backup. A failed verification or drill blocks release; inability to establish any recoverable state alerts immediately.
-- **Verify:** isolated restore drills prove schema compatibility, canonical aggregates, and sampled ledger invariants within the accepted 60-minute recovery-time target.
+- **Verify:** isolated restore drills prove schema compatibility, canonical aggregates, and sampled ledger invariants within the accepted 60-minute recovery-time target. Run them through the repository's **Recovery Drill** workflow; see [recovery drills](#recovery-drills) and [database recovery from a backup](#database-recovery-from-a-backup).
 - **Clear:** verify a new backup or pass an isolated restore; retain failed evidence and measured recovery duration.
 
 ### Observed third-party-integration failures
@@ -105,7 +105,89 @@ before lease acquisition is safe; after quiescence, the operation finishes its
 current transaction to a validated commit or rollback before honoring SIGINT or
 SIGTERM. Force-cancel after quiescence only to contain a greater threat.
 
-Recovery is diagnosis-first. A protected assessment keeps maintenance active and classifies database reachability, schema compatibility, lease ownership, fixture generation, Audit Entries, and aggregate invariants. It may recommend only: verify and reopen current state; perform a clean Canonical Data Rebuild; or invoke established backup restoration. A separate protected dispatch authorizes state change and references the incident correlation. Direct provider access is break glass only when approved workflows cannot restore safety.
+Recovery is diagnosis-first. A protected assessment keeps maintenance active and classifies database reachability, schema compatibility, lease ownership, fixture generation, Audit Entries, and aggregate invariants. It may recommend only: verify and reopen current state; perform a clean Canonical Data Rebuild; or invoke established [backup restoration](#database-recovery-from-a-backup). A separate protected dispatch authorizes state change and references the incident correlation. Direct provider access is [break glass](#break-glass-and-the-return-to-the-normal-path) only when approved workflows cannot restore safety.
+
+### Database recovery from a backup
+
+Backup restoration is the third repair a recovery assessment may recommend, and
+the only one that reaches outside the application's own state. It is used when
+the schema is unreadable, when durable state is corrupt in a way a clean
+Canonical Data Rebuild cannot replace, or when the assessment reports no schema
+at all. It is never the first move: a rebuild replaces mutable synthetic state
+without losing the deployment, and a restore rewinds everything, including the
+Audit Entries and operational incidents recording what happened.
+
+1. Keep maintenance active and readiness false. A restore into a database the
+   API is still admitting writes to produces a state nobody can reason about.
+2. Choose the retention point from Railway's daily and weekly backups, and
+   record which one. The target recovery point is 24 hours (ADR 0023); a weekly
+   point is a decision to lose more than that, not a routine choice.
+3. Restore into an **isolated** database first, never over the live volume. The
+   live volume is the only remaining evidence if the restore turns out to be the
+   damaged one.
+4. Run the **Recovery Drill** workflow in `BACKUP_RESTORATION` mode against the
+   isolated copy. It proves schema compatibility, canonical fixture invariants,
+   canonical aggregates, the sampled Class Credit ledger invariants, and
+   resumable worker state, and it measures elapsed recovery against the
+   60-minute recovery-time target.
+5. Only after the drill passes, promote the restored copy and follow
+   [return to service](#return-to-service). Reopening is still gated on the full
+   return-to-service list, not on the drill alone.
+6. Run a Canonical Data Rebuild afterwards if the restored fixture generation is
+   older than the current fixture-manifest version.
+
+Point-in-time recovery and off-platform backup storage are out of scope by ADR
+0023, and the record must not describe same-project Railway backups as
+commercial-grade disaster recovery.
+
+### Recovery drills
+
+Two drills produce the recovery evidence a release needs. Both run as protected
+workflows, both require owner confirmation, and both record a dated readiness
+exercise against the exact release candidate.
+
+- **Backup restoration drill.** An isolated restore, as above. It reports the
+  deployed role journeys and the shared-identity binding as not applicable
+  rather than passed: an isolated copy serves no public origin, and a drill that
+  claimed those journeys would put a check in the release record nobody ran.
+- **Change-triggered recovery drill.** Run against the deployment after a
+  material change to the database, the recovery controls, or the deployment
+  path. It additionally requires a fresh, advancing worker heartbeat, the shared
+  demonstration identities covering every application role, and the complete
+  deployed role smoke suite.
+
+A drill fails if any applicable check fails **or** if measured recovery exceeds
+the 60-minute recovery-time target, and a failed drill blocks release under
+`backups.restore-drill-failed`. Drills repeat after a relevant material change;
+an exercise recorded against a different release, schema, or fixture manifest
+does not carry forward to a new candidate.
+
+### Break glass and the return to the normal path
+
+Break glass is direct provider access — the Railway database shell, a manual
+service variable change, a console action — used only when the approved
+workflows cannot restore safety. It is a containment tool, never a repair
+shortcut, and using it because a workflow was slow or inconvenient is the
+failure mode it must not become.
+
+1. Confirm the approved path genuinely cannot run, and record which workflow
+   failed and how. "Faster by hand" is not a reason.
+2. Take the narrowest action that restores safety: keep readiness false, stop
+   the unsafe write path, or revoke the exposed credential. Do not repair
+   business state by hand — that produces durable state with no Audit Entry
+   behind it.
+3. Record the action against the incident correlation identifier through the
+   **Owner Diagnostics** workflow, with the safe failure code and what was
+   touched. Direct provider access creates no Audit Entry on its own, so this
+   record is the only evidence the action happened.
+4. Return to the normal path as the next step, not eventually: dispatch the
+   assessment-first **Canonical Data Recovery** workflow and let it classify the
+   state break glass left behind.
+5. Rotate any credential that was read, displayed, or pasted during the action,
+   and prove the old one fails.
+6. Record the episode as a limitation with a follow-up owner in the release
+   record. A candidate that needed break glass is not disqualified, but a
+   candidate that needed it and does not say so is.
 
 ### Return to service
 
@@ -127,4 +209,4 @@ Each incident records detection/confirmation times, severity/family/fingerprint,
 
 Exclude credentials, tokens, source addresses, personal data, notification content, complete GraphQL variables, attack payloads, and raw provider responses. Operational observations remain in filtered logs and Sentry. Alerts do not create Audit Entries merely for alerting; every state-changing containment or recovery action creates the Audit Entries required by the canonical Audit Log policy. Recovery requires explicit healthy probes, smoke journeys, invariant validation, terminal receipts, isolated restore, or revocation proof plus the family-specific confirmation window.
 
-The required dated evidence record is defined in [operational readiness evidence](readiness-evidence.md). Security-specific proof additionally follows the [Security Release Gate](../security-verification.md).
+The required dated evidence record is defined in [operational readiness evidence](readiness-evidence.md) and is produced by the repository's **Readiness Evidence** workflow, which reads back the exercises recorded against the exact candidate rather than accepting typed-in results. It reads and changes nothing, so it is safe to dispatch during maintenance. Security-specific proof additionally follows the [Security Release Gate](../security-verification.md).

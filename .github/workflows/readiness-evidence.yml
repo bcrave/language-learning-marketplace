@@ -1,0 +1,101 @@
+name: Readiness Evidence
+
+# Generates the candidate's operational readiness record and enforces the
+# release rule on it.
+#
+# The record is not a form. Everything in it is read back from what actually ran
+# against this exact release — the exercises each recording workflow wrote, and
+# the alert policy's own thresholds — so a row cannot claim a threshold the
+# deployment does not implement or a drill that never happened. The workflow
+# supplies only the Project Owner's sign-off.
+#
+# It reads and changes nothing, so unlike the rebuild, recovery, and drill
+# workflows it takes no maintenance queue and is safe to dispatch at any time,
+# including while the demonstration is unavailable. The record is exactly what
+# an owner wants to read then.
+#
+# The uploaded artifact is privacy-safe by construction: safe setting names,
+# fingerprints, counts, correlations, and links to private provider evidence.
+# The raw evidence stays with its provider.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sign_off:
+        description: >-
+          Project Owner sign-off for this candidate. Leave empty to preview
+          which rows still block the release.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24.15.0
+  PNPM_VERSION: 11.0.0
+
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_DEPLOYMENT_TOKEN }}
+      RAILWAY_DATABASE_SERVICE: ${{ vars.RAILWAY_DATABASE_SERVICE || 'Postgres' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @marketplace/backend build
+      - run: npm install --global @railway/cli
+      - name: Open protected database tunnel
+        run: |
+          railway connect "$RAILWAY_DATABASE_SERVICE" --tunnel-only --port 15432 > "$RUNNER_TEMP/railway-tunnel.log" 2>&1 &
+          echo "RAILWAY_TUNNEL_PID=$!" >> "$GITHUB_ENV"
+          railway variable list --service "$RAILWAY_DATABASE_SERVICE" --json > "$RUNNER_TEMP/railway-database-variables.json"
+          node --input-type=module -e '
+            import { appendFileSync, readFileSync } from "node:fs";
+            const variables = JSON.parse(readFileSync(process.env.RUNNER_TEMP + "/railway-database-variables.json", "utf8"));
+            const url = new URL(variables.DATABASE_URL);
+            url.hostname = "127.0.0.1";
+            url.port = "15432";
+            appendFileSync(process.env.GITHUB_ENV, `DATABASE_URL=${url.toString()}\n`);
+          '
+          node --input-type=module -e '
+            import net from "node:net";
+            for (let attempt = 0; attempt < 60; attempt += 1) {
+              const ready = await new Promise((resolve) => {
+                const socket = net.connect(15432, "127.0.0.1", () => { socket.destroy(); resolve(true); });
+                socket.once("error", () => resolve(false));
+              });
+              if (ready) process.exit(0);
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+            process.exit(1);
+          '
+      - name: Generate the readiness record
+        id: record
+        env:
+          APP_RELEASE: ${{ github.sha }}
+          READINESS_SIGN_OFF: ${{ inputs.sign_off }}
+          READINESS_EVIDENCE_PATH: ${{ runner.temp }}/readiness-evidence.md
+        # A blocked record is still written and uploaded: the owner needs to
+        # read which rows block the release, not merely that something did.
+        run: pnpm --filter @marketplace/backend release:readiness-evidence
+      - name: Upload the readiness record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: readiness-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/readiness-evidence.md
+          if-no-files-found: error
+      - name: Close protected database tunnel
+        if: always()
+        run: kill "$RAILWAY_TUNNEL_PID" 2>/dev/null || true
