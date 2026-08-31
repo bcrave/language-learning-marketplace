@@ -183,6 +183,30 @@ function openIncidentRows(db: Database) {
 
 type OpenIncidentRow = Awaited<ReturnType<typeof openIncidentRows>>[number];
 
+/**
+ * Confirms an incident exactly once, whoever asks.
+ *
+ * Opening an incident and confirming it are two statements, and the rows every
+ * caller decides from were read before either ran. Two reports of the same
+ * condition can therefore both see `confirmed_at` as null — one because it just
+ * inserted the row, the other because it read that row a moment before the
+ * confirmation landed — and both would dispatch. The operator guide allows one
+ * confirmation alert per incident and no reminders, so a second is not a
+ * duplicate to tolerate: it is the thing the guide promises cannot happen.
+ *
+ * The `where` clause makes the database the arbiter. Whoever updates the row
+ * gets it back and dispatches; everyone else gets nothing and stays silent.
+ */
+async function confirmOnce(db: Database, incidentId: string, now: Date) {
+  return db
+    .updateTable("operational_incidents")
+    .set({ confirmed_at: now })
+    .where("id", "=", incidentId)
+    .where("confirmed_at", "is", null)
+    .returningAll()
+    .executeTakeFirst();
+}
+
 async function foldFiringConditions(
   db: Database,
   open: readonly OpenIncidentRow[],
@@ -216,12 +240,8 @@ async function foldFiringConditions(
         .returningAll()
         .executeTakeFirstOrThrow();
       if (confirmationIsSatisfied(condition.conditionId, opened, now)) {
-        await db
-          .updateTable("operational_incidents")
-          .set({ confirmed_at: now })
-          .where("id", "=", opened.id)
-          .execute();
-        push(dispatchFor(opened, "CONFIRMED", condition.evidence));
+        const confirmed = await confirmOnce(db, opened.id, now);
+        if (confirmed) push(dispatchFor(opened, "CONFIRMED", condition.evidence));
       }
       continue;
     }
@@ -267,16 +287,15 @@ async function foldFiringConditions(
       continue;
     }
 
+    // `incident` is the row as it was read before this fold began, so its
+    // `confirmed_at` can already be stale. It is kept as a cheap first filter;
+    // `confirmOnce` is what actually decides, against the row as it is now.
     if (
       incident.confirmed_at === null &&
       confirmationIsSatisfied(condition.conditionId, observed, now)
     ) {
-      await db
-        .updateTable("operational_incidents")
-        .set({ confirmed_at: now })
-        .where("id", "=", incident.id)
-        .execute();
-      push(dispatchFor(observed, "CONFIRMED", condition.evidence));
+      const confirmed = await confirmOnce(db, incident.id, now);
+      if (confirmed) push(dispatchFor(observed, "CONFIRMED", condition.evidence));
     }
   }
 
