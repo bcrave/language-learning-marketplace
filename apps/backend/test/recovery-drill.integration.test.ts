@@ -286,7 +286,6 @@ describe("recovery drills", () => {
       const report = await runDrill(restored);
       await recordRecoveryDrillEvidence(deployment, report, {
         evidenceLink: EVIDENCE_LINK,
-        schemaVersion: SCHEMA_VERSION,
         persistedOperationManifestVersion: "persisted.v4",
         signedOffBy: "Project Owner",
         signedOffAt: report.completedAt,
@@ -316,7 +315,6 @@ describe("recovery drills", () => {
       const report = await runDrill(restored);
       await recordRecoveryDrillEvidence(deployment, report, {
         evidenceLink: EVIDENCE_LINK,
-        schemaVersion: SCHEMA_VERSION,
         persistedOperationManifestVersion: null,
       });
 
@@ -348,7 +346,6 @@ describe("recovery drills", () => {
       const report = await runDrill(restored);
       await recordRecoveryDrillEvidence(deployment, report, {
         evidenceLink: EVIDENCE_LINK,
-        schemaVersion: SCHEMA_VERSION,
         persistedOperationManifestVersion: null,
       });
 
@@ -370,7 +367,6 @@ describe("recovery drills", () => {
       const report = await runDrill(restored);
       await recordRecoveryDrillEvidence(deployment, report, {
         evidenceLink: EVIDENCE_LINK,
-        schemaVersion: SCHEMA_VERSION,
         persistedOperationManifestVersion: null,
       });
 
@@ -387,13 +383,11 @@ describe("recovery drills", () => {
       const first = await runDrill(restored);
       await recordRecoveryDrillEvidence(deployment, first, {
         evidenceLink: EVIDENCE_LINK,
-        schemaVersion: SCHEMA_VERSION,
         persistedOperationManifestVersion: null,
       });
       const second = await runDrill(restored);
       await recordRecoveryDrillEvidence(deployment, second, {
         evidenceLink: EVIDENCE_LINK,
-        schemaVersion: SCHEMA_VERSION,
         persistedOperationManifestVersion: null,
       });
 
@@ -412,8 +406,7 @@ describe("recovery drills", () => {
       for (const report of [backup, change]) {
         await recordRecoveryDrillEvidence(deployment, report, {
           evidenceLink: EVIDENCE_LINK,
-          schemaVersion: SCHEMA_VERSION,
-          persistedOperationManifestVersion: null,
+            persistedOperationManifestVersion: null,
           signedOffBy: "Project Owner",
           signedOffAt: report.completedAt,
         });
@@ -430,7 +423,6 @@ describe("recovery drills", () => {
       const report = await runDrill(restored);
       await recordRecoveryDrillEvidence(deployment, report, {
         evidenceLink: EVIDENCE_LINK,
-        schemaVersion: SCHEMA_VERSION,
         persistedOperationManifestVersion: null,
       });
 
@@ -446,8 +438,7 @@ describe("recovery drills", () => {
       await expect(
         recordRecoveryDrillEvidence(deployment, report, {
           evidenceLink: "https://railway.com/download?token=abc123",
-          schemaVersion: SCHEMA_VERSION,
-          persistedOperationManifestVersion: null,
+            persistedOperationManifestVersion: null,
         }),
       ).rejects.toThrow(/private provider evidence/);
 
@@ -464,7 +455,6 @@ describe("recovery drills", () => {
       const report = await runDrill(restored);
       await recordRecoveryDrillEvidence(deployment, report, {
         evidenceLink: EVIDENCE_LINK,
-        schemaVersion: SCHEMA_VERSION,
         persistedOperationManifestVersion: "persisted.v4",
         signedOffBy: "Project Owner",
         signedOffAt: report.completedAt,

@@ -472,7 +472,12 @@ export async function recordRecoveryDrillEvidence(
   evidence: {
     /** Link to the private workflow run holding the raw drill output. */
     evidenceLink: string;
-    schemaVersion: string;
+    /**
+     * The schema version is deliberately absent: the report already carries the
+     * one the drill validated against. Taking it from the caller as well would
+     * put two sources behind one fact, and the readiness record's whole claim is
+     * that its rows describe the candidate the exercise actually ran on.
+     */
     persistedOperationManifestVersion: string | null;
     limitation?: string | null;
     followUpOwner?: string | null;
@@ -512,7 +517,7 @@ export async function recordRecoveryDrillEvidence(
       exercise: RECOVERY_DRILL_EXERCISES[report.kind],
       family: "backups-and-recovery-verification",
       release: report.release,
-      schemaVersion: evidence.schemaVersion,
+      schemaVersion: report.expectedSchemaVersion,
       fixtureManifestVersion: report.fixtureManifestVersion,
       persistedOperationManifestVersion: evidence.persistedOperationManifestVersion,
       // Only the checks that actually ran. A drill that could not drive the

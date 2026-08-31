@@ -220,7 +220,10 @@ describe("the evidence boundary", () => {
       "restore from postgresql://demo:hunter2@db.internal:5432/marketplace",
       "the exposed token was eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghijk",
       "rotate railway_0123456789abcdefghij before release",
-      "-----BEGIN PRIVATE KEY-----",
+      // The header plus real key material. The header alone is a description,
+      // not a disclosure, and the shared detector deliberately allows it.
+      `-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDaBcdEfGhIjKlMn`,
       "the source at 203.0.113.9 kept retrying",
     ]) {
       const leaking = completeCandidateEvidence().map((row) =>

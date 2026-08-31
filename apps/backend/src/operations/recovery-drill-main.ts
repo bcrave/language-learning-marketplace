@@ -5,7 +5,6 @@ import { z } from "zod";
 
 import { parseDemonstrationIdentityBinding } from "../auth/demonstration-identities.js";
 import { createDatabase } from "../database/database.js";
-import { latestMigrationName } from "../database/migrate.js";
 import {
   bearerHeaders,
   requestDemonstrationAccessToken,
@@ -123,7 +122,6 @@ try {
 
   await recordRecoveryDrillEvidence(deployment, report, {
     evidenceLink: environment.DRILL_EVIDENCE_LINK,
-    schemaVersion: await latestMigrationName(),
     persistedOperationManifestVersion: environment.PERSISTED_OPERATION_MANIFEST_VERSION ?? null,
     limitation: environment.DRILL_LIMITATION ?? null,
     followUpOwner: environment.DRILL_FOLLOW_UP_OWNER ?? null,

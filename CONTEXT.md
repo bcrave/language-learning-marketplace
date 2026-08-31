@@ -212,6 +212,18 @@ _Avoid_: Demo rebuild, application rebuild, deployment, backup restoration
 The separate protected Project Owner workflow that resolves a Canonical Data Rebuild left in an unverified terminal state. It assesses first without changing anything, then in a later dispatch either verifies and reopens the current state or authorizes a clean Canonical Data Rebuild against the named incident.
 _Avoid_: Retry, rerun, rollback, backup restoration
 
+**Backup Restoration**:
+The Project Owner operation that rebuilds the public demonstration's database from a provider retention point, rather than from the versioned canonical fixture baseline. It is the recovery of last resort: it rewinds every record, including the operational history of the incident that prompted it, and it is chosen only when a Canonical Data Rebuild cannot establish a safe state.
+_Avoid_: Canonical Data Rebuild, Canonical Data Recovery, rollback, point-in-time recovery
+
+**Recovery Drill**:
+A rehearsed, protected exercise that proves the public demonstration can be recovered and returned to service, producing dated evidence for one exact release candidate. A backup drill validates an isolated restored copy; a change-triggered drill validates the deployment after a material change. Both measure elapsed recovery against the accepted recovery-time target and record what they could not exercise rather than reporting it as proved.
+_Avoid_: Smoke test, Canonical Data Recovery, restore, staging rehearsal
+
+**Operational Readiness Exercise**:
+One dated, privacy-safe result recorded against an incident family and an exact release candidate: what was exercised, the stable test identifiers, any measured recovery duration, the outcome, a link to private provider evidence, any limitation and its follow-up owner, and Project Owner sign-off. The operational readiness evidence record is assembled from these rather than authored; a family with no exercise for the candidate is unproven, not merely undocumented.
+_Avoid_: Test run, CI job, Security Gate Record, checklist item
+
 **Fixture Generation**:
 The monotonic count of completed Canonical Data Rebuilds. It names which canonical baseline the mutable synthetic state currently descends from, so recovery evidence can say whether a replacement ever committed.
 _Avoid_: Schema version, fixture manifest version, release

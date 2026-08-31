@@ -1,3 +1,5 @@
+import { firstCredentialShape } from "./credential-shapes.js";
+
 /**
  * The build-evidence half of the Security Release Gate: proof that the artifacts
  * a release publishes carry no secret, no private diagnostic surface, and no
@@ -45,27 +47,6 @@ const FAKE_AUTHENTICATION_MARKERS = [
 ];
 
 /**
- * Credential shapes rather than credential names: a PostgreSQL URL carrying a
- * password, private key material, and a signed token. A name like
- * `API_TRUSTED_PROXY_SECRET` legitimately appears in the server bundle, because
- * reading configuration means naming it.
- *
- * Each pattern requires the value as well as the label. A library that checks
- * whether its input begins `-----BEGIN PRIVATE KEY-----` carries that text
- * without carrying a key, and a check that flagged it would fail every honest
- * release until someone learned to ignore it.
- */
-const SECRET_VALUE_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
-  ["a PostgreSQL URL carrying credentials", /postgres(?:ql)?:\/\/[^\s"'`]*:[^\s"'`@]+@/],
-  [
-    "private key material",
-    /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\\rn"'`]*[A-Za-z0-9+/]{40}/,
-  ],
-  ["a signed token", /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/],
-  ["a Railway API token", /\brailway_[A-Za-z0-9]{16,}/],
-];
-
-/**
  * An inline source map is the map itself, served with the code. A reference to
  * a map file is not: the build uploads maps privately to Sentry and discards
  * them from the deployment, so the reference dangles and the published `.map`
@@ -109,10 +90,6 @@ function firstMarker(content: string, markers: readonly string[]) {
   return markers.find((marker) => content.includes(marker));
 }
 
-function firstSecretShape(content: string) {
-  return SECRET_VALUE_PATTERNS.find(([, pattern]) => pattern.test(content))?.[0];
-}
-
 /**
  * Inspects one release's artifacts. An empty result is the evidence; anything
  * returned blocks the release, because the gate cannot waive a required check.
@@ -141,7 +118,7 @@ export function inspectPublicArtifacts(artifacts: {
         detail: "a published source map",
       })),
     ...findingsFor(everything, "artifact.secretsAbsent", (content) => {
-      const shape = firstSecretShape(content);
+      const shape = firstCredentialShape(content);
       return shape && `${shape}, which belongs only in a provider secret store`;
     }),
     ...findingsFor(artifacts.browser, "artifact.privateSurfacesAbsent", (content) => {

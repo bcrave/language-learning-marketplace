@@ -6,6 +6,7 @@ import {
   type AlertCondition,
   type IncidentFamily,
 } from "../observability/alert-policy.js";
+import { firstCredentialShape } from "./credential-shapes.js";
 
 /**
  * The candidate-specific [operational readiness
@@ -28,7 +29,10 @@ import {
  * nobody drilled and a candidate whose drill failed are equally unproven.
  */
 
-/** The privacy boundary the record is published across. */
+/**
+ * Every way a candidate can fail the release rule, as stable identifiers a
+ * finding can be reported and tracked under.
+ */
 export const READINESS_EVIDENCE_CHECKS = [
   "readiness.familyExercised",
   "readiness.exercisePassed",
@@ -130,25 +134,30 @@ const PRIVATE_EVIDENCE_HOSTS = [
 ];
 
 /**
- * Credential and personal-data shapes that must never reach a public artifact.
+ * The personal data the evidence boundary excludes, on top of the credential
+ * shapes shared with the build-artifact check.
  *
- * This looks for values rather than names: a limitation that says
- * `RAILWAY_TOKEN needs rotating` is exactly the follow-up the record is for,
- * while one carrying the token is the disclosure the evidence boundary exists
- * to prevent. Email addresses are here because a follow-up owner is written by
- * hand and "the owner" is the obvious thing to type an address for.
+ * These two are specific to a record written by hand. A follow-up owner is
+ * typed by a person, and "the owner" is the obvious thing to type an address
+ * for; a limitation describing an abuse incident is the obvious place to write
+ * down the address that caused it. Both are named in the operator guide's
+ * evidence boundary as things the record must never retain.
+ *
+ * Like the credential shapes, these look for values rather than names: a
+ * limitation saying `RAILWAY_TOKEN needs rotating` is exactly the follow-up the
+ * record exists to carry, while one carrying the token is the disclosure it
+ * exists to prevent.
  */
-const RAW_EVIDENCE_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
-  ["a PostgreSQL URL carrying credentials", /postgres(?:ql)?:\/\/[^\s]*:[^\s@]+@/i],
-  ["private key material", /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
-  ["a signed token", /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/],
-  ["a Railway API token", /\brailway_[A-Za-z0-9]{16,}/],
+const PERSONAL_DATA_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
   ["an email address", /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/],
   ["a source address", /\b(?:\d{1,3}\.){3}\d{1,3}\b/],
 ];
 
 function rawEvidenceShape(text: string) {
-  return RAW_EVIDENCE_PATTERNS.find(([, pattern]) => pattern.test(text))?.[0];
+  return (
+    firstCredentialShape(text)
+    ?? PERSONAL_DATA_PATTERNS.find(([, pattern]) => pattern.test(text))?.[0]
+  );
 }
 
 /**
