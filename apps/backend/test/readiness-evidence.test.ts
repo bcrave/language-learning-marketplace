@@ -1,5 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { INCIDENT_FAMILIES, type IncidentFamily } from "../src/observability/alert-policy.js";
 import {
@@ -10,6 +11,7 @@ import {
   type ReadinessCandidate,
   type ReadinessExercise,
 } from "../src/operations/readiness-evidence.js";
+import { absentWhenBlank } from "../src/operations/workflow-inputs.js";
 
 const RELEASE = "9b8b961";
 const SCHEMA = "0035_operational_readiness_exercises.sql";
@@ -261,6 +263,31 @@ MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDaBcdEfGhIjKlMn`,
   });
 });
 
+// A `workflow_dispatch` input left empty arrives as "", not as an absent
+// variable, and zod's `.optional()` admits only `undefined`. Every operation
+// entry point parses through this, so the ordinary case — no limitation to
+// record, no sign-off yet — reaches the schema as the absence it actually is.
+describe("workflow inputs", () => {
+  const schema = z.object({
+    REQUIRED: z.string().min(1),
+    OPTIONAL: z.string().trim().min(1).max(120).optional(),
+  });
+
+  it("reads an omitted input as absent rather than as an empty string", () => {
+    expect(() => schema.parse({ REQUIRED: "x", OPTIONAL: "" })).toThrow();
+    expect(schema.parse(absentWhenBlank({ REQUIRED: "x", OPTIONAL: "" })))
+      .toEqual({ REQUIRED: "x" });
+    expect(schema.parse(absentWhenBlank({ REQUIRED: "x", OPTIONAL: "   " })))
+      .toEqual({ REQUIRED: "x" });
+  });
+
+  it("leaves a supplied input exactly as it arrived", () => {
+    expect(absentWhenBlank({ OPTIONAL: " Project Owner " }))
+      .toEqual({ OPTIONAL: " Project Owner " });
+    expect(absentWhenBlank({ OPTIONAL: undefined })).toEqual({ OPTIONAL: undefined });
+  });
+});
+
 describe("the rendered record", () => {
   it("gives every incident family a row, exercised or not", () => {
     const rendered = renderReadinessEvidence(recordFor([]));
@@ -294,6 +321,55 @@ describe("the rendered record", () => {
     const rendered = renderReadinessEvidence(recordFor([]));
     expect(rendered).toContain("readiness.familyExercised");
     expect(rendered).toContain("Release-blocking findings");
+  });
+
+  // The limitation is typed by a person into a workflow input. One `|` would
+  // split the row and shift every later column, reattributing a result in the
+  // artifact the release decision is read from.
+  it("keeps a limitation containing a table delimiter inside its own cell", () => {
+    const rendered = renderReadinessEvidence(
+      recordFor(
+        completeCandidateEvidence().map((row) =>
+          row.family === "api-database-readiness"
+            ? {
+              ...row,
+              limitation: "restore succeeded | worker queue\nwas empty",
+              followUpOwner: "Project Owner",
+            }
+            : row,
+        ),
+      ),
+    );
+
+    const row = rendered
+      .split("\n")
+      .find((line) => line.includes("restore succeeded"))!;
+    expect(row).toContain("restore succeeded \\| worker queue was empty");
+    // Ten columns means ten separators plus the two that bound the row.
+    expect(row.split(/(?<!\\)\|/).length - 1).toBe(11);
+  });
+
+  // A renamed family leaves exercises pointing at a name this build no longer
+  // defines. They belong to no row, and the release still fails closed — but
+  // telling the owner nothing ran would send them to rerun it rather than fix
+  // the rename.
+  it("names an exercise whose stored family it cannot place, rather than losing it", () => {
+    const renamed = [
+      ...completeCandidateEvidence(),
+      exercise("a-family-a-later-build-renamed" as IncidentFamily, {
+        exercise: "renamed-family-exercise",
+      }),
+    ];
+    const record = recordFor(renamed);
+
+    expect(record.unrecognisedExercises.map((row) => row.exercise))
+      .toEqual(["renamed-family-exercise"]);
+    expect(readinessEvidenceFindings(record).map((finding) => finding.check))
+      .toEqual(["readiness.familyRecognised"]);
+
+    const rendered = renderReadinessEvidence(record);
+    expect(rendered).toContain("Exercises in no row");
+    expect(rendered).toContain("renamed-family-exercise");
   });
 
   it("never renders raw evidence, whatever an exercise stored", () => {

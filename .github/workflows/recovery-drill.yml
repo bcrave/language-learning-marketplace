@@ -140,15 +140,22 @@ jobs:
           else
             railway volume backup download --latest --service "$RAILWAY_DATABASE_SERVICE" --output "$RUNNER_TEMP/backup.dump"
           fi
-          DRILL_DATABASE="recovery_drill_${GITHUB_RUN_ID}"
+          # Exported, not merely assigned: the node process below reads it, and
+          # a plain shell variable is invisible to a child. The GITHUB_ENV write
+          # is for the later cleanup step, which cannot see this shell at all.
+          export DRILL_DATABASE="recovery_drill_${GITHUB_RUN_ID}"
           echo "DRILL_DATABASE=$DRILL_DATABASE" >> "$GITHUB_ENV"
           psql "$DATABASE_URL" --command "create database \"$DRILL_DATABASE\""
-          node --input-type=module -e '
-            import { appendFileSync } from "node:fs";
+          # Composed onto stdout and captured here. GITHUB_ENV takes effect in
+          # later steps only, so a value this same step has to use — pg_restore
+          # is two lines down — must come back through the shell.
+          DRILL_DATABASE_URL="$(node --input-type=module -e '
             const url = new URL(process.env.DATABASE_URL);
             url.pathname = `/${process.env.DRILL_DATABASE}`;
-            appendFileSync(process.env.GITHUB_ENV, `DRILL_DATABASE_URL=${url.toString()}\n`);
-          '
+            process.stdout.write(url.toString());
+          ')"
+          export DRILL_DATABASE_URL
+          echo "DRILL_DATABASE_URL=$DRILL_DATABASE_URL" >> "$GITHUB_ENV"
           pg_restore --no-owner --no-privileges --dbname "$DRILL_DATABASE_URL" "$RUNNER_TEMP/backup.dump"
       - name: Run the recovery drill
         env:

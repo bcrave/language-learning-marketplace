@@ -16,6 +16,7 @@ import {
   runRecoveryDrill,
   type RoleJourneyResult,
 } from "./recovery-drills.js";
+import { absentWhenBlank } from "./workflow-inputs.js";
 
 /**
  * The protected entry point for both recovery drills.
@@ -30,6 +31,7 @@ import {
  * the validation. A drill that started its clock here would meet the target by
  * construction.
  */
+
 const environment = z.object({
   DATABASE_URL: z.url(),
   DRILL_DATABASE_URL: z.url().optional(),
@@ -42,13 +44,31 @@ const environment = z.object({
   APP_RELEASE: z.string().min(1).max(255),
   PERSISTED_OPERATION_MANIFEST_VERSION: z.string().min(1).max(255).optional(),
   GITHUB_STEP_SUMMARY: z.string().optional(),
-}).parse(process.env);
+}).parse(absentWhenBlank(process.env));
 
 const deployment = createDatabase(environment.DATABASE_URL);
 const target = environment.DRILL_DATABASE_URL
   ? createDatabase(environment.DRILL_DATABASE_URL)
   : deployment;
 const correlationId = `recovery-drill-${randomUUID()}`;
+
+/**
+ * The configured shared-identity binding, or the reason it is not usable.
+ *
+ * `parseDemonstrationIdentityBinding` throws when the binding no longer matches
+ * the fixture manifest — which is precisely the drift a change-triggered drill
+ * exists to catch. Letting it throw here would kill the process before the
+ * drill ran, so the one outcome the owner needs (a `FAILED` authentication
+ * check, recorded as evidence) would be the one outcome they never get. The
+ * drill's own check reports it instead.
+ */
+function configuredIdentityBinding() {
+  try {
+    return parseDemonstrationIdentityBinding(process.env);
+  } catch (error) {
+    return error instanceof Error ? error : new Error("the shared identity binding is not valid");
+  }
+}
 
 /**
  * The deployed shared-role smoke journeys, as the drill's critical-role-journey
@@ -117,7 +137,7 @@ try {
     release: environment.APP_RELEASE,
     startedAt: new Date(environment.DRILL_STARTED_AT),
     ...(environment.RECOVERY_DRILL_KIND === "CHANGE_TRIGGERED_RECOVERY" ? { roleJourneys } : {}),
-    identityBinding: parseDemonstrationIdentityBinding(process.env),
+    identityBinding: configuredIdentityBinding(),
   });
 
   await recordRecoveryDrillEvidence(deployment, report, {

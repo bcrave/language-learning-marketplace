@@ -21,6 +21,14 @@ workflow reads two things and combines them:
 Only three things are supplied by a person, because only a person has them: a
 limitation, its follow-up owner, and sign-off.
 
+Only the backup and recovery row records itself today, from the two recovery
+drills. The remaining families are recorded by the release, security-gate, and
+role-journey work that owns them, so until those land the generator always
+blocks with a `readiness.familyExercised` finding per unrecorded family. That is
+the intended state, not a gap: the record is designed to refuse a candidate it
+cannot evidence, and a generator that passed while eight families were unproven
+would be worse than one that has not been written yet.
+
 The generator is fail-closed and its job fails when any row blocks the release.
 A family with no exercise for this candidate blocks exactly as a failed exercise
 does — a candidate nobody drilled and a candidate whose drill failed are equally

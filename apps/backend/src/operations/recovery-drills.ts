@@ -105,8 +105,13 @@ export interface RecoveryDrillOptions {
    * The shared Auth0 binding this deployment signs reviewers in with. Supplying
    * it proves the restored identities are still the ones the manifest describes
    * and still reach every application role.
+   *
+   * An `Error` is an accepted value, and means the caller could not read a
+   * binding at all. Reading one is itself a validation that throws on drift, so
+   * a caller that let it throw would lose the drill; handing the failure here
+   * turns it into the reported check it should have been.
    */
-  identityBinding?: DemonstrationIdentityBinding | null;
+  identityBinding?: DemonstrationIdentityBinding | Error | null;
 }
 
 /**
@@ -118,26 +123,36 @@ export interface RecoveryDrillOptions {
  * missing was taken for free, and a refund without the Booking having been
  * refunded is a credit created out of nothing. Both survive a balance-versus-sum
  * comparison, and neither survives a reviewer noticing.
+ *
+ * A rescheduled Booking is charged exactly once, at the start of its chain.
+ * `rescheduleBooking` ends the original without a refund and activates the
+ * replacement without a deduction, carrying the same credit forward, so the
+ * replacement legitimately has none of its own. Expecting one there would fail
+ * this check against perfectly healthy data the moment a reviewer reschedules —
+ * and a drill that cries wolf on the live demonstration is worse than no drill,
+ * because the release it blocks is the one nobody then believes.
  */
 async function ledgerInvariantSample(db: Database) {
   const result = await sql<{ booking_count: number; violation_count: number }>`
     select
       count(*)::integer as booking_count,
       count(*) filter (
-        where booking.deductions <> 1
+        where booking.deductions <> booking.expected_deductions
            or booking.refunds <> (case when booking.class_credit_refunded then 1 else 0 end)
       )::integer as violation_count
     from (
       select
         booking.id,
         booking.class_credit_refunded,
+        case when booking.rescheduled_from_booking_id is null then 1 else 0 end
+          as expected_deductions,
         count(entry.id) filter (where entry.source = 'BOOKING_DEDUCTION')::integer as deductions,
         count(entry.id) filter (where entry.source = 'BOOKING_REFUND')::integer as refunds
       from bookings booking
       left join class_credit_ledger_entries entry
         on entry.source_reference = booking.id::text
        and entry.source in ('BOOKING_DEDUCTION', 'BOOKING_REFUND')
-      group by booking.id, booking.class_credit_refunded
+      group by booking.id, booking.class_credit_refunded, booking.rescheduled_from_booking_id
     ) booking
   `.execute(db);
   const row = result.rows[0];
@@ -206,8 +221,26 @@ export async function runRecoveryDrill(
 ): Promise<RecoveryDrillReport> {
   const now = options.now ?? (() => new Date());
   const observedAt = now();
-  const assessment = await assessCanonicalDataRecovery(db, observedAt);
   const expectedSchemaVersion = await latestMigrationName();
+
+  // The assessment reads the maintenance lease, the schema, and the fixtures,
+  // and every one of those reads can throw on exactly the copy this drill
+  // exists to judge: a backup predating a migration, or one whose restore left
+  // a relation missing. Letting it escape would abandon the drill before its
+  // first check, leaving the readiness record saying "not exercised" where the
+  // truth is "the restore is unusable" — the one substitution a fail-closed
+  // record must never make, because unexercised invites a rerun and unusable
+  // does not.
+  let assessment: Awaited<ReturnType<typeof assessCanonicalDataRecovery>>;
+  try {
+    assessment = await assessCanonicalDataRecovery(db, observedAt);
+  } catch (error) {
+    return unreadableCopyReport(options, {
+      observedAt: now(),
+      expectedSchemaVersion,
+      detail: error instanceof Error ? error.message : "the restored copy could not be assessed",
+    });
+  }
   const checks: RecoveryDrillCheck[] = [];
 
   checks.push(
@@ -303,6 +336,42 @@ export async function runRecoveryDrill(
   };
 }
 
+/**
+ * The report for a copy that could not be read at all.
+ *
+ * Every check is `FAILED` rather than absent, because a check the drill could
+ * not run against an unreadable database is a check that did not pass, and the
+ * readiness record's test identifiers would otherwise quietly shrink to the
+ * ones that happened to be reachable.
+ */
+function unreadableCopyReport(
+  options: RecoveryDrillOptions,
+  context: { observedAt: Date; expectedSchemaVersion: string; detail: string },
+): RecoveryDrillReport {
+  const durationMilliseconds = Math.max(
+    0,
+    context.observedAt.getTime() - options.startedAt.getTime(),
+  );
+  return {
+    kind: options.kind,
+    correlationId: options.correlationId,
+    release: options.release,
+    startedAt: options.startedAt,
+    completedAt: context.observedAt,
+    durationMilliseconds,
+    recoveryTimeTargetMilliseconds: RECOVERY_TIME_TARGET_MILLISECONDS,
+    withinRecoveryTimeTarget: durationMilliseconds <= RECOVERY_TIME_TARGET_MILLISECONDS,
+    appliedSchemaVersion: null,
+    expectedSchemaVersion: context.expectedSchemaVersion,
+    fixtureManifestVersion: canonicalFixtureManifest.version,
+    fixtureGeneration: 0,
+    checks: RECOVERY_DRILL_CHECKS.map((check) =>
+      checked(check, "FAILED", `the restored copy could not be read: ${context.detail}`),
+    ),
+    outcome: "FAILED",
+  };
+}
+
 async function workerRecoveryCheck(
   db: Database,
   kind: RecoveryDrillKind,
@@ -348,8 +417,11 @@ async function workerRecoveryCheck(
  * evidence either, and the record says which of the two it was.
  */
 function authenticationCheck(
-  binding: DemonstrationIdentityBinding | null | undefined,
+  binding: DemonstrationIdentityBinding | Error | null | undefined,
 ): RecoveryDrillCheck {
+  if (binding instanceof Error) {
+    return checked("drill.authentication", "FAILED", binding.message);
+  }
   if (!binding) {
     return checked(
       "drill.authentication",

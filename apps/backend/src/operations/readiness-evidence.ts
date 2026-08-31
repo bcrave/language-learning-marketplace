@@ -2,6 +2,7 @@ import type { Database } from "../database/database.js";
 import {
   ALERT_CONDITIONS,
   INCIDENT_FAMILIES,
+  isIncidentFamily,
   RECOVERY_TIME_TARGET_MILLISECONDS,
   type AlertCondition,
   type IncidentFamily,
@@ -43,6 +44,7 @@ export const READINESS_EVIDENCE_CHECKS = [
   "readiness.evidenceLinkPrivate",
   "readiness.evidenceSanitized",
   "readiness.projectOwnerSignOff",
+  "readiness.familyRecognised",
 ] as const;
 
 export type ReadinessEvidenceCheck = (typeof READINESS_EVIDENCE_CHECKS)[number];
@@ -107,6 +109,12 @@ export interface ReadinessEvidenceRow {
 export interface ReadinessEvidenceRecord {
   candidate: ReadinessCandidate;
   rows: readonly ReadinessEvidenceRow[];
+  /**
+   * Exercises whose stored incident family this build no longer defines, most
+   * likely because a family was renamed after they were recorded. They belong
+   * to no row, and the record names them rather than losing them.
+   */
+  unrecognisedExercises: readonly ReadinessExercise[];
   recoveryTimeTargetMilliseconds: number;
 }
 
@@ -211,6 +219,15 @@ export function buildReadinessEvidenceRecord(input: {
   return {
     candidate: input.candidate,
     rows,
+    // An exercise stored under a family this build cannot name belongs to
+    // neither row above, so it would vanish from the record entirely. The
+    // release still fails closed — its family reports "not exercised" — but the
+    // owner would be told nothing ran when something did, and would rerun it
+    // rather than fix the rename. Carried out separately so the record can say
+    // so plainly.
+    unrecognisedExercises: input.exercises.filter(
+      (exercise) => !isIncidentFamily(exercise.family),
+    ),
     recoveryTimeTargetMilliseconds: RECOVERY_TIME_TARGET_MILLISECONDS,
   };
 }
@@ -233,6 +250,15 @@ export function readinessEvidenceFindings(
 
   if (!record.candidate.projectOwnerSignOff?.trim()) {
     add("readiness.projectOwnerSignOff", null, null, "the record carries no Project Owner sign-off");
+  }
+
+  for (const exercise of record.unrecognisedExercises) {
+    add(
+      "readiness.familyRecognised",
+      null,
+      exercise.exercise,
+      "the exercise names an incident family this build does not define",
+    );
   }
 
   for (const row of record.rows) {
@@ -353,7 +379,16 @@ export function renderReadinessEvidence(record: ReadinessEvidenceRecord): string
   const findings = readinessEvidenceFindings(record);
   const minutes = (milliseconds: number | null) =>
     milliseconds === null ? "—" : `${(milliseconds / 60_000).toFixed(1)} min`;
-  const cell = (value: string | null) => (value === null || value === "" ? "—" : value);
+  /**
+   * A Markdown table cell. The limitation and follow-up owner are typed by a
+   * person into a workflow input, and a single `|` in one of them would split
+   * the row and shift every later column — silently reattributing a result in
+   * the artifact the release decision is read from.
+   */
+  const cell = (value: string | null) =>
+    value === null || value === ""
+      ? "—"
+      : value.replaceAll("|", "\\|").replaceAll(/\r?\n/g, " ");
 
   const lines = [
     "# Operational readiness evidence",
@@ -398,14 +433,14 @@ export function renderReadinessEvidence(record: ReadinessEvidenceRecord): string
         "",
         row.familyLabel,
         conditions,
-        exercise.exercise,
-        exercise.testIdentifiers.join("<br>") || "—",
+        cell(exercise.exercise),
+        exercise.testIdentifiers.map((test) => cell(test)).join("<br>") || "—",
         exercise.exercisedAt.toISOString(),
         minutes(exercise.measuredRecoveryMilliseconds),
         exercise.result,
         `[private evidence](${exercise.evidenceLink})`,
         exercise.limitation
-          ? `${exercise.limitation} (${cell(exercise.followUpOwner)})`
+          ? `${cell(exercise.limitation)} (${cell(exercise.followUpOwner)})`
           : "—",
         exercise.signedOffAt
           ? `${cell(exercise.signedOffBy)} ${exercise.signedOffAt.toISOString()}`
@@ -413,6 +448,23 @@ export function renderReadinessEvidence(record: ReadinessEvidenceRecord): string
         "",
       ].join(" | ").trim());
     }
+  }
+
+  if (record.unrecognisedExercises.length > 0) {
+    lines.push(
+      "",
+      "## Exercises in no row",
+      "",
+      "These ran and were recorded, but name an incident family this build does",
+      "not define — most likely a family renamed after they were recorded.",
+      "",
+      "| Exercise | Stored family | Result | Exercised |",
+      "| --- | --- | --- | --- |",
+      ...record.unrecognisedExercises.map(
+        (exercise) =>
+          `| ${cell(exercise.exercise)} | ${cell(exercise.family)} | ${exercise.result} | ${exercise.exercisedAt.toISOString()} |`,
+      ),
+    );
   }
 
   lines.push("", "## Release-blocking findings", "");
@@ -509,8 +561,9 @@ export async function readinessExercisesFor(
 
   return rows.map((row) => ({
     exercise: row.exercise,
-    // Carried as stored. A family this build cannot name is still an exercise
-    // that ran, and dropping it would quietly shrink the record.
+    // Carried as stored, not narrowed away. A family this build cannot name is
+    // still an exercise that ran; `buildReadinessEvidenceRecord` separates
+    // those out so the record can name them rather than lose them.
     family: row.incident_family as IncidentFamily,
     release: row.release,
     schemaVersion: row.schema_version,

@@ -193,11 +193,141 @@ describe("recovery drills", () => {
     `.execute(restored);
   });
 
+  // A rescheduled Booking is charged once, at the start of its chain: the
+  // original ends without a refund and the replacement activates without a
+  // deduction. Expecting a deduction on the replacement would fail this drill
+  // against healthy data the moment a reviewer reschedules, and a drill that
+  // cries wolf on the live demonstration is worse than no drill at all.
+  it("accepts a rescheduled Booking, whose credit came forward from the original", async () => {
+    // The whole scenario runs inside a transaction the test rolls back, so the
+    // shared copy the other drills read is never disturbed. Rolling back also
+    // means the deferred seat-count triggers never fire, and `bookings` carries
+    // an immutability trigger that forbids editing a reschedule link after the
+    // fact — so the two cases are set up as two distinct Bookings rather than
+    // one Booking edited twice.
+    const rolledBack = new Error("roll back the rescheduling scenario");
+    await expect(restored.transaction().execute(async (move) => {
+      const original = await move
+        .selectFrom("bookings")
+        .select(["id", "student_user_id", "class_session_id", "teacher_user_id_at_booking"])
+        .where("state", "=", "ACTIVE")
+        .executeTakeFirstOrThrow();
+      // Sessions this Student holds no seat in: one active Booking per Student
+      // per Class Session is a unique index.
+      const [rescheduledInto, bookedFreeInto] = await move
+        .selectFrom("class_sessions")
+        .select(["id", "teacher_user_id"])
+        .where("state", "=", "PUBLISHED")
+        .where(({ not, exists, selectFrom }) =>
+          not(exists(
+            selectFrom("bookings")
+              .select("bookings.id")
+              .whereRef("bookings.class_session_id", "=", "class_sessions.id")
+              .where("bookings.student_user_id", "=", original.student_user_id)
+              .where("bookings.state", "=", "ACTIVE"),
+          )),
+        )
+        .limit(2)
+        .execute();
+
+      await move.updateTable("bookings").set({
+        state: "ENDED",
+        terminal_reason: "RESCHEDULED",
+        class_credit_refunded: false,
+        ended_at: loadedAt,
+      }).where("id", "=", original.id).execute();
+      await move.insertInto("bookings").values({
+        student_user_id: original.student_user_id,
+        class_session_id: rescheduledInto!.id,
+        teacher_user_id_at_booking: rescheduledInto!.teacher_user_id,
+        state: "ACTIVE",
+        terminal_reason: null,
+        class_credit_refunded: false,
+        rescheduled_from_booking_id: original.id,
+        ended_at: null,
+      }).execute();
+
+      // The replacement carries no deduction of its own, and that is correct.
+      expect(
+        outcomeOf(await runDrill(move as Database), "drill.ledgerInvariantSample"),
+      ).toBe("PASSED");
+
+      // An unlinked Booking with no deduction is a session taken for free, and
+      // stays a violation.
+      await move.insertInto("bookings").values({
+        student_user_id: original.student_user_id,
+        class_session_id: bookedFreeInto!.id,
+        teacher_user_id_at_booking: bookedFreeInto!.teacher_user_id,
+        state: "ACTIVE",
+        terminal_reason: null,
+        class_credit_refunded: false,
+        rescheduled_from_booking_id: null,
+        ended_at: null,
+      }).execute();
+      expect(
+        outcomeOf(await runDrill(move as Database), "drill.ledgerInvariantSample"),
+      ).toBe("FAILED");
+
+      throw rolledBack;
+    })).rejects.toBe(rolledBack);
+
+    // The shared copy is untouched.
+    expect(outcomeOf(await runDrill(restored), "drill.ledgerInvariantSample")).toBe("PASSED");
+  });
+
   it("fails a restore that carries no worker state to resume from", async () => {
     await sql`delete from worker_heartbeats`.execute(restored);
 
     const report = await runDrill(restored);
     expect(outcomeOf(report, "drill.workerRecovery")).toBe("FAILED");
+    expect(report.outcome).toBe("FAILED");
+  });
+
+  // The copy this drill exists to judge is exactly the copy whose reads throw:
+  // a backup predating a migration, or a restore that left a relation missing.
+  // Reporting "not exercised" there would invite a rerun, when the truth is
+  // that the restore is unusable.
+  it("reports an unreadable copy as a failed drill rather than abandoning it", async () => {
+    const unreadable = createDatabase(
+      await clonePostgreSqlTemplate(postgres, `drill_unreadable_${randomUUID().replaceAll("-", "")}`),
+    );
+    try {
+      await sql`drop table maintenance_state cascade`.execute(unreadable);
+
+      const report = await runDrill(unreadable);
+      expect(report.outcome).toBe("FAILED");
+      expect(report.checks.every((check) => check.outcome === "FAILED")).toBe(true);
+      expect(report.appliedSchemaVersion).toBeNull();
+
+      // And it is still recordable evidence, which is the whole point.
+      await recordRecoveryDrillEvidence(deployment, report, {
+        evidenceLink: EVIDENCE_LINK,
+        persistedOperationManifestVersion: null,
+      });
+      const audit = await deployment
+        .selectFrom("audit_entries")
+        .select("operation")
+        .where("correlation_id", "=", report.correlationId)
+        .executeTakeFirstOrThrow();
+      expect(audit.operation).toBe("recovery-drill.failed");
+    } finally {
+      await unreadable.destroy();
+    }
+  });
+
+  // Reading the binding is itself a validation that throws on drift — which is
+  // precisely what a change-triggered drill is meant to catch. A caller that
+  // let it throw would lose the report the owner needs.
+  it("reports an unusable identity binding as a failed check, not an exception", async () => {
+    const report = await runDrill(restored, {
+      kind: "CHANGE_TRIGGERED_RECOVERY",
+      roleJourneys: async () => ({ passed: true, detail: "smoke passed" }),
+      identityBinding: new Error(
+        "Shared demonstration identities must cover every application role; missing TEACHER",
+      ),
+    });
+
+    expect(outcomeOf(report, "drill.authentication")).toBe("FAILED");
     expect(report.outcome).toBe("FAILED");
   });
 

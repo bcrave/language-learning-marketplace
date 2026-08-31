@@ -14,6 +14,7 @@ import {
   readinessExercisesFor,
   renderReadinessEvidence,
 } from "./readiness-evidence.js";
+import { absentWhenBlank } from "./workflow-inputs.js";
 
 /**
  * Generates the candidate's operational readiness record and enforces the
@@ -35,7 +36,7 @@ const environment = z.object({
   READINESS_SIGN_OFF: z.string().trim().min(1).max(120).optional(),
   READINESS_EVIDENCE_PATH: z.string().min(1).optional(),
   GITHUB_STEP_SUMMARY: z.string().optional(),
-}).parse(process.env);
+}).parse(absentWhenBlank(process.env));
 
 /**
  * The mutable policy documents this candidate was evidenced against.
