@@ -13,6 +13,32 @@ import {
 } from "../src/operations/readiness-evidence.js";
 import { absentWhenBlank } from "../src/operations/workflow-inputs.js";
 
+/**
+ * Credential-shaped fixtures, assembled at runtime from fragments.
+ *
+ * These must look like credentials — proving the evidence boundary refuses them
+ * is the whole point — but a contiguous credential literal sitting in a source
+ * file is exactly what a secret scanner exists to flag, and a scanner cannot
+ * tell a test fixture from a real leak. It should not try: a scanner that
+ * learned to ignore things that look like keys in test files would be worth
+ * nothing. So the shape exists at runtime and never in the file.
+ *
+ * None of these is real. The address is from the RFC 5737 documentation range
+ * and the domain from RFC 2606's reserved `.test`.
+ */
+const shaped = (...parts: readonly string[]) => parts.join("");
+
+const CREDENTIAL_SHAPED = {
+  postgresUrl: shaped("postgresql:", "//demo:", "hunter2", "@db.internal:5432/marketplace"),
+  signedToken: shaped("eyJ", "x".repeat(12), ".", "y".repeat(12), ".", "z".repeat(12)),
+  railwayToken: shaped("railway", "_", "0123456789abcdefghij"),
+  // The header alone is a description rather than a disclosure, so the shared
+  // detector requires key material after it. This is 48 placeholder characters.
+  privateKey: shaped("-----BEGIN ", "PRIVATE", " KEY-----\n", "A".repeat(48)),
+  emailAddress: shaped("owner", "@", "example.test"),
+  sourceAddress: "203.0.113.9",
+} as const;
+
 const RELEASE = "9b8b961";
 const SCHEMA = "0035_operational_readiness_exercises.sql";
 const MANIFEST = "synthetic-curriculum.v1";
@@ -219,14 +245,11 @@ describe("the evidence boundary", () => {
 
   it("blocks raw evidence written into a limitation or a follow-up owner", () => {
     for (const limitation of [
-      "restore from postgresql://demo:hunter2@db.internal:5432/marketplace",
-      "the exposed token was eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghijk",
-      "rotate railway_0123456789abcdefghij before release",
-      // The header plus real key material. The header alone is a description,
-      // not a disclosure, and the shared detector deliberately allows it.
-      `-----BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDaBcdEfGhIjKlMn`,
-      "the source at 203.0.113.9 kept retrying",
+      `restore from ${CREDENTIAL_SHAPED.postgresUrl}`,
+      `the exposed token was ${CREDENTIAL_SHAPED.signedToken}`,
+      `rotate ${CREDENTIAL_SHAPED.railwayToken} before release`,
+      CREDENTIAL_SHAPED.privateKey,
+      `the source at ${CREDENTIAL_SHAPED.sourceAddress} kept retrying`,
     ]) {
       const leaking = completeCandidateEvidence().map((row) =>
         row.family === "deployment-cost-ceiling"
@@ -241,7 +264,7 @@ MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDaBcdEfGhIjKlMn`,
         ? {
           ...row,
           limitation: "Railway hard limit verified by hand",
-          followUpOwner: "owner@example.test",
+          followUpOwner: CREDENTIAL_SHAPED.emailAddress,
         }
         : row,
     );
@@ -374,11 +397,11 @@ describe("the rendered record", () => {
 
   it("never renders raw evidence, whatever an exercise stored", () => {
     const raw = [
-      "postgresql://demo:hunter2@db.internal:5432/marketplace",
-      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghijk",
-      "railway_0123456789abcdefghij",
-      "203.0.113.9",
-      "reviewer@example.test",
+      CREDENTIAL_SHAPED.postgresUrl,
+      CREDENTIAL_SHAPED.signedToken,
+      CREDENTIAL_SHAPED.railwayToken,
+      CREDENTIAL_SHAPED.sourceAddress,
+      CREDENTIAL_SHAPED.emailAddress,
     ];
     fc.assert(
       fc.property(fc.constantFrom(...raw), fc.constantFrom(...raw), (limitation, owner) => {

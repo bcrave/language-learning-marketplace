@@ -13,6 +13,27 @@ import { classSessionReminderTasks } from "../src/class-session/class-session-re
 import { createDatabase, type Database } from "../src/database/database.js";
 import { migrateDatabase } from "../src/database/migrate.js";
 
+/**
+ * A Monday between seven and thirteen days out, inside the Teacher's
+ * 09:00–12:00 America/Denver availability.
+ *
+ * The serialization case needs its Class Session to be genuinely in the future,
+ * because the Teacher Qualification removal guard only blocks on sessions that
+ * have not started. A hardcoded date silently stops testing serialization on
+ * the day it passes, and then fails: the removal correctly finds nothing to
+ * block and succeeds alongside the publication. That is what happened on
+ * 2026-08-31, when the previous literal `2026-08-31T10:00` became the current
+ * date and the suite went red two hours into it.
+ *
+ * The other dates in this file are deliberately fixed — they pin daylight-saving
+ * folds and a past assignment — so only this one is derived.
+ */
+function upcomingMondayLocalDate() {
+  const monday = new Date();
+  monday.setUTCDate(monday.getUTCDate() + ((1 - monday.getUTCDay() + 7) % 7) + 7);
+  return monday.toISOString().slice(0, 10);
+}
+
 describe("Class Session publication GraphQL API", () => {
   let api: ReturnType<typeof createApi>;
   let db: Database;
@@ -225,7 +246,7 @@ describe("Class Session publication GraphQL API", () => {
   it("serializes publication with Teacher Qualification removal into typed outcomes", async () => {
     const lessonUnitId = await insertLessonUnit("en", "B2", true);
     const [publication, removal] = await Promise.all([
-      publish({ lessonUnitId, startsAtLocal: "2026-08-31T10:00" }),
+      publish({ lessonUnitId, startsAtLocal: `${upcomingMondayLocalDate()}T10:00` }),
       graphql(`mutation Remove($input: ChangeTeacherQualificationInput!) { removeTeacherQualification(input: $input) { ... on ChangeTeacherQualificationSuccess { teacherProfile { id } } ... on TeacherQualificationRemovalBlocked { code classSessionIds } ... on CurriculumConflict { code } } }`, { input: { idempotencyKey: randomUUID(), teacherUserId: teacherId, targetLanguage: "en", curriculumLevel: "B2" } }),
     ]);
     const publicationSucceeded = JSON.stringify(publication).includes("classSession");
