@@ -15,6 +15,32 @@ body {
   min-height: 100vh;
 }
 
+/*
+ * The focus indicator, drawn rather than inherited.
+ *
+ * Every user-agent default is some shade of blue on the assumption of a white
+ * page, and this application puts controls on two grounds: the parchment main
+ * area and the dark green rail. One indicator cannot contrast with both, so the
+ * rail gets the brand amber and everything else gets the ink already used for
+ * body text. `:focus-visible` rather than `:focus` so a pointer user is not
+ * given a ring they did not ask for, while a keyboard user always is.
+ *
+ * The offset is what keeps the ring outside the control's own border instead of
+ * blending into it, and 3px is wide enough to survive the reviewer's zoom. The
+ * outline follows whatever corner radius the control already has, so this rule
+ * sets no radius of its own — a pseudo-class would outrank the element's own
+ * rule and reshape the control at the moment it gains focus.
+ */
+:focus-visible {
+  outline: 3px solid #16231c;
+  outline-offset: 2px;
+}
+
+.context-rail :focus-visible,
+.mobile-context :focus-visible {
+  outline-color: #ffe08a;
+}
+
 button {
   padding: 0.8rem 1.2rem;
   border: 0;
@@ -34,9 +60,19 @@ a {
   color: inherit;
 }
 
+/*
+ * `minmax(0, 1fr)` rather than `1fr` for the content column.
+ *
+ * A bare `1fr` is `minmax(auto, 1fr)`, so the track refuses to shrink below its
+ * own min-content. Double the text size and the rail's floor plus that
+ * min-content stops fitting, and the whole page scrolls sideways instead of the
+ * content wrapping — which is the resize failure WCAG 1.4.4 is about. Letting
+ * the track reach zero puts the wrapping back where it belongs, inside the
+ * column. Firefox is where this showed up; the other two engines hid it.
+ */
 .app-shell {
   display: grid;
-  grid-template-columns: minmax(15rem, 19rem) 1fr;
+  grid-template-columns: minmax(15rem, 19rem) minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -103,6 +139,17 @@ nav a[aria-current="page"] {
 main {
   width: min(54rem, 100%);
   padding: clamp(2rem, 7vw, 6rem);
+  /*
+   * The interface prints opaque identifiers a person is meant to be able to
+   * quote back: Booking references, correlation identifiers, content digests.
+   * They are single unbreakable 36- and 64-character words, so at 200% text
+   * they are wider than the column and push the whole page sideways rather than
+   * wrapping. `anywhere` rather than `break-word` because several of them sit
+   * in grid items: only `anywhere` also lowers the text's min-content width, so
+   * the item stops demanding room for the whole identifier on one line.
+   * Ordinary prose still wraps between words.
+   */
+  overflow-wrap: anywhere;
 }
 
 h1 {
@@ -213,10 +260,15 @@ h1 {
   background: #fffdf8;
 }
 
+/*
+ * The `16rem` floor never binds at the default text size, and at 200% it is
+ * what would push this grid past the viewport. Dropping it to zero leaves the
+ * proportions identical where it fit and lets it wrap where it did not.
+ */
 .curriculum-admin > header,
 .curriculum-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(16rem, 1fr);
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
   gap: 1.5rem;
 }
 
@@ -254,9 +306,14 @@ h1 {
   background: #fffdf8;
 }
 
+/*
+ * `min(13rem, 100%)` so the requested column width can never exceed the space
+ * there is. A plain `minmax(13rem, 1fr)` overflows as soon as the container is
+ * narrower than one column, which at 200% text it is.
+ */
 .student-discovery form > fieldset {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
   gap: 0.85rem;
   border: 0;
   padding: 0;
@@ -350,6 +407,22 @@ h1 {
 
   main {
     padding-bottom: 7rem;
+  }
+
+  /*
+   * A sticky header and a fixed bottom bar both take space the browser does not
+   * know is taken: scrolling a focused control "into view" can put it exactly
+   * underneath one of them, which is WCAG 2.2's Focus Not Obscured failure.
+   *
+   * `scroll-padding` on the scrollport rather than `scroll-margin` on the
+   * focused element. Both describe the same reservation, but the scrollport is
+   * the one every engine consults when it scrolls anything into view: WebKit
+   * ignored the per-element margin here and dropped focused controls straight
+   * behind the bottom bar, while Chromium and Firefox honoured it. The values
+   * are the space each bar occupies.
+   */
+  :root {
+    scroll-padding-block: 6rem 8rem;
   }
 }
 

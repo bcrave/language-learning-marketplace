@@ -61,8 +61,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:integration
 
-  chromium:
+  # One job per supported browser, matching `apps/web/test/e2e/support/browser-matrix.ts`.
+  # The journeys mutate one seeded database, so the engines must not share a run;
+  # a job each gives every engine its own servers and its own fixture state, which
+  # is what `pnpm test:e2e` reproduces locally.
+  role-journeys:
+    name: role journeys (${{ matrix.browser }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
     services:
       postgres:
         image: postgres:18@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a
@@ -91,6 +100,6 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright install --with-deps ${{ matrix.browser }}
       - run: pnpm db:seed
-      - run: pnpm test:e2e
+      - run: pnpm test:e2e --project=${{ matrix.browser }}

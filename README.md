@@ -33,10 +33,14 @@ corepack pnpm test:unit
 corepack pnpm test:component
 corepack pnpm build && corepack pnpm verify:public-artifacts
 corepack pnpm test:integration
-TEST_DATABASE_URL=postgres://marketplace:marketplace@127.0.0.1:5433/marketplace corepack pnpm test:e2e
+corepack pnpm test:e2e
 ```
 
-The integration project creates an unprivileged, disposable PostgreSQL container for each test file. Chromium uses a separate migrated Compose/CI database. Unit and component projects remain database-independent.
+The integration project creates an unprivileged, disposable PostgreSQL container for each test file. Unit and component projects remain database-independent.
+
+`test:e2e` runs the role journeys once per [supported browser](docs/accessibility-statement.md#tested-combinations) — Chromium, Gecko, and WebKit — as three separate Playwright invocations, which is also how CI runs them. Each invocation starts its own API server and its own disposable database, and that isolation is required rather than incidental: the journeys consent to preferences for the first time, hold the one Report Export allowed in flight, and leave Audit Entries behind, so engines sharing a database would fail describing a product that works. Add `--project=chromium` to run a single engine while reproducing a failure.
+
+Passing `TEST_DATABASE_URL` points every invocation at one long-lived database instead. Loading the canonical fixtures restores the identities but not the mutable state a previous run created, so use it for a single engine at a time rather than for a full matrix run.
 
 ## Release
 
@@ -102,3 +106,18 @@ Security Release Gate or by a person, and the policy records the response so it 
 not improvised. Source maps are still not uploaded to Sentry — that needs an
 owner-provisioned Sentry auth token, so ADR 0022's stack-frame mapping remains
 outstanding.
+
+## Accessibility
+
+The role journeys run in Chromium, Gecko, and WebKit, in English and Spanish, and
+scan every workspace with axe-core as they go; keyboard-only reachability, focus
+visibility, focus not obscured by the sticky bars, 320-pixel reflow, 200% text
+resize, reduced motion, and error recovery are asserted alongside them. Serious
+and critical findings fail the build.
+
+The [accessibility statement](docs/accessibility-statement.md) records what was
+tested and what is known not to work, and the [manual review
+record](docs/accessibility-review.md) holds the cases only a person can perform —
+VoiceOver with Safari above all. Neither claims certification or conformance: the
+demonstration has had no independent audit and no assistive-technology user
+testing, and the statement says so first.
