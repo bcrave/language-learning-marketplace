@@ -4,7 +4,12 @@ import { expect, type Page } from "@playwright/test";
 import { createIntl } from "react-intl";
 
 import type { UserRole, WorkspacePlace } from "../../../src/generated/graphql.js";
-import { workspacePlacePresentation } from "../../../src/student-workspace.js";
+import {
+  placesFor,
+  workspacePlacePresentation,
+} from "../../../src/student-workspace.js";
+
+export { placesFor };
 
 /**
  * The demonstration identities the role journeys act as, from the [canonical
@@ -70,13 +75,6 @@ const roleLabelIds: Record<UserRole, string> = {
   ORGANIZATION_MANAGER: "role.organizationManager",
   PLATFORM_ADMINISTRATOR: "role.platformAdministrator",
 };
-
-/** Every place one role can reach, in the order its journey menu lists them. */
-export function placesFor(role: UserRole) {
-  return (Object.entries(workspacePlacePresentation) as Array<
-    [WorkspacePlace, (typeof workspacePlacePresentation)[WorkspacePlace]]
-  >).filter(([, presentation]) => presentation.role === role);
-}
 
 /**
  * Acts as one demonstration identity for the rest of the test.

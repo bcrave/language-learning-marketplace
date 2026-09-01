@@ -6,7 +6,7 @@
 
 This is a synthetic demonstration built by one person to show how a production-shaped marketplace is put together. Accessibility was treated as part of building it rather than as a pass at the end, and the automated checks below run on every change.
 
-That is the honest limit of the claim. Nobody has audited this application. No disabled person has been paid to test it. Automated tooling finds a minority of real barriers — the rules it can decide mechanically — and the manual review below was performed by its author, who is not a daily screen-reader user. Where this statement says a combination was tested, it means the checks named here ran against it and passed. It does not mean the experience is good, and it does not mean an assistive-technology user will get through every journey.
+That is the honest limit of the claim. Nobody has audited this application. No disabled person has been paid to test it. Automated tooling finds only the minority of barriers it can decide mechanically, and **the manual cases that would cover the rest have not been performed yet** — including the one that matters most, VoiceOver with Safari. Where this statement says a combination was tested, it means the automated checks named below ran against it and passed. It does not mean the experience is good, and it does not mean an assistive-technology user will get through a single journey end to end.
 
 The interface itself makes no accessibility claim. This statement is published with the source rather than asserted inside the product, so that what a reviewer reads here can be checked against the tests that produced it.
 
@@ -45,7 +45,7 @@ Journeys run at a desktop viewport and at 390 and 320 CSS pixels wide. The list 
 
 Serious and critical axe findings fail the build. Moderate and minor findings do not, and nothing collects them: they are left to the manual review, because acting on them mechanically produces markup that satisfies a rule and helps nobody. That is a deliberate choice and also a gap — a moderate finding introduced between manual reviews will not be noticed.
 
-**Manual, by the author:** the cases in [the manual review record](accessibility-review.md), which is where the results and their dates live.
+**Manual:** the cases in [the manual review record](accessibility-review.md), which is where results, dates, and reviewers are recorded. **No case has been performed yet.** Every row there is empty, which the record counts as unperformed rather than passing, and this statement will not describe a manual case as covered until its row is filled in.
 
 ## Known limitations
 

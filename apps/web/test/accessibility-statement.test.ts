@@ -98,4 +98,32 @@ describe("public accessibility statement", () => {
       expect(review).toContain(`\`${reviewCase}\``);
     }
   });
+
+  /**
+   * The claim and the evidence, held together.
+   *
+   * Listing the cases is not the same as running them, and the first version of
+   * this file checked only the list — so an entirely empty record satisfied it
+   * while the statement said the review "was performed". That is the exact
+   * false claim the statement exists to avoid, and a public page is the worst
+   * place to discover it. So the statement's wording is now tied to the
+   * record's rows: until a row carries a result, the statement has to say the
+   * manual cases are outstanding, and may not say any of them was performed.
+   */
+  it("does not claim a manual review nobody has performed", () => {
+    const performed = review
+      .split("\n")
+      .filter((line) => /^\|\s*`a11y\./.test(line))
+      .filter((line) => {
+        // | case | asks | automated evidence | result | date | reviewer |
+        const [, , , , result] = line.split("|").map((cell) => cell.trim());
+        return result !== undefined && result !== "";
+      });
+
+    if (performed.length > 0) return;
+
+    expect(statement).toMatch(/have not been performed yet/);
+    expect(statement).toContain("No case has been performed yet.");
+    expect(statement).not.toMatch(/manual review[^.]{0,40}was performed/i);
+  });
 });

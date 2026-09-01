@@ -1,18 +1,13 @@
 /**
  * The browser matrix the demonstration claims to support.
  *
- * It lives in one place because two very different things have to agree about
- * it: the Playwright projects that actually run the role journeys, and the
- * [public accessibility statement](../../../../../docs/accessibility-statement.md),
- * which tells a reader which combinations were tested. A statement naming a
- * combination nothing exercised is the failure mode worth engineering against —
- * it is a claim about someone else's assistive technology — so the statement is
- * checked against this list rather than maintained beside it.
+ * The Playwright projects and the [public accessibility
+ * statement](../../../../../docs/accessibility-statement.md) both read it, and
+ * a test fails if they disagree: a statement naming a combination nothing
+ * exercised is a claim about someone else's assistive technology.
  *
- * Each entry names an engine, not a product. Exercising Chromium is evidence
- * about Chrome and Edge because they share an engine; it is not evidence about
- * one version on one operating system, and `testedCombination` is worded so the
- * statement cannot imply otherwise.
+ * Each entry names an engine rather than a product, because that is what was
+ * exercised — not one version on one operating system.
  */
 export interface SupportedBrowser {
   /**

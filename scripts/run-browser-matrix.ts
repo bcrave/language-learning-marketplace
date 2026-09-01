@@ -35,14 +35,15 @@ if (forwarded.some((argument) => argument.startsWith("--project"))) {
   process.exit(runPlaywright(forwarded));
 }
 
-const failed = SUPPORTED_BROWSERS.filter(({ project }) => {
-  console.log(`\n=== ${project} ===\n`);
-  return runPlaywright([`--project=${project}`, ...forwarded]) !== 0;
-}).map(({ project }) => project);
-
 // Every engine runs even after one fails. A cross-browser suite exists to say
 // *which* browsers are affected, and stopping at the first failure answers that
 // question with the one browser that happened to be listed first.
+const failed: string[] = [];
+for (const { project } of SUPPORTED_BROWSERS) {
+  console.log(`\n=== ${project} ===\n`);
+  if (runPlaywright([`--project=${project}`, ...forwarded]) !== 0) failed.push(project);
+}
+
 if (failed.length > 0) {
   console.error(`\nRole journeys failed on: ${failed.join(", ")}`);
   process.exit(1);

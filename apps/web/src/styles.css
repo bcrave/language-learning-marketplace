@@ -16,20 +16,11 @@ body {
 }
 
 /*
- * The focus indicator, drawn rather than inherited.
- *
- * Every user-agent default is some shade of blue on the assumption of a white
- * page, and this application puts controls on two grounds: the parchment main
- * area and the dark green rail. One indicator cannot contrast with both, so the
- * rail gets the brand amber and everything else gets the ink already used for
- * body text. `:focus-visible` rather than `:focus` so a pointer user is not
- * given a ring they did not ask for, while a keyboard user always is.
- *
- * The offset is what keeps the ring outside the control's own border instead of
- * blending into it, and 3px is wide enough to survive the reviewer's zoom. The
- * outline follows whatever corner radius the control already has, so this rule
- * sets no radius of its own — a pseudo-class would outrank the element's own
- * rule and reshape the control at the moment it gains focus.
+ * The focus indicator, drawn rather than inherited: the user-agent default
+ * assumes a white page, and controls here sit on two grounds. The rail gets the
+ * brand amber, everything else the body ink; one colour cannot contrast with
+ * both. No `border-radius` here — a pseudo-class would outrank the control's
+ * own rule and reshape it at the moment it gains focus.
  */
 :focus-visible {
   outline: 3px solid #16231c;
@@ -61,14 +52,9 @@ a {
 }
 
 /*
- * `minmax(0, 1fr)` rather than `1fr` for the content column.
- *
- * A bare `1fr` is `minmax(auto, 1fr)`, so the track refuses to shrink below its
- * own min-content. Double the text size and the rail's floor plus that
- * min-content stops fitting, and the whole page scrolls sideways instead of the
- * content wrapping — which is the resize failure WCAG 1.4.4 is about. Letting
- * the track reach zero puts the wrapping back where it belongs, inside the
- * column. Firefox is where this showed up; the other two engines hid it.
+ * `minmax(0, 1fr)` rather than `1fr`: a bare `1fr` is `minmax(auto, 1fr)` and
+ * refuses to shrink below its min-content, so at 200% text the page scrolled
+ * sideways instead of wrapping (WCAG 1.4.4). Firefox showed it; the others hid it.
  */
 .app-shell {
   display: grid;
@@ -410,16 +396,10 @@ h1 {
   }
 
   /*
-   * A sticky header and a fixed bottom bar both take space the browser does not
-   * know is taken: scrolling a focused control "into view" can put it exactly
-   * underneath one of them, which is WCAG 2.2's Focus Not Obscured failure.
-   *
-   * `scroll-padding` on the scrollport rather than `scroll-margin` on the
-   * focused element. Both describe the same reservation, but the scrollport is
-   * the one every engine consults when it scrolls anything into view: WebKit
-   * ignored the per-element margin here and dropped focused controls straight
-   * behind the bottom bar, while Chromium and Firefox honoured it. The values
-   * are the space each bar occupies.
+   * The sticky header and fixed bottom bar take space the browser does not know
+   * is taken, so scrolling a focused control into view can land it underneath
+   * one — WCAG 2.2's Focus Not Obscured. `scroll-padding` on the scrollport
+   * rather than `scroll-margin` on the element: WebKit ignored the latter.
    */
   :root {
     scroll-padding-block: 6rem 8rem;

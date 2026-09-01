@@ -118,7 +118,7 @@ test("focus is visible and never hidden behind the sticky bars", async ({ page }
   // keyboard user actually does.
   // The first Tab does not always land on a control — WebKit takes a press to
   // enter the document — so tab until something is genuinely focused.
-  const focused = async () =>
+  const focusedOutline = async () =>
     page.evaluate(() => {
       const active = document.activeElement;
       if (!active || active === document.body) return null;
@@ -126,10 +126,10 @@ test("focus is visible and never hidden behind the sticky bars", async ({ page }
       return { style: style.outlineStyle, width: style.outlineWidth };
     });
 
-  let outline = null as Awaited<ReturnType<typeof focused>>;
+  let outline = null as Awaited<ReturnType<typeof focusedOutline>>;
   for (let press = 0; press < 5 && outline === null; press += 1) {
     await page.keyboard.press("Tab");
-    outline = await focused();
+    outline = await focusedOutline();
   }
 
   expect(outline).not.toBeNull();

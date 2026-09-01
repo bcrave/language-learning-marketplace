@@ -52,6 +52,55 @@ test("the English Student journey is localized and reaches learning", async ({ p
   await expectNoSeriousAccessibilityViolations(page);
 });
 
+/**
+ * The Student's own scheduling interaction, end to end.
+ *
+ * Discovery and learning can both be walked without changing anything, and a
+ * Student journey that only navigates would prove the panels render rather than
+ * that a Student can do the one thing they come here to do. Booking exchanges a
+ * Class Credit and cancelling settles it, so this is also where the journey
+ * touches a real authenticated mutation.
+ *
+ * Casey rather than the shared reviewers: Casey holds Class Credits and no
+ * conflicting Booking, so a seat is genuinely available to take.
+ */
+test("a Student discovers, books, and cancels a Class Session", async ({ page }) => {
+  await actAs(page, DEMONSTRATION_USERS.casey);
+  await page.goto("/student");
+  await expect(page.getByRole("heading", { name: "Hello, Casey Nguyen" })).toBeVisible();
+  await openPlace(page, "en", "STUDENT_DISCOVERY");
+
+  const discovery = page
+    .getByRole("region", { name: "Discover Class Sessions" })
+    .last();
+  await discovery.getByRole("combobox", { name: "Target language" }).selectOption("en");
+  await discovery
+    .getByRole("combobox", { name: "Curriculum Level" })
+    .selectOption("A1");
+  await discovery.getByRole("button", { name: "Search Class Sessions" }).click();
+
+  // Only actionable Class Sessions are listed, so whatever comes back can be
+  // booked — no need to reason about the Booking window from out here.
+  const book = discovery.getByRole("button", { name: "Book Class Session" }).first();
+  await expect(book).toBeVisible();
+  await book.click();
+
+  await expect(discovery.getByRole("status")).toContainText(
+    "Booking confirmed. One Class Credit was exchanged.",
+  );
+  await expectNoSeriousAccessibilityViolations(page);
+
+  // Cancelling settles the Class Credit either way — returned, or forfeited
+  // under the late-cancellation rule if the Class Session is close enough. Which
+  // one depends on the clock, so the journey asserts the settlement happened
+  // rather than picking the branch the fixtures happen to land in today.
+  const cancel = discovery.getByRole("button", { name: /Cancel Booking for/ }).first();
+  await expect(cancel).toBeVisible();
+  await cancel.click();
+  await expect(discovery.getByRole("status")).toContainText(/Booking cancelled\./);
+  await expectNoSeriousAccessibilityViolations(page);
+});
+
 test.describe("mobile role navigation", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
