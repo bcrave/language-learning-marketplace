@@ -23,7 +23,7 @@ export default typescriptEslint.config(
       "apps/backend/**/*.ts",
       "packages/**/*.ts",
       "*.{js,ts}",
-      "scripts/**/*.mjs",
+      "scripts/**/*.{mjs,ts}",
     ],
     languageOptions: { globals: globals.node },
   },

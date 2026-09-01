@@ -15,6 +15,37 @@ body {
   min-height: 100vh;
 }
 
+/*
+ * The focus indicator, drawn rather than inherited: the user-agent default
+ * assumes a white page, and controls here sit on two grounds. The rail gets the
+ * brand amber, everything else the body ink; one colour cannot contrast with
+ * both. No `border-radius` here — a pseudo-class would outrank the control's
+ * own rule and reshape it at the moment it gains focus.
+ */
+:focus-visible {
+  outline: 3px solid #16231c;
+  outline-offset: 2px;
+}
+
+.context-rail :focus-visible,
+.mobile-context :focus-visible {
+  outline-color: #ffe08a;
+}
+
+/*
+ * WebKit draws no `:focus-visible` outline on a native date control — focus
+ * lands on a field inside its shadow tree, so the host never matches and the
+ * rule above silently does nothing. Tabbing through the discovery filters in
+ * Safari therefore passes three controls with no indicator at all (WCAG 2.4.7).
+ * `:focus` is the fallback because it is the pseudo-class WebKit does apply
+ * here; the cost is that a pointer click also draws the outline on these three
+ * fields, which is the lesser of the two failures.
+ */
+input[type="date"]:focus {
+  outline: 3px solid #16231c;
+  outline-offset: 2px;
+}
+
 button {
   padding: 0.8rem 1.2rem;
   border: 0;
@@ -34,9 +65,14 @@ a {
   color: inherit;
 }
 
+/*
+ * `minmax(0, 1fr)` rather than `1fr`: a bare `1fr` is `minmax(auto, 1fr)` and
+ * refuses to shrink below its min-content, so at 200% text the page scrolled
+ * sideways instead of wrapping (WCAG 1.4.4). Firefox showed it; the others hid it.
+ */
 .app-shell {
   display: grid;
-  grid-template-columns: minmax(15rem, 19rem) 1fr;
+  grid-template-columns: minmax(15rem, 19rem) minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -103,6 +139,17 @@ nav a[aria-current="page"] {
 main {
   width: min(54rem, 100%);
   padding: clamp(2rem, 7vw, 6rem);
+  /*
+   * The interface prints opaque identifiers a person is meant to be able to
+   * quote back: Booking references, correlation identifiers, content digests.
+   * They are single unbreakable 36- and 64-character words, so at 200% text
+   * they are wider than the column and push the whole page sideways rather than
+   * wrapping. `anywhere` rather than `break-word` because several of them sit
+   * in grid items: only `anywhere` also lowers the text's min-content width, so
+   * the item stops demanding room for the whole identifier on one line.
+   * Ordinary prose still wraps between words.
+   */
+  overflow-wrap: anywhere;
 }
 
 h1 {
@@ -213,10 +260,15 @@ h1 {
   background: #fffdf8;
 }
 
+/*
+ * The `16rem` floor never binds at the default text size, and at 200% it is
+ * what would push this grid past the viewport. Dropping it to zero leaves the
+ * proportions identical where it fit and lets it wrap where it did not.
+ */
 .curriculum-admin > header,
 .curriculum-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(16rem, 1fr);
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
   gap: 1.5rem;
 }
 
@@ -254,9 +306,14 @@ h1 {
   background: #fffdf8;
 }
 
+/*
+ * `min(13rem, 100%)` so the requested column width can never exceed the space
+ * there is. A plain `minmax(13rem, 1fr)` overflows as soon as the container is
+ * narrower than one column, which at 200% text it is.
+ */
 .student-discovery form > fieldset {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
   gap: 0.85rem;
   border: 0;
   padding: 0;
@@ -350,6 +407,16 @@ h1 {
 
   main {
     padding-bottom: 7rem;
+  }
+
+  /*
+   * The sticky header and fixed bottom bar take space the browser does not know
+   * is taken, so scrolling a focused control into view can land it underneath
+   * one — WCAG 2.2's Focus Not Obscured. `scroll-padding` on the scrollport
+   * rather than `scroll-margin` on the element: WebKit ignored the latter.
+   */
+  :root {
+    scroll-padding-block: 6rem 8rem;
   }
 }
 

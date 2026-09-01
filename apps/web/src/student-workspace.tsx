@@ -141,6 +141,19 @@ export const workspacePlacePresentation: Record<
   },
 };
 
+/**
+ * Every place one role can reach, in the order the journey menu lists them.
+ *
+ * The menu and the role-journey tests both need this, and they need the same
+ * answer: a test that computed the list its own way could pass while the menu
+ * showed something else.
+ */
+export function placesFor(role: UserRole) {
+  return Object.entries(workspacePlacePresentation).filter(
+    ([, candidate]) => candidate.role === role,
+  ) as Array<[WorkspacePlace, (typeof workspacePlacePresentation)[WorkspacePlace]]>;
+}
+
 type WorkspaceContext = {
   actingRole: UserRole;
   currentPlace: WorkspacePlace;
@@ -237,9 +250,7 @@ function WorkspaceContent({
     ? relationshipScopeMessageIds[workspaceContext.relationshipScope]
     : "workspace.scope.student";
   const place = workspacePlacePresentation[currentPlace];
-  const roleJourneys = Object.entries(workspacePlacePresentation).filter(
-    ([, candidate]) => candidate.role === actingRole,
-  ) as Array<[WorkspacePlace, (typeof workspacePlacePresentation)[WorkspacePlace]]>;
+  const roleJourneys = placesFor(actingRole);
 
   useEffect(() => {
     const previousLanguage = document.documentElement.getAttribute("lang");
