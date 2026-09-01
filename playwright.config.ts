@@ -53,6 +53,11 @@ export default defineConfig({
         "VITE_GRAPHQL_URL=http://127.0.0.1:4000/graphql VITE_DEMO_USER_ID=00000000-0000-4000-8000-000000000001 pnpm --filter @marketplace/web build:test && pnpm --filter @marketplace/web preview",
       port: 5173,
       reuseExistingServer: false,
+      // This command builds the client before it serves it, and Playwright's
+      // default minute covers that only on an idle machine. The matrix runner
+      // rebuilds once per engine, so a busy machine times the third one out and
+      // reports it as the engine failing rather than the build being slow.
+      timeout: 180_000,
     },
   ],
 });

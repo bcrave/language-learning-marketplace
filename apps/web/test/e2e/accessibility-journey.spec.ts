@@ -69,24 +69,40 @@ test("the workspace is reachable and operable with the keyboard alone", async ({
   await page.goto("/student");
   await expect(page.getByRole("heading", { name: "Alex Morgan" })).toBeVisible();
 
-  const focusedInMain = async () =>
+  // Each stop is recorded as it is reached, because the property under test
+  // belongs to the whole path rather than to its last step. Reading
+  // `document.activeElement` after the loop cannot test it: the loop exits
+  // precisely when focus is inside `main`, so any such check is already true.
+  const describeFocus = async () =>
     page.evaluate(() => {
       const active = document.activeElement;
-      return active !== null && document.querySelector("main")?.contains(active) === true;
+      if (!active || active === document.body) return null;
+      return {
+        inMain: document.querySelector("main")?.contains(active) === true,
+        // A real control is one the accessibility tree exposes as operable: a
+        // natively interactive element, or anything carrying an explicit role.
+        operable: active.matches(
+          "a[href], button, input, select, textarea, summary, [role]",
+        ),
+        tagName: active.tagName,
+      };
     });
 
+  const stops: Array<{ inMain: boolean; operable: boolean; tagName: string }> = [];
   let reachedMain = false;
   for (let press = 0; press < 40 && !reachedMain; press += 1) {
     await page.keyboard.press("Tab");
-    reachedMain = await focusedInMain();
+    const stop = await describeFocus();
+    if (stop === null) continue;
+    stops.push(stop);
+    reachedMain = stop.inMain;
   }
   expect(reachedMain).toBe(true);
 
   // Every stop along the way had to be a real control. A tab stop with no
   // accessible role is a keyboard user arriving somewhere nothing can be done.
-  await expect
-    .poll(() => page.evaluate(() => document.activeElement?.tagName ?? null))
-    .not.toBe("BODY");
+  // The tag names are carried so a failure names what was landed on.
+  expect(stops.filter(({ operable }) => !operable)).toEqual([]);
 
   // Navigation is operable from the keyboard, not merely focusable. Enter on a
   // focused journey link has to move, or the whole workspace is a pointer-only
@@ -102,7 +118,9 @@ test("the workspace is reachable and operable with the keyboard alone", async ({
  * Visible is asserted as a computed outline rather than a screenshot: what a
  * reader needs is that the browser draws *something* the theme did not remove,
  * and a pixel comparison would fail across three engines for reasons that have
- * nothing to do with focus. Unobscured is asserted against the two bars that
+ * nothing to do with focus. It is asserted on both grounds the interface has,
+ * because the stylesheet draws a different colour on each and one of them
+ * passing says nothing about the other. Unobscured is asserted against the two bars that
  * can cover it — the sticky header and the fixed bottom navigation — by
  * checking the focused control's box stays inside the viewport's usable band.
  */
@@ -123,18 +141,37 @@ test("focus is visible and never hidden behind the sticky bars", async ({ page }
       const active = document.activeElement;
       if (!active || active === document.body) return null;
       const style = getComputedStyle(active);
-      return { style: style.outlineStyle, width: style.outlineWidth };
+      return {
+        color: style.outlineColor,
+        inRail: active.closest(".context-rail") !== null,
+        style: style.outlineStyle,
+        width: style.outlineWidth,
+      };
     });
 
-  let outline = null as Awaited<ReturnType<typeof focusedOutline>>;
-  for (let press = 0; press < 5 && outline === null; press += 1) {
+  // Both grounds, not whichever one tabbing reaches first. The rail is dark and
+  // everything beyond it is parchment, so a single outline colour cannot
+  // contrast with both; the stylesheet gives the rail its own. A check that
+  // stopped at the first focusable control would never reach the second ground,
+  // and would pass just as happily with the rail's rule deleted.
+  type Outline = NonNullable<Awaited<ReturnType<typeof focusedOutline>>>;
+  const grounds = new Map<"beyond" | "rail", Outline>();
+  for (let press = 0; press < 40 && grounds.size < 2; press += 1) {
     await page.keyboard.press("Tab");
-    outline = await focusedOutline();
+    const outline = await focusedOutline();
+    if (outline === null) continue;
+    grounds.set(outline.inRail ? "rail" : "beyond", outline);
   }
 
-  expect(outline).not.toBeNull();
-  expect(outline?.style).not.toBe("none");
-  expect(Number.parseFloat(outline?.width ?? "0")).toBeGreaterThanOrEqual(2);
+  const rail = grounds.get("rail");
+  const beyond = grounds.get("beyond");
+  expect(rail, "tabbing reached no control inside the context rail").toBeDefined();
+  expect(beyond, "tabbing reached no control beyond the context rail").toBeDefined();
+  for (const outline of [rail, beyond]) {
+    expect(outline?.style).not.toBe("none");
+    expect(Number.parseFloat(outline?.width ?? "0")).toBeGreaterThanOrEqual(2);
+  }
+  expect(rail?.color).not.toBe(beyond?.color);
 });
 
 test.describe("small viewports", () => {

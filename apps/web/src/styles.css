@@ -32,6 +32,20 @@ body {
   outline-color: #ffe08a;
 }
 
+/*
+ * WebKit draws no `:focus-visible` outline on a native date control — focus
+ * lands on a field inside its shadow tree, so the host never matches and the
+ * rule above silently does nothing. Tabbing through the discovery filters in
+ * Safari therefore passes three controls with no indicator at all (WCAG 2.4.7).
+ * `:focus` is the fallback because it is the pseudo-class WebKit does apply
+ * here; the cost is that a pointer click also draws the outline on these three
+ * fields, which is the lesser of the two failures.
+ */
+input[type="date"]:focus {
+  outline: 3px solid #16231c;
+  outline-offset: 2px;
+}
+
 button {
   padding: 0.8rem 1.2rem;
   border: 0;
