@@ -113,6 +113,7 @@ describe("deployed smoke journey", () => {
       "authentication.studentIdentified",
       "discovery.results",
       "localization.teacherProfileLocalized",
+      "anonymous.publicSurface",
       "booking.created",
       "booking.cancelled",
       "teacher.assignedRoster",

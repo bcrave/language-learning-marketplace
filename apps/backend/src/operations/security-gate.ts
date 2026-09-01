@@ -1,8 +1,11 @@
 import type { Database } from "../database/database.js";
-import { INCIDENT_FAMILIES, type IncidentFamily } from "../observability/alert-policy.js";
-import { firstCredentialShape } from "./credential-shapes.js";
+import type { IncidentFamily } from "../observability/alert-policy.js";
 import {
+  evidenceCell,
   isPrivateEvidenceLink,
+  rawEvidenceShape,
+} from "./evidence-boundary.js";
+import {
   recordReadinessExercise,
   type ReadinessExercise,
 } from "./readiness-evidence.js";
@@ -50,10 +53,12 @@ export const SECURITY_GATE_FINDINGS = [
   "security.candidateMatches",
   "security.rerunScopeCovered",
   "security.residualRiskAccepted",
+  "security.resultStable",
   "security.resultSignedOff",
   "security.evidenceLinkPrivate",
   "security.evidenceSanitized",
   "security.checkRecognised",
+  "security.evidenceKindMatches",
   "security.policyFingerprint",
   "security.projectOwnerSignOff",
 ] as const;
@@ -114,6 +119,13 @@ export interface SecurityGateCandidate {
    * missing required result.
    */
   notRepeated: Readonly<Record<string, string>>;
+  /**
+   * The private workflow run that assembled this record. The policy asks the
+   * record for "links to the workflow and originating private provider
+   * histories": each row carries its own provider link, and this is the run
+   * they were assembled in.
+   */
+  evidenceLink: string;
   generatedAt: Date;
   /** Who accepted the record. The release rule has no unsigned path. */
   projectOwnerSignOff: string | null;
@@ -121,8 +133,15 @@ export interface SecurityGateCandidate {
 
 export interface SecurityGateRow {
   check: SecurityCheck;
-  /** The result that stands for this candidate, where one was recorded. */
+  /** The latest result for this candidate, which is the one that stands. */
   result: SecurityCheckResult | null;
+  /**
+   * Earlier attempts for this candidate whose outcome differed from the one
+   * that stands. A check that answers differently on the same commit is the
+   * "flaky" the release rule blocks on, and it exists nowhere else: each
+   * attempt on its own looks like a perfectly ordinary result.
+   */
+  disagreeingAttempts: readonly SecurityCheckResult[];
   /** Whether this candidate's rerun scope required the check to be repeated. */
   required: boolean;
   /** The stated reason it was not repeated, where the scope allowed that. */
@@ -155,26 +174,6 @@ export interface SecurityGateFinding {
 }
 
 /**
- * The personal data the evidence boundary excludes on top of the credential
- * shapes, matching the readiness record's boundary.
- *
- * An observation is written by a person after an abuse case, which is exactly
- * where an address the case involved would be tempting to write down. The
- * policy names both as things the record must never retain.
- */
-const PERSONAL_DATA_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
-  ["an email address", /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/],
-  ["a source address", /\b(?:\d{1,3}\.){3}\d{1,3}\b/],
-];
-
-function rawEvidenceShape(text: string) {
-  return (
-    firstCredentialShape(text)
-    ?? PERSONAL_DATA_PATTERNS.find(([, pattern]) => pattern.test(text))?.[0]
-  );
-}
-
-/**
  * Whether the candidate's rerun scope requires this check to have been repeated.
  *
  * A public launch requires all of them. After launch, a Security-Relevant
@@ -201,10 +200,18 @@ export function buildSecurityGateRecord(input: {
   results: readonly SecurityCheckResult[];
 }): SecurityGateRecord {
   const rows = SECURITY_VERIFICATION_CATALOG.map((check) => {
-    const result = input.results.find((candidateResult) => candidateResult.check === check.id);
+    // Latest last, so the attempt that stands is the one most recently
+    // observed rather than whichever the store happened to return first.
+    const attempts = input.results
+      .filter((candidateResult) => candidateResult.check === check.id)
+      .sort((left, right) => left.observedAt.getTime() - right.observedAt.getTime());
+    const result = attempts.at(-1);
     return {
       check,
       result: result ?? null,
+      disagreeingAttempts: attempts
+        .slice(0, -1)
+        .filter((attempt) => attempt.outcome !== result?.outcome),
       required: requiredForScope(check, input.candidate),
       notRepeatedReason: input.candidate.notRepeated[check.id]?.trim() || null,
     };
@@ -253,6 +260,27 @@ export function securityGateFindings(record: SecurityGateRecord): SecurityGateFi
     add("security.projectOwnerSignOff", null, "the record carries no Project Owner sign-off");
   }
 
+  // The candidate's own free text reaches the published record verbatim, and
+  // it is typed by a person into a workflow input like every observation is.
+  // Scanning the observations but not the sign-off and the not-repeated
+  // reasons would leave the record's most hand-written fields the only place a
+  // credential could still travel.
+  for (const [field, text] of [
+    ["Project Owner sign-off", record.candidate.projectOwnerSignOff],
+    ...Object.entries(record.candidate.notRepeated).map(
+      ([checkId, reason]) => [`not-repeated reason for ${checkId}`, reason] as const,
+    ),
+  ] as ReadonlyArray<readonly [string, string | null]>) {
+    const shape = text ? rawEvidenceShape(text) : undefined;
+    if (shape) {
+      add(
+        "security.evidenceSanitized",
+        null,
+        `the ${field} carries ${shape}, which belongs only with its provider`,
+      );
+    }
+  }
+
   // The rollout proof is about one exact policy enforced after being observed
   // report-only. Without the fingerprint the record cannot say which policy the
   // journeys ran against, so the journeys prove nothing that survives a change.
@@ -276,15 +304,26 @@ export function securityGateFindings(record: SecurityGateRecord): SecurityGateFi
     const { check, result } = row;
 
     if (!result || result.outcome === "NOT_RUN") {
-      if (row.required) {
+      if (row.required && row.notRepeatedReason) {
+        // A reason was stated for a check the scope required anyway. Naming
+        // which of the two made it required matters: "the complete gate" and
+        // "this change touched that boundary" send the owner to different
+        // places, and reporting a public launch as a boundary change would
+        // send them looking for a change that does not exist.
         add(
-          row.notRepeatedReason ? "security.rerunScopeCovered" : "security.checkRequired",
+          "security.rerunScopeCovered",
           check.id,
-          row.notRepeatedReason
-            ? "the check maps to a changed trust boundary and cannot be carried forward"
-            : result
-              ? "the check was recorded as not run for this candidate"
-              : "no result was recorded for this candidate",
+          record.candidate.scope === "PUBLIC_LAUNCH"
+            ? "a public launch runs the complete gate, so no check may be carried forward"
+            : "the check maps to a changed trust boundary and cannot be carried forward",
+        );
+      } else if (row.required) {
+        add(
+          "security.checkRequired",
+          check.id,
+          result
+            ? "the check was recorded as not run for this candidate"
+            : "no result was recorded for this candidate",
         );
       } else if (!row.notRepeatedReason) {
         add(
@@ -309,7 +348,7 @@ export function securityGateFindings(record: SecurityGateRecord): SecurityGateFi
 
     if (result.evidenceKind !== check.evidence) {
       add(
-        "security.checkRecognised",
+        "security.evidenceKindMatches",
         check.id,
         `the result claims ${result.evidenceKind} evidence where the catalog requires ${check.evidence}`,
       );
@@ -352,6 +391,17 @@ export function securityGateFindings(record: SecurityGateRecord): SecurityGateFi
       );
     }
 
+    // "A failed, missing, flaky, stale, or unexplained required result blocks
+    // public launch or release." Flaky is the only one of the five that no
+    // single attempt reveals: it is two attempts on one candidate disagreeing.
+    if (row.disagreeingAttempts.length > 0) {
+      add(
+        "security.resultStable",
+        check.id,
+        `${row.disagreeingAttempts.length} earlier attempt(s) on this candidate disagreed with the result that stands`,
+      );
+    }
+
     if (!isPrivateEvidenceLink(result.evidenceLink)) {
       add(
         "security.evidenceLinkPrivate",
@@ -383,16 +433,7 @@ export function securityGateFindings(record: SecurityGateRecord): SecurityGateFi
  */
 export function renderSecurityGateRecord(record: SecurityGateRecord): string {
   const findings = securityGateFindings(record);
-  /**
-   * A Markdown table cell. An observation and a not-repeated reason are typed
-   * by a person into a workflow input, and a single `|` in one of them would
-   * split the row and shift every later column — silently reattributing a
-   * result in the artifact the release decision is read from.
-   */
-  const cell = (value: string | null) =>
-    value === null || value === ""
-      ? "—"
-      : value.replaceAll("|", "\\|").replaceAll(/\r?\n/g, " ");
+  const cell = evidenceCell;
 
   const lines = [
     "# Security Gate Record",
@@ -415,6 +456,7 @@ export function renderSecurityGateRecord(record: SecurityGateRecord): string {
     ...Object.entries(record.candidate.configurationFingerprints)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([name, digest]) => `| ${name} fingerprint | \`${digest}\` |`),
+    `| Gate workflow run | [private evidence](${record.candidate.evidenceLink}) |`,
     `| Rerun scope | ${record.candidate.scope} |`,
     `| Changed trust boundaries | ${record.candidate.changedBoundaries.join(", ") || "—"} |`,
     `| Evidence generated at | ${record.candidate.generatedAt.toISOString()} |`,
@@ -427,10 +469,14 @@ export function renderSecurityGateRecord(record: SecurityGateRecord): string {
   ];
 
   for (const row of record.rows) {
+    // The stated reason travels with the outcome whether or not the scope let
+    // the check be carried forward. A required row that drops it would hide
+    // the very sentence the policy asks the record to state — and hide it
+    // exactly when someone tried to carry forward something they could not.
     const outcome = row.result
       ? row.result.outcome
       : row.required
-        ? "**NOT RECORDED**"
+        ? `**NOT RECORDED**${row.notRepeatedReason ? ` (claimed: ${cell(row.notRepeatedReason)})` : ""}`
         : `NOT REPEATED (${cell(row.notRepeatedReason)})`;
     lines.push([
       "",
@@ -508,9 +554,13 @@ export function renderSecurityGateRecord(record: SecurityGateRecord): string {
 }
 
 /**
- * Records one check's result against one candidate, replacing an earlier run of
- * the same check for the same release. The record carries the outcome that
- * stands; the attempts live in the workflow runs the evidence link points at.
+ * Records one attempt at one check against one candidate.
+ *
+ * Every attempt is kept. The record reads the latest as the outcome that
+ * stands and blocks when an earlier one disagreed, because "flaky" is a word
+ * the release rule uses and nothing else in the deployment can see: each
+ * attempt on its own looks like an ordinary result, and only the pair is
+ * evidence that the check does not answer the same way twice.
  *
  * It refuses what the record could not publish rather than storing it and
  * failing at render time, so a check that would have written a credential into
@@ -554,16 +604,10 @@ export async function recordSecurityCheckResult(
     signed_off_at: result.signedOffAt,
   };
 
-  await db
-    .insertInto("security_gate_results")
-    .values(values)
-    .onConflict((conflict) =>
-      conflict.columns(["release", "check_id"]).doUpdateSet(values),
-    )
-    .execute();
+  await db.insertInto("security_gate_results").values(values).execute();
 }
 
-/** Every result recorded against one candidate. */
+/** Every attempt recorded against one candidate, oldest first. */
 export async function securityCheckResultsFor(
   db: Database,
   release: string,
@@ -573,6 +617,7 @@ export async function securityCheckResultsFor(
     .selectAll()
     .where("release", "=", release)
     .orderBy("check_id")
+    .orderBy("observed_at")
     .execute();
 
   return rows.map((row) => ({
@@ -635,6 +680,23 @@ export function securityResultsFromRecoveryDrills(
 export const SECURITY_GATE_SYSTEM_IDENTITY = "SECURITY_RELEASE_GATE";
 
 /**
+ * What one gate run carries beyond the record itself: where its raw output
+ * lives, what to correlate it with, and the exception only a person can
+ * record. Both writers below take the same envelope, because they are two
+ * halves of one act — the Audit Entry and the readiness rows are written in
+ * one transaction and must describe the same run.
+ */
+export interface SecurityGateEvidence {
+  /** Link to the private workflow run holding the raw gate output. */
+  evidenceLink: string;
+  correlationId: string;
+  limitation?: string | null;
+  followUpOwner?: string | null;
+  signedOffBy?: string | null;
+  signedOffAt?: Date | null;
+}
+
+/**
  * The readiness exercises this gate's own results evidence.
  *
  * A family's exercise passes only when every check mapped to it passed. A
@@ -644,14 +706,7 @@ export const SECURITY_GATE_SYSTEM_IDENTITY = "SECURITY_RELEASE_GATE";
  */
 export function securityGateReadinessExercises(
   record: SecurityGateRecord,
-  evidence: {
-    evidenceLink: string;
-    correlationId: string;
-    limitation?: string | null;
-    followUpOwner?: string | null;
-    signedOffBy?: string | null;
-    signedOffAt?: Date | null;
-  },
+  evidence: SecurityGateEvidence,
 ): ReadinessExercise[] {
   const resultFor = (checkId: string) =>
     record.rows.find((row) => row.check.id === checkId)?.result ?? null;
@@ -708,15 +763,7 @@ export function securityGateReadinessExercises(
 export async function recordSecurityGateEvidence(
   db: Database,
   record: SecurityGateRecord,
-  evidence: {
-    /** Link to the private workflow run holding the raw gate output. */
-    evidenceLink: string;
-    correlationId: string;
-    limitation?: string | null;
-    followUpOwner?: string | null;
-    signedOffBy?: string | null;
-    signedOffAt?: Date | null;
-  },
+  evidence: SecurityGateEvidence,
 ): Promise<void> {
   const findings = securityGateFindings(record);
   const passed = findings.length === 0;
@@ -753,19 +800,4 @@ export async function recordSecurityGateEvidence(
       await recordReadinessExercise(transaction as Database, exercise);
     }
   });
-}
-
-/**
- * The incident families no part of this repository records evidence for.
- *
- * Nothing reads this at release time; it exists so `security-gate.test.ts` can
- * assert that the readiness record's ten families are all accounted for —
- * either by this gate or by the recovery drills — and fail when a family is
- * added that nothing would ever exercise.
- */
-export function unevidencedIncidentFamilies(): IncidentFamily[] {
-  const drilled: IncidentFamily = "backups-and-recovery-verification";
-  return (Object.keys(INCIDENT_FAMILIES) as IncidentFamily[]).filter(
-    (family) => family !== drilled && !SECURITY_GATE_READINESS_EVIDENCE[family],
-  );
 }

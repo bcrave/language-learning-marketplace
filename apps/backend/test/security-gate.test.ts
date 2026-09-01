@@ -12,7 +12,6 @@ import {
   securityGateFindings,
   securityGateReadinessExercises,
   securityResultsFromRecoveryDrills,
-  unevidencedIncidentFamilies,
   type SecurityCheckResult,
   type SecurityGateCandidate,
 } from "../src/operations/security-gate.js";
@@ -55,6 +54,7 @@ function candidate(overrides: Partial<SecurityGateCandidate> = {}): SecurityGate
     scope: "PUBLIC_LAUNCH",
     changedBoundaries: [],
     notRepeated: {},
+    evidenceLink: EVIDENCE,
     generatedAt: GENERATED_AT,
     projectOwnerSignOff: "Project Owner",
     ...overrides,
@@ -151,7 +151,16 @@ describe("the security verification catalog", () => {
   });
 
   it("evidences every incident family that the recovery drills do not own", () => {
-    expect(unevidencedIncidentFamilies()).toEqual([]);
+    // Every family the readiness record has a row for is written by somebody:
+    // this gate, or the two recovery drills. A family neither writes would
+    // block every release for ever with nothing able to clear it.
+    const drilled = "backups-and-recovery-verification";
+    const unevidenced = Object.keys(INCIDENT_FAMILIES).filter(
+      (family) =>
+        family !== drilled
+        && !(family in SECURITY_GATE_READINESS_EVIDENCE),
+    );
+    expect(unevidenced).toEqual([]);
     for (const [family, mapping] of Object.entries(SECURITY_GATE_READINESS_EVIDENCE)) {
       expect(Object.keys(INCIDENT_FAMILIES)).toContain(family);
       expect(mapping!.checks.length).toBeGreaterThan(0);
@@ -349,7 +358,41 @@ describe("the release rule", () => {
         : entry,
     );
     expect(findingsFor(results).map((finding) => finding.finding))
-      .toEqual(["security.checkRecognised"]);
+      .toEqual(["security.evidenceKindMatches"]);
+  });
+
+  it("blocks free text the record publishes verbatim", () => {
+    // The sign-off and the not-repeated reasons are typed by a person and
+    // rendered straight into the record, so they are scanned exactly as an
+    // observation is.
+    expect(
+      findingsFor(fullyEvidenced(), {
+        projectOwnerSignOff: `Project Owner ${SOURCE_ADDRESS}`,
+      }).map((finding) => finding.finding),
+    ).toEqual(["security.evidenceSanitized"]);
+
+    expect(
+      findingsFor(fullyEvidenced(), {
+        notRepeated: { "manual.replayAndRace": `raised by ${SIGNED_TOKEN}` },
+      }).map((finding) => finding.finding),
+    ).toEqual(["security.evidenceSanitized"]);
+  });
+
+  it("blocks a check that answered differently twice on the same candidate", () => {
+    const flaky = [
+      ...fullyEvidenced(),
+      result("smoke.student", {
+        outcome: "FAILED",
+        observedAt: new Date(OBSERVED_AT.getTime() - 60_000),
+      }),
+    ];
+    expect(findingsFor(flaky)).toEqual([
+      {
+        finding: "security.resultStable",
+        check: "smoke.student",
+        detail: "1 earlier attempt(s) on this candidate disagreed with the result that stands",
+      },
+    ]);
   });
 });
 
@@ -400,6 +443,23 @@ describe("the rerun scope after launch", () => {
         finding: "security.rerunScopeCovered",
         check: "manual.replayAndRace",
         detail: "the check was not repeated and the record states no reason",
+      },
+    ]);
+  });
+
+  it("names a public launch, not a boundary, when the complete gate is what required it", () => {
+    const carried = fullyEvidenced().filter(
+      (entry) => entry.check !== "manual.replayAndRace",
+    );
+    expect(
+      findingsFor(carried, {
+        notRepeated: { "manual.replayAndRace": "no change to Booking or Audit paths" },
+      }),
+    ).toEqual([
+      {
+        finding: "security.rerunScopeCovered",
+        check: "manual.replayAndRace",
+        detail: "a public launch runs the complete gate, so no check may be carried forward",
       },
     ]);
   });

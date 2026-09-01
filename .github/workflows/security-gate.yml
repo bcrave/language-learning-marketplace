@@ -118,6 +118,15 @@ jobs:
           pnpm verify:public-artifacts
           pnpm test:unit
 
+      # Its own step rather than a line inside the static one. A dependency
+      # advisory is the check most likely to start failing without anybody
+      # touching this repository, and folding it in would report a lockfile
+      # advisory as a broken build.
+      - name: The production dependency audit
+        id: dependency-integrity
+        continue-on-error: true
+        run: pnpm audit --prod --audit-level high
+
       - name: The PostgreSQL integration suite
         id: postgres-integration
         continue-on-error: true
@@ -139,9 +148,12 @@ jobs:
           SENTRY_INGEST_ORIGIN: ${{ vars.SENTRY_INGEST_ORIGIN }}
         run: pnpm --filter @marketplace/backend release:public-surface
 
+      # The policy accepts a ten-minute limit for the suite, so exceeding it is
+      # a failed check rather than a job that waits.
       - name: The deployed role and cross-role smoke journey
         id: deployed-smoke
         continue-on-error: true
+        timeout-minutes: 10
         env:
           PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
           AUTH0_ISSUER: ${{ vars.AUTH0_ISSUER }}
@@ -197,6 +209,7 @@ jobs:
             pnpm --filter @marketplace/backend release:security-check
           }
           record static-and-unit "${{ steps.static-and-unit.outcome == 'success' && 'PASSED' || 'FAILED' }}" "the static, build-evidence and unit suite ${{ steps.static-and-unit.outcome }}"
+          record dependency-integrity "${{ steps.dependency-integrity.outcome == 'success' && 'PASSED' || 'FAILED' }}" "the production dependency audit ${{ steps.dependency-integrity.outcome }}"
           record postgres-integration "${{ steps.postgres-integration.outcome == 'success' && 'PASSED' || 'FAILED' }}" "the PostgreSQL integration suite ${{ steps.postgres-integration.outcome }}"
           record role-journeys "${{ steps.role-journeys.outcome == 'success' && 'PASSED' || 'FAILED' }}" "the cross-browser role journeys ${{ steps.role-journeys.outcome }}"
           record public-surface "${{ steps.public-surface.outcome == 'success' && 'PASSED' || 'FAILED' }}" "the deployed public surface check ${{ steps.public-surface.outcome }}"

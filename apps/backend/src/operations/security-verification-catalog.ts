@@ -101,6 +101,7 @@ export const SECURITY_GATE_SUITES = {
   "role-journeys": "The cross-browser accessible role journeys",
   "public-surface": "The deployed browser policy and source-map probe",
   "deployed-smoke": "The deployed role and cross-role smoke journey",
+  "dependency-integrity": "The production dependency audit",
 } as const;
 
 export type SecurityGateSuite = keyof typeof SECURITY_GATE_SUITES;
@@ -143,7 +144,7 @@ export const SECURITY_VERIFICATION_CATALOG: readonly SecurityCheck[] = [
     suite: "role-journeys",
     boundaries: ["browser-to-auth0", "browser-to-application"],
     statement:
-      "tokens reach no persistent browser storage, URL, cache, log, error, telemetry event, or retained artifact",
+      "no credential-shaped value reaches persistent browser storage or the address bar, and the client persists only preferences",
   },
   {
     id: "identity.actingRoleFromAuthority",
@@ -234,7 +235,7 @@ export const SECURITY_VERIFICATION_CATALOG: readonly SecurityCheck[] = [
     suite: "role-journeys",
     boundaries: ["internet-to-caddy", "browser-to-application"],
     statement:
-      "external links gain no opener control and unsupported HTML, scripts, styling, uploads, embeds, media, schemes, and browser capabilities stay unavailable",
+      "every external link carries `noopener` and `noreferrer`, so an opened tab reaches neither back through `window.opener` nor the page it came from",
   },
 
   // Integrity, replay, and concurrency.
@@ -283,7 +284,7 @@ export const SECURITY_VERIFICATION_CATALOG: readonly SecurityCheck[] = [
     suite: "static-and-unit",
     boundaries: ["repository-to-deployment"],
     statement:
-      "the source tree, generated artifacts, production browser bundle, and retained artifacts carry no credential or private configuration",
+      "the built browser and server artifacts carry no credential shape, no inline or published source map, and no private surface marker",
   },
   {
     id: "build.gitHistoryScan",
@@ -324,10 +325,23 @@ export const SECURITY_VERIFICATION_CATALOG: readonly SecurityCheck[] = [
     id: "build.dependencyIntegrity",
     family: "evidence-leakage",
     evidence: "SUITE",
-    suite: "static-and-unit",
+    // Its own suite rather than a line inside the static one. A dependency
+    // advisory is the check most likely to start failing without anybody
+    // touching this repository, and folding it into the suite that also
+    // typechecks would report a lockfile advisory as a broken build.
+    suite: "dependency-integrity",
     boundaries: ["repository-to-deployment"],
     statement:
-      "the production dependency and build-integrity checks this implementation selected report no unremediated finding",
+      "the production dependency audit reports no unremediated advisory at or above the accepted severity",
+  },
+  {
+    id: "surface.browserPolicyEnforced",
+    family: "browser-safety",
+    evidence: "DEPLOYED",
+    suite: "public-surface",
+    boundaries: ["internet-to-caddy", "browser-to-application"],
+    statement:
+      "the live public origin emits exactly the versioned browser policy, carries no report-only header, and names no software",
   },
   {
     id: "build.sourceMapsNotServed",
@@ -543,8 +557,16 @@ export const SECURITY_VERIFICATION_CATALOG: readonly SecurityCheck[] = [
     evidence: "DEPLOYED",
     suite: "deployed-smoke",
     boundaries: ["internet-to-caddy", "caddy-to-api", "api-to-postgresql"],
+    // Deliberately narrower than the policy's sentence. The rest of that
+    // sentence — readiness, the worker heartbeat, private API and PostgreSQL
+    // exposure — is proved where it can be: the readiness gates run inside
+    // Railway's private network as pre-deploy steps (ADR 0028 gives the API no
+    // public address), and `configuration.railway` asserts the private
+    // networking. Browser headers belong to `surface.browserPolicyEnforced`. A
+    // statement claiming all of it would be a check recording a pass for
+    // things this suite never looks at.
     statement:
-      "readiness, the worker heartbeat, browser headers, private API and PostgreSQL exposure, persisted-operation enforcement, disabled production-only surfaces, and privacy-safe errors all hold",
+      "the public origin enforces persisted operations, refuses an anonymous caller, and answers every denial privacy-safely",
   },
 
   // The applicable drills, read from the readiness exercises they already wrote.
@@ -565,8 +587,6 @@ export const SECURITY_VERIFICATION_CATALOG: readonly SecurityCheck[] = [
       "a change-triggered recovery drill returned the deployment to service with fixture reconciliation, a fresh worker heartbeat, and the deployed role journeys",
   },
 ] as const;
-
-export type SecurityCheckId = (typeof SECURITY_VERIFICATION_CATALOG)[number]["id"];
 
 /** Whether this build defines a check, for results read back from storage. */
 export function isSecurityCheck(id: string): boolean {
@@ -632,7 +652,12 @@ export const SECURITY_GATE_READINESS_EVIDENCE: Readonly<
 > = {
   "api-database-readiness": {
     exercise: "security-gate-deployment-readiness",
-    checks: ["smoke.deploymentBoundary", "configuration.caddy", "configuration.railway"],
+    checks: [
+      "smoke.deploymentBoundary",
+      "surface.browserPolicyEnforced",
+      "configuration.caddy",
+      "configuration.railway",
+    ],
   },
   "worker-heartbeat-backlog-exhaustion": {
     exercise: "security-gate-worker-liveness",
@@ -656,6 +681,8 @@ export const SECURITY_GATE_READINESS_EVIDENCE: Readonly<
       "smoke.platformAdministrator",
       "smoke.crossRoleDenial",
       "smoke.deploymentBoundary",
+      "surface.browserPolicyEnforced",
+      "build.sourceMapsNotServed",
     ],
   },
   "third-party-integrations": {

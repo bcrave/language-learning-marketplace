@@ -144,6 +144,7 @@ try {
       scope: environment.SECURITY_GATE_SCOPE,
       changedBoundaries,
       notRepeated,
+      evidenceLink: environment.SECURITY_GATE_EVIDENCE_LINK,
       generatedAt: new Date(),
       projectOwnerSignOff: environment.SECURITY_GATE_SIGN_OFF ?? null,
     },

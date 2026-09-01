@@ -53,11 +53,18 @@ create table security_gate_results (
   check (residual_risk is null or signed_off_by is not null)
 );
 
--- Rerunning a check for the same candidate replaces its row: the record carries
--- the outcome that stands, not every attempt. The attempts live in the workflow
--- runs the evidence link points at.
-create unique index security_gate_results_candidate
-  on security_gate_results (release, check_id);
+-- Every attempt is kept, unlike the readiness exercises, which keep only the
+-- outcome that stands. The release rule blocks on a "failed, missing, flaky,
+-- stale, or unexplained" result, and flakiness is only visible as disagreement
+-- between attempts: a table that let a passing rerun overwrite a failure would
+-- turn the one word the gate cannot otherwise detect into a silent pass.
+--
+-- The record reads the latest attempt per check and says when the earlier ones
+-- disagreed with it, so a genuine false positive can still be closed with
+-- reproducible evidence — the policy's own escape — while a check that passes
+-- only sometimes stays blocked.
+create index security_gate_results_candidate
+  on security_gate_results (release, check_id, observed_at desc);
 
 create index security_gate_results_recent
   on security_gate_results (observed_at desc);

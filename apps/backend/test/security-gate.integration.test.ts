@@ -87,6 +87,7 @@ describe("the Security Release Gate", () => {
       scope: "PUBLIC_LAUNCH",
       changedBoundaries: [],
       notRepeated: {},
+      evidenceLink: EVIDENCE,
       generatedAt: GENERATED_AT,
       projectOwnerSignOff: "Project Owner",
       ...overrides,
@@ -169,13 +170,52 @@ describe("the Security Release Gate", () => {
       expect(recorded).toEqual([result("configuration.sentry")]);
     });
 
-    it("replaces an earlier run of the same check for the same candidate", async () => {
-      await recordSecurityCheckResult(db, result("smoke.student", { outcome: "FAILED" }));
-      await recordSecurityCheckResult(db, result("smoke.student", { outcome: "PASSED" }));
+    it("keeps every attempt so a rerun cannot bury the one that failed", async () => {
+      await recordSecurityCheckResult(
+        db,
+        result("smoke.student", { outcome: "FAILED", observedAt: OBSERVED_AT }),
+      );
+      await recordSecurityCheckResult(
+        db,
+        result("smoke.student", {
+          outcome: "PASSED",
+          observedAt: new Date(OBSERVED_AT.getTime() + 60_000),
+        }),
+      );
 
       const recorded = await securityCheckResultsFor(db, RELEASE);
-      expect(recorded).toHaveLength(1);
-      expect(recorded[0]).toMatchObject({ check: "smoke.student", outcome: "PASSED" });
+      expect(recorded.map((entry) => entry.outcome)).toEqual(["FAILED", "PASSED"]);
+    });
+
+    it("blocks a check that answered differently twice on one candidate", async () => {
+      await recordRecoveryDrills();
+      await recordEveryGateCheck();
+      // The same commit, the same check, a passing rerun after a failure. Each
+      // attempt looks ordinary; only the pair is evidence of flakiness, which
+      // the release rule blocks on by name.
+      await recordSecurityCheckResult(
+        db,
+        result("smoke.student", {
+          outcome: "FAILED",
+          observedAt: new Date(OBSERVED_AT.getTime() + 60_000),
+        }),
+      );
+      await recordSecurityCheckResult(
+        db,
+        result("smoke.student", {
+          outcome: "PASSED",
+          observedAt: new Date(OBSERVED_AT.getTime() + 120_000),
+        }),
+      );
+
+      const record = await assembleRecord();
+      expect(securityGateFindings(record)).toEqual([
+        {
+          finding: "security.resultStable",
+          check: "smoke.student",
+          detail: "1 earlier attempt(s) on this candidate disagreed with the result that stands",
+        },
+      ]);
     });
 
     it("refuses a check the verification catalog does not define", async () => {

@@ -326,6 +326,31 @@ export async function runDeployedSmoke(
       `${spanish.length} Topics answered in both Interface Locales`,
     );
 
+    // The anonymous public surface. A reviewer who has not signed in reaches
+    // the deliberately public Teacher Profile and nothing else — which needs a
+    // Teacher to ask about, so it runs here rather than before discovery.
+    //
+    // Both halves matter. A deployment that refused the profile would have
+    // broken the one thing the threat model publishes; one that answered
+    // Class Session Discovery would be handing out a Student's view of the
+    // marketplace to the internet.
+    const anonymousProfile = fieldOf<{ teachingTopics: { key: string }[] }>(
+      "anonymous.publicSurface",
+      await graphql(null, "SmokeTeacherProfile", {
+        teacherUserId: bookableSession.teacherProfile.id,
+        locale: "EN",
+      }),
+      "publicTeacherProfile",
+    );
+    const anonymousDiscovery = await graphql(null, "SmokeDiscoveryOptions");
+    if (!anonymousDiscovery.errors?.length || anonymousDiscovery.data?.["classSessionDiscoveryOptions"]) {
+      fail("anonymous.publicSurface", "Class Session Discovery answered an anonymous caller");
+    }
+    record(
+      "anonymous.publicSurface",
+      `the public Teacher Profile answered anonymously with ${anonymousProfile.teachingTopics.length} Topics while Discovery did not`,
+    );
+
     const balanceBefore = fieldOf<{ availableBalance: number }>(
       "booking.created",
       await graphql("student", "SmokeCredits"),
