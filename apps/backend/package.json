@@ -18,6 +18,8 @@
     "release:recovery-drill": "node dist/operations/recovery-drill-main.js",
     "release:rebuild-fixtures": "node dist/operations/canonical-data-rebuild-main.js",
     "release:recover-fixtures": "node dist/operations/canonical-data-recovery-main.js",
+    "release:security-check": "node dist/operations/security-check-main.js",
+    "release:security-gate": "node dist/operations/security-gate-main.js",
     "release:smoke": "node dist/operations/deployed-smoke-main.js",
     "start:api": "node dist/api/main.js",
     "start:test-api": "node dist/api/test-main.js",

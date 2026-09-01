@@ -5,10 +5,6 @@ import { z } from "zod";
 
 import { parseDemonstrationIdentityBinding } from "../auth/demonstration-identities.js";
 import { createDatabase } from "../database/database.js";
-import {
-  bearerHeaders,
-  requestDemonstrationAccessToken,
-} from "./demonstration-access-token.js";
 import { runDeployedSmoke } from "./deployed-smoke.js";
 import {
   recordRecoveryDrillEvidence,
@@ -16,6 +12,10 @@ import {
   runRecoveryDrill,
   type RoleJourneyResult,
 } from "./recovery-drills.js";
+import {
+  smokeAuthorizationHeaders,
+  smokeCredentialEnvironmentSchema,
+} from "./smoke-credentials.js";
 import { absentWhenBlank } from "./workflow-inputs.js";
 
 /**
@@ -80,46 +80,13 @@ function configuredIdentityBinding() {
  * (ADR 0020, ADR 0039).
  */
 async function roleJourneys(): Promise<RoleJourneyResult> {
-  const tenant = z.object({
-    PUBLIC_ORIGIN: z.url(),
-    AUTH0_ISSUER: z.url(),
-    AUTH0_AUDIENCE: z.string().min(1),
-    SMOKE_CLIENT_ID: z.string().min(1),
-    SMOKE_CLIENT_SECRET: z.string().min(1),
-    SMOKE_STUDENT_USERNAME: z.string().min(1),
-    SMOKE_STUDENT_PASSWORD: z.string().min(1),
-    SMOKE_ADMINISTRATOR_USERNAME: z.string().min(1),
-    SMOKE_ADMINISTRATOR_PASSWORD: z.string().min(1),
-  }).parse(process.env);
-  const credentials = {
-    issuer: tenant.AUTH0_ISSUER,
-    audience: tenant.AUTH0_AUDIENCE,
-    clientId: tenant.SMOKE_CLIENT_ID,
-    clientSecret: tenant.SMOKE_CLIENT_SECRET,
-  };
-  const [student, administrator] = await Promise.all([
-    requestDemonstrationAccessToken({
-      ...credentials,
-      credential: {
-        username: tenant.SMOKE_STUDENT_USERNAME,
-        password: tenant.SMOKE_STUDENT_PASSWORD,
-      },
-    }),
-    requestDemonstrationAccessToken({
-      ...credentials,
-      credential: {
-        username: tenant.SMOKE_ADMINISTRATOR_USERNAME,
-        password: tenant.SMOKE_ADMINISTRATOR_PASSWORD,
-      },
-    }),
-  ]);
+  const tenant = smokeCredentialEnvironmentSchema
+    .extend({ PUBLIC_ORIGIN: z.url() })
+    .parse(process.env);
 
   const report = await runDeployedSmoke({
     origin: tenant.PUBLIC_ORIGIN,
-    authorizationFor: {
-      student: bearerHeaders(student),
-      administrator: bearerHeaders(administrator),
-    },
+    authorizationFor: await smokeAuthorizationHeaders(tenant),
   });
   const failed = report.checks.filter((check) => check.outcome !== "PASSED");
   return {

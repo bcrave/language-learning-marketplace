@@ -1,0 +1,134 @@
+name: Security Evidence
+
+# Records one Project Owner-performed Security Release Gate check against an
+# exact candidate: a manual abuse case, a live configuration assertion, a CSP
+# rollout journey, or the reachable-history secret scan.
+#
+# These are the checks no job can run. Somebody drove a modified client, opened
+# the Auth0 tenant, or walked the login journey with the report-only policy in
+# place, and this is where what they saw becomes dated evidence attached to the
+# candidate. The Security Gate then reads it back; nothing is retyped at
+# assembly time, so a case recorded a week before release still names the exact
+# release it was performed against.
+#
+# The observation is privacy-safe by contract and by check: the application
+# refuses a credential shape, an address, or a link that is not private provider
+# evidence, and fails the job rather than storing it.
+#
+# It records evidence and changes no marketplace state, so it takes no
+# maintenance queue and is safe to dispatch at any time.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: The exact candidate commit this check was performed against.
+        required: true
+        type: string
+      check:
+        description: >-
+          The verification-catalog check identifier, e.g.
+          manual.copiedCredentials or configuration.auth0.
+        required: true
+        type: string
+      outcome:
+        description: What the check found.
+        required: true
+        type: choice
+        options: [PASSED, FAILED, NOT_RUN]
+      observation:
+        description: >-
+          Privacy-safe: what was seen, never the value that was seen. No
+          credential, token, address, personal data, or attack payload.
+        required: true
+        type: string
+      observed_at:
+        description: >-
+          When it was performed, as an ISO 8601 instant. Leave empty for now.
+        required: false
+        type: string
+      residual_risk:
+        description: >-
+          For a FAILED result only, and only where the finding maps wholly to a
+          residual risk the threat model already accepts, e.g.
+          residual.rateLimitEvasion. A new risk needs a threat-model amendment
+          first; the gate cannot invent an exception.
+        required: false
+        type: string
+      sign_off:
+        description: Project Owner sign-off recorded against this check.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24.15.0
+  PNPM_VERSION: 11.0.0
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 15
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_DEPLOYMENT_TOKEN }}
+      RAILWAY_DATABASE_SERVICE: ${{ vars.RAILWAY_DATABASE_SERVICE || 'Postgres' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The catalog this build knows has to be the one the candidate ships,
+          # or a check identifier could be accepted here that the gate then
+          # cannot name when it assembles the record.
+          ref: ${{ inputs.release }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @marketplace/backend build
+      - run: npm install --global @railway/cli
+      - name: Open protected database tunnel
+        run: |
+          railway connect "$RAILWAY_DATABASE_SERVICE" --tunnel-only --port 15432 > "$RUNNER_TEMP/railway-tunnel.log" 2>&1 &
+          echo "RAILWAY_TUNNEL_PID=$!" >> "$GITHUB_ENV"
+          railway variable list --service "$RAILWAY_DATABASE_SERVICE" --json > "$RUNNER_TEMP/railway-database-variables.json"
+          node --input-type=module -e '
+            import { appendFileSync, readFileSync } from "node:fs";
+            const variables = JSON.parse(readFileSync(process.env.RUNNER_TEMP + "/railway-database-variables.json", "utf8"));
+            const url = new URL(variables.DATABASE_URL);
+            url.hostname = "127.0.0.1";
+            url.port = "15432";
+            appendFileSync(process.env.GITHUB_ENV, `DATABASE_URL=${url.toString()}\n`);
+          '
+          node --input-type=module -e '
+            import net from "node:net";
+            for (let attempt = 0; attempt < 60; attempt += 1) {
+              const ready = await new Promise((resolve) => {
+                const socket = net.connect(15432, "127.0.0.1", () => { socket.destroy(); resolve(true); });
+                socket.once("error", () => resolve(false));
+              });
+              if (ready) process.exit(0);
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+            process.exit(1);
+          '
+      - name: Record the check
+        env:
+          APP_RELEASE: ${{ inputs.release }}
+          SECURITY_CHECK: ${{ inputs.check }}
+          SECURITY_OUTCOME: ${{ inputs.outcome }}
+          SECURITY_OBSERVATION: ${{ inputs.observation }}
+          SECURITY_OBSERVED_AT: ${{ inputs.observed_at }}
+          SECURITY_RESIDUAL_RISK: ${{ inputs.residual_risk }}
+          SECURITY_SIGN_OFF: ${{ inputs.sign_off }}
+          SECURITY_EVIDENCE_LINK: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SECURITY_CORRELATION_ID: security-evidence-${{ github.run_id }}
+        run: pnpm --filter @marketplace/backend release:security-check
+      - name: Close protected database tunnel
+        if: always()
+        run: kill "$RAILWAY_TUNNEL_PID" 2>/dev/null || true

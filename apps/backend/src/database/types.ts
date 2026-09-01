@@ -80,7 +80,7 @@ export interface RoleWorkspacePlacesTable {
 export interface AuditEntriesTable {
   id: Generated<string>;
   actor_user_id: string | null;
-  system_identity: "CLASS_SESSION_REMINDER_WORKER" | "WAITLIST_WORKER" | "NOTIFICATION_DELIVERY_WORKER" | "NOTIFICATION_MAINTENANCE_WORKER" | "SPONSORSHIP_INVITATION_WORKER" | "SPONSORSHIP_CREDIT_WORKER" | "REPORT_EXPORT_WORKER" | "USER_ANONYMIZATION_WORKER" | "AUDIT_RETENTION_WORKER" | "CANONICAL_FIXTURE_LOADER" | "FIXTURE_MAINTENANCE_WORKER" | "CANONICAL_DATA_REBUILD" | "RECOVERY_DRILL" | null;
+  system_identity: "CLASS_SESSION_REMINDER_WORKER" | "WAITLIST_WORKER" | "NOTIFICATION_DELIVERY_WORKER" | "NOTIFICATION_MAINTENANCE_WORKER" | "SPONSORSHIP_INVITATION_WORKER" | "SPONSORSHIP_CREDIT_WORKER" | "REPORT_EXPORT_WORKER" | "USER_ANONYMIZATION_WORKER" | "AUDIT_RETENTION_WORKER" | "CANONICAL_FIXTURE_LOADER" | "FIXTURE_MAINTENANCE_WORKER" | "CANONICAL_DATA_REBUILD" | "RECOVERY_DRILL" | "SECURITY_RELEASE_GATE" | null;
   acting_role: UserRole | null;
   operation: string;
   target_type: string;
@@ -176,6 +176,21 @@ export interface OperationalReadinessExercisesTable {
   evidence_link: string;
   limitation: string | null;
   follow_up_owner: string | null;
+  correlation_id: string;
+  signed_off_by: string | null;
+  signed_off_at: Date | null;
+}
+
+export interface SecurityGateResultsTable {
+  id: Generated<string>;
+  release: string;
+  check_id: string;
+  evidence_kind: "SUITE" | "DEPLOYED" | "OWNER" | "DRILL";
+  outcome: "PASSED" | "FAILED" | "NOT_RUN";
+  observed_at: Date;
+  evidence_link: string;
+  observation: string;
+  residual_risk: string | null;
   correlation_id: string;
   signed_off_by: string | null;
   signed_off_at: Date | null;
@@ -288,6 +303,7 @@ export interface DatabaseSchema {
   rolling_fixture_reconciliations: RollingFixtureReconciliationsTable;
   operational_incidents: OperationalIncidentsTable;
   operational_readiness_exercises: OperationalReadinessExercisesTable;
+  security_gate_results: SecurityGateResultsTable;
   schema_migrations: SchemaMigrationsTable;
   curriculum_levels: CurriculumLevelsTable;
   student_placements: StudentPlacementsTable;
