@@ -36,6 +36,8 @@ await build({
         "src/operations/readiness-evidence-main.ts",
         "src/operations/recovery-drill-main.ts",
         "src/operations/release-gate-main.ts",
+        "src/operations/security-check-main.ts",
+        "src/operations/security-gate-main.ts",
         "src/worker/main.ts",
       ],
   format: "esm",

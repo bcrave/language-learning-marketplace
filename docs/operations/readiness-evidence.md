@@ -21,13 +21,18 @@ workflow reads two things and combines them:
 Only three things are supplied by a person, because only a person has them: a
 limitation, its follow-up owner, and sign-off.
 
-Only the backup and recovery row records itself today, from the two recovery
-drills. The remaining families are recorded by the release, security-gate, and
-role-journey work that owns them, so until those land the generator always
-blocks with a `readiness.familyExercised` finding per unrecorded family. That is
-the intended state, not a gap: the record is designed to refuse a candidate it
-cannot evidence, and a generator that passed while eight families were unproven
-would be worse than one that has not been written yet.
+Two writers cover the ten families between them. The backup and recovery row is
+written by the two recovery drills, which are the only exercises that measure a
+recovery. Every other family is written by the [Security Release
+Gate](../security-verification.md), from the checks its verification catalog
+maps to that family: a family passes only when every check evidencing it passed,
+and a check with no result leaves its family failed rather than absent.
+
+That split follows what each thing can honestly prove. A drill is the only
+exercise that can say how long a restore took, and the gate is the only place
+that already runs the deployed smokes, the configuration assertions, and the
+abuse cases the other nine families are proved by. A second writer for either
+would be a second copy of a fact that can then disagree with the first.
 
 The generator is fail-closed and its job fails when any row blocks the release.
 A family with no exercise for this candidate blocks exactly as a failed exercise

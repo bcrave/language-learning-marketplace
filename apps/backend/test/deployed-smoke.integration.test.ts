@@ -9,6 +9,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createApi } from "../src/api/app.js";
+import { createResourceBudgets } from "../src/api/resource-budget.js";
 import { createMarketplaceServer } from "../src/api/server.js";
 import { createDatabase, type Database } from "../src/database/database.js";
 import { latestMigrationName, migrateDatabase } from "../src/database/migrate.js";
@@ -20,9 +21,16 @@ import { runDeployedSmoke } from "../src/operations/deployed-smoke.js";
 // Sofía teaches every showcase Class Session, so the Student seat is Casey's:
 // a Student with credits, no teaching commitment, and no existing Booking.
 const ADMINISTRATOR = canonicalFixtureManifest.identities[0]!.id;
+const TEACHER = ADMINISTRATOR;
 const STUDENT = canonicalFixtureManifest.identities.find(
   (identity) => identity.displayName === "Casey Nguyen",
 )!.id;
+// Alex manages the second Organization and teaches nothing. Both matter: the
+// Organization Manager journey has to report on an Organization of its own,
+// and the cross-role replay has to be refused a roster this identity holds no
+// relationship with rather than one it happens to teach.
+const ORGANIZATION_MANAGER = canonicalFixtureManifest.organizations[1]!.managerUserIds[0]!;
+const MANAGED_ORGANIZATION = canonicalFixtureManifest.organizations[1]!.id;
 
 // The deployed smoke journey is the final release stage of ADR 0038. Running it
 // here against a real server over HTTP is the highest practical seam: the same
@@ -55,6 +63,17 @@ describe("deployed smoke journey", () => {
         authMode: "fake",
         nodeEnv: "test",
         enforcesPublicBoundary: true,
+        // A release runs the journey once, well inside ADR 0025's per-minute
+        // allowances. This suite runs it several times in a row from one
+        // source, so the thresholds are widened here rather than letting a
+        // later journey fail on the previous one's spending. The allowances
+        // themselves are proved by `public-api-boundary.integration.test.ts`,
+        // which narrows them deliberately to reach them.
+        resourceBudgets: createResourceBudgets({
+          userMutationLimit: 10_000,
+          userReportLimit: 10_000,
+          sourceDeniedAuthorizationLimit: 10_000,
+        }),
       }),
       currentSchemaMigration: await latestMigrationName(),
       db,
@@ -75,24 +94,33 @@ describe("deployed smoke journey", () => {
   function credentials(student = STUDENT) {
     return {
       student: { "x-demo-user-id": student },
+      teacher: { "x-demo-user-id": TEACHER },
+      organizationManager: { "x-demo-user-id": ORGANIZATION_MANAGER },
       administrator: { "x-demo-user-id": ADMINISTRATOR },
     };
   }
 
-  it("proves authentication, localization, discovery, Booking, and cancellation", async () => {
+  it("proves every shared role's journey and the denials between them", async () => {
     const report = await runDeployedSmoke({
       origin,
       authorizationFor: credentials(),
     });
 
+    expect(report.checks.filter(({ outcome }) => outcome === "FAILED")).toEqual([]);
     expect(report.checks.map(({ name }) => name)).toEqual([
       "authentication.anonymousDenied",
       "boundary.persistedOperationsOnly",
       "authentication.studentIdentified",
       "discovery.results",
       "localization.teacherProfileLocalized",
+      "anonymous.publicSurface",
       "booking.created",
       "booking.cancelled",
+      "teacher.assignedRoster",
+      "teacher.permittedAction",
+      "organization.scopedReport",
+      "administrator.representativeOperation",
+      "crossRole.denied",
       "audit.entriesRecorded",
     ]);
     expect(report.passed).toBe(true);
@@ -133,7 +161,54 @@ describe("deployed smoke journey", () => {
       .execute();
 
     expect(entries.filter((entry) => entry.outcome === "SUCCEEDED").map((entry) => entry.operation))
-      .toEqual(expect.arrayContaining(["booking.created", "booking.cancelled"]));
+      .toEqual(expect.arrayContaining([
+        "booking.created",
+        "booking.cancelled",
+        "class-credit.adjusted",
+      ]));
+  });
+
+  it("leaves the Teacher's availability and the Student's balance where it found them", async () => {
+    const exceptionsBefore = await db
+      .selectFrom("availability_exceptions")
+      .select(({ fn }) => fn.countAll<string>().as("count"))
+      .where("teacher_user_id", "=", TEACHER)
+      // Removal is history-preserving, so the row stays and `removed_at` is
+      // what makes it stop counting. Counting rows would report the journey as
+      // having left an exception behind when it left only a record of one.
+      .where("removed_at", "is", null)
+      .executeTakeFirstOrThrow();
+
+    const report = await runDeployedSmoke({ origin, authorizationFor: credentials() });
+    expect(report.passed).toBe(true);
+
+    const exceptionsAfter = await db
+      .selectFrom("availability_exceptions")
+      .select(({ fn }) => fn.countAll<string>().as("count"))
+      .where("teacher_user_id", "=", TEACHER)
+      // Removal is history-preserving, so the row stays and `removed_at` is
+      // what makes it stop counting. Counting rows would report the journey as
+      // having left an exception behind when it left only a record of one.
+      .where("removed_at", "is", null)
+      .executeTakeFirstOrThrow();
+
+    expect(exceptionsAfter.count).toBe(exceptionsBefore.count);
+  });
+
+  it("reports for exactly the Organization the manager holds", async () => {
+    const report = await runDeployedSmoke({ origin, authorizationFor: credentials() });
+
+    const scoped = report.checks.find(({ name }) => name === "organization.scopedReport");
+    expect(scoped?.outcome).toBe("PASSED");
+    // The identifier stays out of the evidence, so the boundary is asserted
+    // here, against the Organization the manifest says this manager holds.
+    const cohorts = await db
+      .selectFrom("cohorts")
+      .select("organization_id")
+      .where("organization_id", "!=", MANAGED_ORGANIZATION)
+      .execute();
+    expect(cohorts.length).toBeGreaterThan(0);
+    expect(scoped?.detail).toContain("one Organization's report");
   });
 
   it("keeps no credential or personal content in its evidence", async () => {
@@ -142,6 +217,8 @@ describe("deployed smoke journey", () => {
     const evidence = JSON.stringify(report);
     expect(evidence).not.toContain(STUDENT);
     expect(evidence).not.toContain(ADMINISTRATOR);
+    expect(evidence).not.toContain(ORGANIZATION_MANAGER);
+    expect(evidence).not.toContain(MANAGED_ORGANIZATION);
     expect(evidence).not.toContain("x-demo-user-id");
   });
 

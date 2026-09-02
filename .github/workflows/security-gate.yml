@@ -1,0 +1,243 @@
+name: Security Gate
+
+# The fail-closed Security Release Gate of `docs/security-verification.md`, run
+# for one exact production candidate.
+#
+# It does two things in order. First it runs the automated suites and records
+# what each one proved, as the catalog's stable check identifiers. Then it
+# assembles the Security Gate Record from every result standing against this
+# candidate — those suites, the Project Owner's manually recorded abuse cases,
+# configuration assertions and CSP journeys, and the two recovery drills read
+# from the readiness exercises they wrote themselves — and enforces the release
+# rule on it.
+#
+# Every suite step continues on failure, deliberately. A suite that failed is a
+# result the record has to carry; stopping at the first one would leave the
+# remaining checks looking unrun, and the owner would not learn what else is
+# broken until they had fixed this one and waited for another gate.
+#
+# A blocked record is still written, uploaded, and recorded as evidence. The
+# gate's job then fails, which is what stops the release: nothing here deploys,
+# and `release.yml` is what publishes only after this has passed.
+#
+# The record is privacy-safe by construction — check identifiers, outcomes,
+# dates, fingerprints, and links to private provider evidence. The raw evidence
+# stays with its provider.
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: >-
+          PUBLIC_LAUNCH runs the complete gate and requires every catalog check.
+          SECURITY_RELEVANT_CHANGE requires the automated baseline plus every
+          check mapped to a changed trust boundary.
+        required: true
+        type: choice
+        options: [PUBLIC_LAUNCH, SECURITY_RELEVANT_CHANGE]
+      changed_boundaries:
+        description: >-
+          Comma-separated trust boundaries this change touched, e.g.
+          browser-to-application,caddy-to-api. Uncertain classification fails
+          closed: name the boundary.
+        required: false
+        type: string
+      not_repeated:
+        description: >-
+          JSON object of check identifier to the reason it was not repeated for
+          this candidate, e.g. {"manual.replayAndRace":"no change to Booking,
+          Class Credit, or Audit paths since the launch gate"}.
+        required: false
+        type: string
+      limitation:
+        description: >-
+          Optional. A non-secret limitation this gate leaves behind, recorded
+          with the follow-up owner in the readiness record.
+        required: false
+        type: string
+      follow_up_owner:
+        description: Required whenever a limitation is recorded.
+        required: false
+        type: string
+      sign_off:
+        description: >-
+          Project Owner sign-off for this candidate. Leave empty to preview
+          which checks still block the release.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# The gate reads the deployment and drives the deployed smoke journey, so it
+# shares the queue with releases and Canonical Data Rebuilds rather than
+# measuring a deployment being replaced underneath it.
+concurrency:
+  group: production-maintenance
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 24.15.0
+  PNPM_VERSION: 11.0.0
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 90
+    env:
+      APP_RELEASE: ${{ github.sha }}
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_DEPLOYMENT_TOKEN }}
+      RAILWAY_DATABASE_SERVICE: ${{ vars.RAILWAY_DATABASE_SERVICE || 'Postgres' }}
+      SECURITY_EVIDENCE_LINK: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      SECURITY_CORRELATION_ID: security-gate-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @marketplace/backend build
+      - run: npm install --global @railway/cli
+
+      # The automated suites, each recorded as the checks it proves. Every one
+      # continues on failure so the record carries the whole picture.
+      - name: Static analysis, build evidence, and the unit suite
+        id: static-and-unit
+        continue-on-error: true
+        run: |
+          pnpm codegen
+          git diff --exit-code
+          pnpm typecheck
+          pnpm lint
+          pnpm build
+          pnpm verify:public-artifacts
+          pnpm test:unit
+
+      # Its own step rather than a line inside the static one. A dependency
+      # advisory is the check most likely to start failing without anybody
+      # touching this repository, and folding it in would report a lockfile
+      # advisory as a broken build.
+      - name: The production dependency audit
+        id: dependency-integrity
+        continue-on-error: true
+        run: pnpm audit --prod --audit-level high
+
+      - name: The PostgreSQL integration suite
+        id: postgres-integration
+        continue-on-error: true
+        run: pnpm test:integration
+
+      - name: The cross-browser role journeys
+        id: role-journeys
+        continue-on-error: true
+        run: |
+          pnpm exec playwright install --with-deps
+          pnpm test:e2e
+
+      - name: The deployed public surface
+        id: public-surface
+        continue-on-error: true
+        env:
+          PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
+          AUTH0_TENANT_ORIGIN: ${{ vars.AUTH0_TENANT_ORIGIN }}
+          SENTRY_INGEST_ORIGIN: ${{ vars.SENTRY_INGEST_ORIGIN }}
+        run: pnpm --filter @marketplace/backend release:public-surface
+
+      # The policy accepts a ten-minute limit for the suite, so exceeding it is
+      # a failed check rather than a job that waits.
+      - name: The deployed role and cross-role smoke journey
+        id: deployed-smoke
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
+          AUTH0_ISSUER: ${{ vars.AUTH0_ISSUER }}
+          AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
+          SMOKE_CLIENT_ID: ${{ secrets.SMOKE_CLIENT_ID }}
+          SMOKE_CLIENT_SECRET: ${{ secrets.SMOKE_CLIENT_SECRET }}
+          SMOKE_STUDENT_USERNAME: ${{ secrets.SMOKE_STUDENT_USERNAME }}
+          SMOKE_STUDENT_PASSWORD: ${{ secrets.SMOKE_STUDENT_PASSWORD }}
+          SMOKE_TEACHER_USERNAME: ${{ secrets.SMOKE_TEACHER_USERNAME }}
+          SMOKE_TEACHER_PASSWORD: ${{ secrets.SMOKE_TEACHER_PASSWORD }}
+          SMOKE_ORGANIZATION_MANAGER_USERNAME: ${{ secrets.SMOKE_ORGANIZATION_MANAGER_USERNAME }}
+          SMOKE_ORGANIZATION_MANAGER_PASSWORD: ${{ secrets.SMOKE_ORGANIZATION_MANAGER_PASSWORD }}
+          SMOKE_ADMINISTRATOR_USERNAME: ${{ secrets.SMOKE_ADMINISTRATOR_USERNAME }}
+          SMOKE_ADMINISTRATOR_PASSWORD: ${{ secrets.SMOKE_ADMINISTRATOR_PASSWORD }}
+        run: pnpm --filter @marketplace/backend release:smoke
+
+      - name: Open protected database tunnel
+        run: |
+          railway connect "$RAILWAY_DATABASE_SERVICE" --tunnel-only --port 15432 > "$RUNNER_TEMP/railway-tunnel.log" 2>&1 &
+          echo "RAILWAY_TUNNEL_PID=$!" >> "$GITHUB_ENV"
+          railway variable list --service "$RAILWAY_DATABASE_SERVICE" --json > "$RUNNER_TEMP/railway-database-variables.json"
+          node --input-type=module -e '
+            import { appendFileSync, readFileSync } from "node:fs";
+            const variables = JSON.parse(readFileSync(process.env.RUNNER_TEMP + "/railway-database-variables.json", "utf8"));
+            const url = new URL(variables.DATABASE_URL);
+            url.hostname = "127.0.0.1";
+            url.port = "15432";
+            appendFileSync(process.env.GITHUB_ENV, `DATABASE_URL=${url.toString()}\n`);
+          '
+          node --input-type=module -e '
+            import net from "node:net";
+            for (let attempt = 0; attempt < 60; attempt += 1) {
+              const ready = await new Promise((resolve) => {
+                const socket = net.connect(15432, "127.0.0.1", () => { socket.destroy(); resolve(true); });
+                socket.once("error", () => resolve(false));
+              });
+              if (ready) process.exit(0);
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+            process.exit(1);
+          '
+
+      # One recorded outcome per suite, covering every catalog check that suite
+      # proves. `steps.<id>.outcome` is what the suite actually did, which is
+      # the only reading that survives `continue-on-error`.
+      - name: Record the automated suite results
+        run: |
+          set -euo pipefail
+          record() {
+            SECURITY_SUITE="$1" \
+            SECURITY_OUTCOME="$2" \
+            SECURITY_OBSERVATION="$3" \
+            pnpm --filter @marketplace/backend release:security-check
+          }
+          record static-and-unit "${{ steps.static-and-unit.outcome == 'success' && 'PASSED' || 'FAILED' }}" "the static, build-evidence and unit suite ${{ steps.static-and-unit.outcome }}"
+          record dependency-integrity "${{ steps.dependency-integrity.outcome == 'success' && 'PASSED' || 'FAILED' }}" "the production dependency audit ${{ steps.dependency-integrity.outcome }}"
+          record postgres-integration "${{ steps.postgres-integration.outcome == 'success' && 'PASSED' || 'FAILED' }}" "the PostgreSQL integration suite ${{ steps.postgres-integration.outcome }}"
+          record role-journeys "${{ steps.role-journeys.outcome == 'success' && 'PASSED' || 'FAILED' }}" "the cross-browser role journeys ${{ steps.role-journeys.outcome }}"
+          record public-surface "${{ steps.public-surface.outcome == 'success' && 'PASSED' || 'FAILED' }}" "the deployed public surface check ${{ steps.public-surface.outcome }}"
+          record deployed-smoke "${{ steps.deployed-smoke.outcome == 'success' && 'PASSED' || 'FAILED' }}" "the deployed role and cross-role smoke journey ${{ steps.deployed-smoke.outcome }}"
+
+      - name: Assemble the Security Gate Record
+        env:
+          SECURITY_GATE_SCOPE: ${{ inputs.scope }}
+          SECURITY_CHANGED_BOUNDARIES: ${{ inputs.changed_boundaries }}
+          SECURITY_NOT_REPEATED: ${{ inputs.not_repeated }}
+          SECURITY_GATE_SIGN_OFF: ${{ inputs.sign_off }}
+          SECURITY_GATE_LIMITATION: ${{ inputs.limitation }}
+          SECURITY_GATE_FOLLOW_UP_OWNER: ${{ inputs.follow_up_owner }}
+          SECURITY_GATE_EVIDENCE_LINK: ${{ env.SECURITY_EVIDENCE_LINK }}
+          SECURITY_GATE_CORRELATION_ID: ${{ env.SECURITY_CORRELATION_ID }}
+          AUTH0_TENANT_ORIGIN: ${{ vars.AUTH0_TENANT_ORIGIN }}
+          SENTRY_INGEST_ORIGIN: ${{ vars.SENTRY_INGEST_ORIGIN }}
+          SECURITY_GATE_RECORD_PATH: ${{ runner.temp }}/security-gate-record.md
+        run: pnpm --filter @marketplace/backend release:security-gate
+
+      - name: Upload the Security Gate Record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-gate-record-${{ github.sha }}
+          path: ${{ runner.temp }}/security-gate-record.md
+          if-no-files-found: error
+
+      - name: Close protected database tunnel
+        if: always()
+        run: kill "$RAILWAY_TUNNEL_PID" 2>/dev/null || true

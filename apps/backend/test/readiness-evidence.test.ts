@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { INCIDENT_FAMILIES, type IncidentFamily } from "../src/observability/alert-policy.js";
+import { isPrivateEvidenceLink } from "../src/operations/evidence-boundary.js";
 import {
   buildReadinessEvidenceRecord,
-  isPrivateEvidenceLink,
   readinessEvidenceFindings,
   renderReadinessEvidence,
   type ReadinessCandidate,

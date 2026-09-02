@@ -102,9 +102,13 @@ jobs:
           SENTRY_INGEST_ORIGIN: ${{ vars.SENTRY_INGEST_ORIGIN }}
         run: pnpm --filter @marketplace/backend release:public-surface
 
-      # The deployed smoke journey: authentication, Interface Locale, Class
-      # Session Discovery, Booking, Student Cancellation, and the Audit
-      # Entries those mutations leave behind, as shared reviewer identities.
+      # The deployed smoke journey, as ADR 0019's four shared reviewer
+      # identities: authentication, Interface Locale, Class Session Discovery,
+      # Booking, Student Cancellation, the assigned Class Roster and one
+      # permitted Teacher action, the Organization Manager's scoped reporting,
+      # one representative Platform Administrator operation, the cross-role
+      # replays those journeys must be refused, and the Audit Entries every
+      # mutation leaves behind.
       - name: Run the deployed smoke journey
         timeout-minutes: 10
         env:
@@ -115,6 +119,10 @@ jobs:
           SMOKE_CLIENT_SECRET: ${{ secrets.SMOKE_CLIENT_SECRET }}
           SMOKE_STUDENT_USERNAME: ${{ secrets.SMOKE_STUDENT_USERNAME }}
           SMOKE_STUDENT_PASSWORD: ${{ secrets.SMOKE_STUDENT_PASSWORD }}
+          SMOKE_TEACHER_USERNAME: ${{ secrets.SMOKE_TEACHER_USERNAME }}
+          SMOKE_TEACHER_PASSWORD: ${{ secrets.SMOKE_TEACHER_PASSWORD }}
+          SMOKE_ORGANIZATION_MANAGER_USERNAME: ${{ secrets.SMOKE_ORGANIZATION_MANAGER_USERNAME }}
+          SMOKE_ORGANIZATION_MANAGER_PASSWORD: ${{ secrets.SMOKE_ORGANIZATION_MANAGER_PASSWORD }}
           SMOKE_ADMINISTRATOR_USERNAME: ${{ secrets.SMOKE_ADMINISTRATOR_USERNAME }}
           SMOKE_ADMINISTRATOR_PASSWORD: ${{ secrets.SMOKE_ADMINISTRATOR_PASSWORD }}
         run: pnpm --filter @marketplace/backend release:smoke

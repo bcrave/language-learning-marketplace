@@ -18,6 +18,35 @@ A Security-Relevant Change includes a change to:
 
 Ordinary copy or synthetic curriculum changes are not security-relevant unless they alter one of those boundaries. Uncertain classification fails closed as security-relevant.
 
+## How the record is produced
+
+The record is generated, not filled in. The repository's **Security Gate**
+workflow reads three things and combines them:
+
+- the maintained verification catalog, for which checks are required, what each
+  one disproves, which trust boundaries rerun it, and which residual risks the
+  threat model already accepts — so a record can never claim coverage the
+  deployment does not have, or waive a finding under a risk nobody accepted;
+- every result recorded against this exact candidate, each written when the
+  check ran: an automated suite the moment it finished, and a manual abuse case,
+  live configuration assertion, or CSP journey the moment the Project Owner
+  recorded it through the **Security Evidence** workflow; and
+- the two recovery drills, read from the readiness exercises they wrote
+  themselves rather than retyped, so one fact stays in one place.
+
+Only the rerun scope, the boundaries a change touched, the reason a full-gate
+check was not repeated, the residual risk a finding maps to, and the sign-off
+are supplied by a person, because only a person has them.
+
+The generator is fail-closed and its job fails when any check blocks the
+release. A required check with no result blocks exactly as a failed one does — a
+check nobody ran and a check that failed are equally unproven — and a result
+recorded against a different release does not carry forward.
+
+The gate also writes the operational readiness exercises its own checks
+evidence, for every [incident family](operations/readiness-evidence.md) except
+backups and recovery verification, which the drills own.
+
 ## Traceability
 
 Every prohibited outcome in the threat model receives a stable check identifier whenever automation is practical. The maintained verification catalog maps each threat-model abuse family to its automated checks, manual cases, configuration assertions, deployed journeys, and applicable rerun triggers. Removing or weakening a mapped check is itself a Security-Relevant Change.

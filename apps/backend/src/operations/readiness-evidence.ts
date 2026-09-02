@@ -7,7 +7,11 @@ import {
   type AlertCondition,
   type IncidentFamily,
 } from "../observability/alert-policy.js";
-import { firstCredentialShape } from "./credential-shapes.js";
+import {
+  evidenceCell,
+  isPrivateEvidenceLink,
+  rawEvidenceShape,
+} from "./evidence-boundary.js";
 
 /**
  * The candidate-specific [operational readiness
@@ -124,68 +128,6 @@ export interface ReadinessEvidenceFinding {
   exercise: string | null;
   /** Privacy-safe: names what is missing or wrong, never the offending value. */
   detail: string;
-}
-
-/**
- * Where private operational evidence is allowed to live.
- *
- * The threat model puts the raw evidence in GitHub Actions, Railway, and
- * Sentry, and the record's job is to point at it rather than copy it. A link
- * anywhere else is either evidence smuggled into a public artifact — a paste
- * site, an object store with the dump in it — or a link nobody can follow.
- */
-const PRIVATE_EVIDENCE_HOSTS = [
-  "github.com",
-  "railway.com",
-  "railway.app",
-  "sentry.io",
-];
-
-/**
- * The personal data the evidence boundary excludes, on top of the credential
- * shapes shared with the build-artifact check.
- *
- * These two are specific to a record written by hand. A follow-up owner is
- * typed by a person, and "the owner" is the obvious thing to type an address
- * for; a limitation describing an abuse incident is the obvious place to write
- * down the address that caused it. Both are named in the operator guide's
- * evidence boundary as things the record must never retain.
- *
- * Like the credential shapes, these look for values rather than names: a
- * limitation saying `RAILWAY_TOKEN needs rotating` is exactly the follow-up the
- * record exists to carry, while one carrying the token is the disclosure it
- * exists to prevent.
- */
-const PERSONAL_DATA_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
-  ["an email address", /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/],
-  ["a source address", /\b(?:\d{1,3}\.){3}\d{1,3}\b/],
-];
-
-function rawEvidenceShape(text: string) {
-  return (
-    firstCredentialShape(text)
-    ?? PERSONAL_DATA_PATTERNS.find(([, pattern]) => pattern.test(text))?.[0]
-  );
-}
-
-/**
- * Whether a link points at private provider evidence and carries nothing but
- * the pointer. A query string is refused outright: signed provider links put
- * their credential there, and a record that published one would have leaked the
- * access it was trying to avoid copying.
- */
-export function isPrivateEvidenceLink(link: string): boolean {
-  let url: URL;
-  try {
-    url = new URL(link);
-  } catch {
-    return false;
-  }
-  if (url.protocol !== "https:") return false;
-  if (url.search !== "" || url.username !== "" || url.password !== "") return false;
-  return PRIVATE_EVIDENCE_HOSTS.some(
-    (host) => url.hostname === host || url.hostname.endsWith(`.${host}`),
-  );
 }
 
 /**
@@ -379,16 +321,7 @@ export function renderReadinessEvidence(record: ReadinessEvidenceRecord): string
   const findings = readinessEvidenceFindings(record);
   const minutes = (milliseconds: number | null) =>
     milliseconds === null ? "—" : `${(milliseconds / 60_000).toFixed(1)} min`;
-  /**
-   * A Markdown table cell. The limitation and follow-up owner are typed by a
-   * person into a workflow input, and a single `|` in one of them would split
-   * the row and shift every later column — silently reattributing a result in
-   * the artifact the release decision is read from.
-   */
-  const cell = (value: string | null) =>
-    value === null || value === ""
-      ? "—"
-      : value.replaceAll("|", "\\|").replaceAll(/\r?\n/g, " ");
+  const cell = evidenceCell;
 
   const lines = [
     "# Operational readiness evidence",
